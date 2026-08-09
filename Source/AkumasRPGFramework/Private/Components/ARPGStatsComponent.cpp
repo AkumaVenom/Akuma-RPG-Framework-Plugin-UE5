@@ -32,6 +32,19 @@ bool UARPGStatsComponent::SpendMana(float Amount)
     return true;
 }
 
+bool UARPGStatsComponent::SpendStamina(float Amount)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || Amount < 0.f || Stamina < Amount) return false;
+    Stamina = FMath::Clamp(Stamina - Amount, 0.f, MaxStamina);
+    return true;
+}
+
+void UARPGStatsComponent::RestoreStamina(float Amount)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || Amount <= 0.f) return;
+    Stamina = FMath::Clamp(Stamina + Amount, 0.f, MaxStamina);
+}
+
 void UARPGStatsComponent::RestoreAllVitals()
 {
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;

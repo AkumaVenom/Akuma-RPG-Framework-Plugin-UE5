@@ -74,8 +74,11 @@ int32 UARPGFactionComponent::GetBaseRelationshipToFactionId(FName OtherFactionId
     if (Mine.IsNone() || OtherFactionId.IsNone()) return 0;
     if (Mine == OtherFactionId) return 100;
     if (PrimaryFaction)
+    {
         for (const FARPGFactionRelationship& Rel : PrimaryFaction->Relationships)
             if (Rel.OtherFactionId == OtherFactionId) return Rel.BaseRelationship;
+        return PrimaryFaction->DefaultRelationshipToUnlistedFactions;
+    }
     return 0;
 }
 
@@ -91,6 +94,14 @@ int32 UARPGFactionComponent::GetBaseRelationshipTo(const UARPGFactionComponent* 
 }
 
 bool UARPGFactionComponent::IsHostileTo(const UARPGFactionComponent* Other) const { return GetBaseRelationshipTo(Other) < 0; }
+
+bool UARPGFactionComponent::ShouldAttackOnSight(const UARPGFactionComponent* Other) const
+{
+    if (!Other || !IsHostileTo(Other)) return false;
+    // Explicit-id-only factions have no Data Asset flag to consult, so authored hostility implies attack-on-sight.
+    return !PrimaryFaction || PrimaryFaction->bAttackHostileOnSight;
+}
+
 bool UARPGFactionComponent::IsFriendlyTo(const UARPGFactionComponent* Other) const { return GetBaseRelationshipTo(Other) > 0; }
 
 void UARPGFactionComponent::ReplaceReputation(const TArray<FARPGFactionStanding>& NewReputation)

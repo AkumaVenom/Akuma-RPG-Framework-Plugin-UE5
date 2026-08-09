@@ -18,6 +18,8 @@ class AKUMASRPGFRAMEWORK_API UARPGFactionDefinition : public UARPGDefinitionBase
     GENERATED_BODY()
 public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Faction") TArray<FARPGFactionRelationship> Relationships;
+    /** Used only when no explicit relationship entry exists. 0 = neutral, negative = hostile, positive = friendly. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Faction") int32 DefaultRelationshipToUnlistedFactions = 0;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Faction") bool bAttackHostileOnSight = true;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Faction") int32 HatedThreshold = -42000;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Faction") int32 HostileThreshold = -6000;

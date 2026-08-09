@@ -7,6 +7,101 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 1.7.0-alpha automatic aggro / retaliation / ally assist
+
+This revision makes `ARPGAICharacter` reliably defend itself and help nearby allies even when faction authoring is neutral, incomplete, or temporarily missing:
+
+- received combat hits automatically create temporary aggression and an immediate retaliation target;
+- neutral-faction and missing-faction retaliation are enabled by default, while friendly retaliation remains opt-in;
+- nearby allies can assist through same faction, allied faction, same spawner group, explicit Assist Group Id, or same-class fallback when faction identity is missing;
+- spawner group assistance works even when physical `Stay Together` cohesion is disabled;
+- faction-free `Attack Players On Sight` and `Attack Unfactioned Pawns On Sight` fallbacks are exposed for monster-style AI;
+- Faction Definitions now expose a default relationship for unlisted factions, and `Attack Hostile On Sight` is consumed by automatic AI acquisition;
+- temporary aggression is honored by combat damage legality so retaliation still works when neutral damage is otherwise disabled by a combat profile.
+
+See `Docs/AI_AGGRO_ASSIST.md`.
+
+## 1.6.0-alpha combat-feel polish
+
+This revision turns the player lock-on into a stronger classic Z-target combat mode and adds a unified feedback/stagger layer:
+
+- while locked, the player character continuously faces the selected target and the owning camera/control rotation smoothly tracks it;
+- Spring Arm/Camera `Use Pawn Control Rotation` is enabled automatically for the lock and restored on unlock;
+- player movement-facing flags are temporarily adjusted so strafing/orbit movement does not rotate away from the target;
+- Class Definition combat profiles now expose Niagara-first hit/critical/block/parry/stagger FX with Cascade fallback;
+- combat audio is exposed for attack, impact, defence, dodge, stagger, death and revive cues;
+- critical hits can trigger a configurable one-hit stagger with a montage/Hit React fallback and real knockback;
+- automatic NPC combat pauses navigation while staggered.
+
+See `Docs/COMBAT_FEEL.md`.
+
+## 1.5.0-alpha polished AI routes, groups and free roam
+
+**UE 5.8.1 compatibility retained:** the v1.4.1 `Navigation/PathFollowingComponent.h` spline compile correction remains in this build.
+
+`ARPGAICharacter` now inherits an **AI Spline Movement** component. Place an `ARPG AI Spline Route`, edit its spline, assign that route to the NPC (or to an `ARPG_AI_Spawner`), and the NPC follows it automatically through NavMesh movement. The pawn is never attached to the spline. The route now owns a default-on **Loop Route** setting, and spawner groups can synchronize travel direction so they do not split at open-route endpoints. `ARPGAICharacter` also contains a disabled-by-default **AI Wanderer** that the spawner enables automatically for first-class Free Roam.
+
+- native editable route actor + inherited NPC route component
+- NavMesh projection + normal `AAIController` path following
+- Ping-Pong, Loop and Once modes
+- nearest/first/last/explicit/random start positions
+- point waits, random waits and point-id events
+- lateral/random lane offsets for shared routes
+- automatic stalled-move recovery
+- reusable Route Id lookup for Blueprint-spawned AI
+- automatic spawner route assignment
+- automatic combat break-off, route-local chase leash and post-combat rejoin
+- Wanderer/spawner-leash conflict prevention
+
+See `Docs/AI_SPLINE.md` for the complete editor workflow.
+
+## 1.3.0-alpha automatic NPC ragdoll death
+
+NPC death is now automatic and physics-driven by default on `ARPGAICharacter`:
+
+- a dead NPC attempts full-body skeletal ragdoll automatically; no Blueprint death physics graph is required.
+- movement velocity carries into the ragdoll and the final hit can add a configurable physical impulse at the nearest Physics Asset body.
+- capsule collision is disabled while the corpse is physical, while the mesh uses an exposed `Ragdoll` collision profile.
+- if the skeletal mesh has no usable Physics Asset or physics cannot start, the existing Class Definition/Combat death montage plays automatically as the fallback.
+- same-actor respawn cleanly restores mesh/capsule collision, attachment/relative transform and animation control.
+- the base player `ARPGCharacter` remains animation-first by default; player ragdoll is an exposed opt-in on the Combat Component.
+- spawner corpse lifetime/respawn behavior remains compatible with ragdolled NPC bodies.
+
+See `Docs/RAGDOLL_DEATH.md` for setup and tuning.
+
+## 1.2.1-alpha lock-on targeting
+
+This revision adds a first-class, automatic player lock-on system designed for action-RPG/MMO combat:
+
+- `ARPGTargetingComponent` is preinstalled on `ARPGCharacter`; the normal player Blueprint only needs to bind a button to `Toggle Lock On`.
+- camera-centered target acquisition scores hostile candidates by angle and distance, with configurable range, field of view and line-of-sight rules.
+- `Target Left` / `Target Right` switch between nearby valid targets with optional wrap-around.
+- the selected target is mirrored into `ARPGCombatComponent::CombatTarget`, so basic attacks automatically use the lock-on target and the server validates the target.
+- player rotation automatically faces the locked target during basic attacks and Gameplay Ability activation, with smooth rotation speed/duration exposed in the Targeting Component. Continuous face-target mode is optional.
+- any GAS ability can benefit from automatic facing. The new optional `ARPGGameplayAbility` base adds `Ignore / Prefer / Require Lock-On` targeting policy plus Blueprint nodes for locked actor, target location and `GameplayAbilityTargetData`.
+- a native screen-space target marker is created automatically on the selected enemy. Texture/material, color/tint, size, height/socket, pulse and acquire/release animation timing are exposed in the player Character Blueprint.
+- no UI asset is required for first use: the native widget supplies a fallback reticle. Projects can subclass `ARPGTargetMarkerWidget` for custom visuals/Widget Animations while retaining the automatic spawn/routing path.
+- faction hostility, dead-target invalidation, maximum range, line-of-sight grace, automatic unlock and optional reacquisition are built in.
+
+See `Docs/TARGETING.md` for setup and ability integration.
+
+## 1.1.0-alpha combat overhaul
+
+This revision promotes combat from basic death/respawn plumbing into an automatic action-RPG layer:
+
+- `Perform Basic Attack` uses the assigned Class Definition and its ordered melee/ranged/magic montage arrays.
+- ordered melee montages work as a combo automatically; optional detailed combo steps expose damage, timing, range, trace radius, costs and block/parry flags.
+- automatic timed melee sphere traces, ranged hitscan or optional replicated `ARPGCombatProjectile`, and magic basic attacks; a built-in `ARPG Combat Impact` Anim Notify provides exact montage-authored impact timing when desired.
+- class-driven dodge with four directional montages, stamina/cooldown, movement or root-motion mode and configurable invulnerability window.
+- hold-to-block shield/guard logic with front arc, physical/ranged/magic reductions, stamina damage, perfect-block/parry window and guard break.
+- `AARPGCharacter` exposes direct input helpers: `Basic Attack`, `Dodge`, `Block Pressed`, `Block Released`.
+- new `ARPGAICombatComponent` and ready `ARPGAICharacter`: assign Class Definition + Faction, place on NavMesh, and hostile NPC combat can run without a Behavior Tree.
+- NPCs acquire hostile faction targets, use threat, chase, face, attack, react to incoming attack timing, dodge/block, and can auto-activate configured GAS ability tags.
+- combat kill credit routes to quests/Slayer/XP/loot, and AI spawners now understand dead combat actors for corpse cleanup/respawn.
+- Player faction defaults are now applied only to player-controlled characters, avoiding accidental Player-faction NPCs.
+
+See `Docs/COMBAT.md` for the complete editor workflow.
+
 ## 1.0.2-alpha compile-fix notes
 
 This source revision incorporates fixes from a real UE 5.8.1 / Visual Studio 2022 Development Editor build log:
@@ -24,7 +119,8 @@ A fresh local UE 5.8.1 build is still the authoritative validation step after in
 
 - Ready-made `AARPGCharacter` with the main RPG components already attached.
 - Gameplay Ability System bridge and attribute set foundations.
-- Stats, melee/ranged/magic-friendly combat hooks, death and respawn.
+- Automatic melee/ranged/magic basic combat, ordered montage combos, hit traces/projectiles, crit/armor, dodge, shield block/parry/guard-break, death and respawn.
+- Z-target-style toggle lock-on targeting with automatic camera tracking, continuous character facing, animated marker UI, target switching and GAS target-data helpers.
 - Character progression, classes, abilities/effects and animation-set hooks.
 - Inventory, equipment, item definitions, loot and currencies.
 - Quests with objective-level persistence, prerequisites, chains, rewards, repeatables, auto-complete and quest-giver helpers.
@@ -33,8 +129,8 @@ A fresh local UE 5.8.1 build is still the authoritative validation step after in
 - Factions and reputation for players, NPCs, wanderers, bosses and buildings.
 - Vendors with stock, restock, restrictions, reputation pricing, selling, buyback and Blueprint service hooks.
 - Advanced AI group spawner with weighted entries, exact/ranged counts, NavMesh projection, respawn modes and optional home/leash behavior.
-- Optional autonomous wanderer AI foundation for populating single-player worlds.
-- Threat/aggro utilities and loot-table components.
+- Optional autonomous wanderer AI foundation, automatic hostile NPC combat AI, and first-class NavMesh spline patrol/travel routes with combat rejoin.
+- Threat/aggro utilities, automatic hostile target acquisition and loot-table components.
 - Rare/world/dungeon/raid boss foundation with encounter state, phases, enrage, scaling, leash/reset, contribution and world-boss respawn.
 - Dungeon/raid encounter manager with encounter states, wipe handling, checkpoints and persistent completion state.
 - Battle-pet collection, teams, XP, capture and turn-battle foundation.
@@ -57,7 +153,7 @@ A fresh local UE 5.8.1 build is still the authoritative validation step after in
 
    `YourProject/Plugins/AkumasRPGFramework`
 
-3. Confirm the built-in **Gameplay Abilities** plugin is enabled. `GameplayTags` and `GameplayTasks` are module dependencies handled by the plugin Build.cs; they are not separate `.uplugin` dependencies.
+3. Confirm the built-in **Gameplay Abilities** and **Niagara** plugins are enabled. `GameplayTags` and `GameplayTasks` are module dependencies handled by the plugin Build.cs; they are not separate `.uplugin` dependencies.
 4. Register the framework's Primary Data Asset types in **Project Settings > Game > Asset Manager**. See `Docs/ASSET_MANAGER.md`.
 5. Right-click the `.uproject` and regenerate Visual Studio project files if your workflow requires it.
 6. Build the project's **Development Editor** target for Win64 using your UE 5.8 toolchain.
@@ -71,6 +167,7 @@ See **`Docs/QUICK_START.md`** for the editor workflow.
 The framework deliberately separates three things:
 
 1. **Definitions** — `UPrimaryDataAsset` subclasses define items, quests, classes, factions, skills, pets, bosses, recipes, vendors, mounts, build pieces and dungeons.
+   Create these as **Miscellaneous > Data Asset** instances of the native `ARPG...Definition` class. Framework definition classes are intentionally `NotBlueprintable` in 1.1 to prevent accidentally creating a Blueprint Class where a Data Asset instance is required.
 2. **Runtime state** — replicated actor components hold mutable game state such as HP, XP, inventory stacks, active quests, reputation, Slayer tasks and pet teams.
 3. **Persistence** — SaveGame records store stable IDs plus mutable values rather than transient UObject pointers.
 
@@ -101,6 +198,9 @@ That separation is important for long-lived RPG projects: content definitions ca
 - Building
 - Mounts
 - Group
+- Threat
+- AI Combat
+- Targeting
 
 You can use that class directly as the base of a Blueprint, or attach individual components to your own character architecture.
 
@@ -159,6 +259,10 @@ The package contains functional foundations for all major requested areas, but "
 ## Documentation
 
 - `Docs/QUICK_START.md` — fastest editor setup.
+- `Docs/COMBAT.md` — automatic player/NPC combat, combos, dodge, block/parry and ranged/magic setup.
+- `Docs/AI_SPLINE.md` — automatic NavMesh spline patrol/travel, route looping, synchronized group direction, route points, spawner assignment and combat rejoin.
+- `Docs/AI_SPAWNER_MOVEMENT.md` — spawn groups versus cohesion, movement modes, independent/group free roam and spawner-centered wandering.
+- `Docs/RAGDOLL_DEATH.md` — automatic NPC ragdoll, Physics Asset fallback behavior and death/respawn tuning.
 - `Docs/FEATURE_MATRIX.md` — what each system currently provides.
 - `Docs/ASSET_MANAGER.md` — required Primary Asset registration.
 - `Docs/BUILDING_CRAFTING.md` — building, faction ownership, storage and furnaces.

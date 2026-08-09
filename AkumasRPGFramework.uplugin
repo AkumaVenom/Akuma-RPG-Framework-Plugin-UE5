@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 102,
-  "VersionName": "1.0.2-alpha",
+  "Version": 170,
+  "VersionName": "1.7.0-alpha",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with GAS integration, combat, classes, progression, inventory/equipment, quests, Slayer/skills, factions, vendors, battle pets, bosses/dungeons, AI spawning/wanderers, unified chat, local profiles/saves, direct IP networking, faction-aware building, storage/crafting/furnaces, and mounts.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with automatic damage retaliation/ally assist and faction fallbacks, polished Z-target camera lock, combat FX/audio/stagger, automatic melee/ranged/magic combat, dodge/block/parry, NPC ragdoll, NavMesh spline/free-roam AI, GAS abilities, factions, quests, inventory, skills, bosses/dungeons, building/crafting, mounts, saves and networking.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,
@@ -19,6 +19,10 @@
   "Plugins": [
     {
       "Name": "GameplayAbilities",
+      "Enabled": true
+    },
+    {
+      "Name": "Niagara",
       "Enabled": true
     }
   ]

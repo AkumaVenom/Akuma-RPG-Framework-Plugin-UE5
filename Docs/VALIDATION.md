@@ -1,55 +1,57 @@
-# Validation Report
+# Source Validation — Akuma's RPG Framework v1.7.0-alpha
 
-Package: **Akuma's RPG Framework — 1.0.2-alpha**  
-Target: **Unreal Engine 5.8 source plugin**
+Package: **Akuma's RPG Framework — 1.7.0-alpha Automatic Aggro / Ally Assist Fix**  
+Target: **Unreal Engine 5.8 / 5.8.1**
 
-## Static validation performed in generation environment
+## Important limitation
 
-The source tree was checked for:
+This generation environment does not contain Epic's UE 5.8.1 build toolchain, so the package is **not** claimed to have completed a real Unreal Development Editor compile here. The user's local UE 5.8.1 build remains authoritative. Static/source validation is used to catch structural and known source regressions before that build.
 
-- duplicate exported/reflected class names
-- basic brace balance
-- `.generated.h` placement rules
-- declared Unreal RPCs without matching `_Implementation` methods
-- timer bindings to incompatible non-void handlers in the validated patterns
-- missing plugin-local `ARPG...` includes
-- valid `.uplugin` JSON
-- obvious `TODO`/`FIXME`/placeholder markers in runtime source
+All previous real-build fixes through v1.4.1 are retained, including the explicit `Navigation/PathFollowingComponent.h` dependency used by the AI spline component.
 
-Result for the 1.0.2 source tree: **no issues or warnings reported by these checks**.
+## v1.7 AI aggro / faction fallback checks
 
-## Scope of this validation
+The validator verifies that:
 
-These are repository/static checks only. They do **not** replace Unreal Header Tool, Unreal Build Tool, linker, PIE, dedicated/listen server, save migration, cook/package or performance testing.
+- AI Combat binds automatically to `OnCombatHitReceived`;
+- `Retaliate When Attacked` is enabled by default;
+- neutral-faction retaliation override is enabled by default;
+- missing-faction retaliation fallback is enabled by default;
+- nearby ally assistance is enabled by default;
+- same-spawner-group and same-class-when-faction-unknown assistance fallbacks exist;
+- received aggression is remembered and can remain a valid combat target even when the faction relationship itself is neutral;
+- Combat damage legality honors an active AI retaliation target so a class that disallows neutral damage can still fight back;
+- ARPG AI Spawner registers itself as the spawned AI's runtime Spawn Group Owner;
+- Faction Definitions expose `Default Relationship To Unlisted Factions`;
+- `Attack Hostile On Sight` is consumed by runtime automatic target acquisition;
+- v1.6 targeting/camera/combat-feedback/stagger requirements remain intact;
+- v1.5 spline/group/free-roam requirements remain intact;
+- v1.3 automatic NPC ragdoll + death montage fallback remains intact;
+- v1.2 target marker compile regression coverage remains intact.
 
-The generation container does not contain the user's local UE 5.8 installation, Visual Studio toolchain integration or game project assets, so a real Unreal compile cannot be truthfully claimed here.
+## Expected static result
 
-## Required local validation
+Run:
 
-Before relying on the plugin in a production project:
+```text
+python Tools/validate_source.py
+```
 
-1. Build the project's Development Editor target with UE 5.8.
-2. Resolve any API differences specific to the exact 5.8 point release/toolchain.
-3. Open all framework-derived Blueprints and compile them.
-4. Test single-player save -> exit -> relaunch -> load.
-5. Test world build/chest/furnace save -> reload.
-6. Run 2+ player PIE/listen-server tests for inventory/vendor/storage/crafting/quest/Slayer/building authority.
-7. Test direct LAN connection on two machines.
-8. Test packet loss/late join/reconnect scenarios relevant to the game.
-9. Cook/package a Development build and verify Primary Asset discovery.
-10. Run gameplay/performance/security QA before shipping.
+The machine-readable result is emitted separately as `AkumasRPGFramework_validation_v1.7.0.json` during packaging.
 
-## Package metrics
+## Recommended UE 5.8.1 test pass
 
-At final source freeze:
+1. Replace the complete previous plugin folder with v1.7.0 and clear project/plugin `Intermediate` plus old plugin `Binaries`.
+2. Build Development Editor / Win64.
+3. Create/use a passive `ARPGAICharacter` chicken with no faction configured. Leave `Retaliate When Attacked`, `Retaliate When Faction Unknown`, `Call For Help When Attacked`, and `Assist Same Class When Faction Unknown` enabled. Attack one chicken and confirm it immediately stops free roam, targets the player, chases and attacks.
+4. Place another chicken inside `Ally Assist Radius`; confirm it joins the fight even with no faction Data Asset.
+5. Spawn several chickens from one `ARPGAISpawner`; confirm same-spawner-group assistance works even when `Stay Together` is disabled.
+6. Assign a Chicken Faction Data Asset and keep Player relationship at `0`; confirm the chicken remains passive until hit, then retaliates because neutral retaliation override is enabled.
+7. Set Chicken -> Player relationship negative with `Attack Hostile On Sight = true`; confirm proactive acquisition works.
+8. Set `Attack Hostile On Sight = false` while keeping the negative relationship; confirm the chicken does not initiate combat but still retaliates when attacked.
+9. Set `Fallback: Attack Players On Sight = true` with missing/neutral faction data; confirm proactive faction-free monster behavior works.
+10. Re-test free roam/spline resumption after combat, ragdoll death, lock-on camera, hit FX/audio and stagger/knockback.
 
-- 66 exported framework classes
-- 113 C++ header/source files
-- 6,080 C++ source lines
-- zero issues/warnings from `Tools/validate_source.py`
+## Retained compile fixes
 
-## UE 5.8.1 build-log fixes incorporated
-
-The 1.0.2 source tree additionally incorporates corrections found by an actual user-side UE 5.8.1 Development Editor compile attempt. That build reached UHT successfully and compiled most framework translation units before exposing a small set of C++ issues. This revision corrects the reported AttributeSet replication macro/brace error, battle-pet cooldown variable conflict, missing CharacterMovement/PlayerState includes, and mount Controller shadowing.
-
-Because the generation environment itself does not contain UE 5.8.1, the next local build remains required to prove that no later compile/link error appears after these corrections.
+The v1.7 tree retains prior fixes discovered through real UE 5.8.1 Development Editor builds: GameplayTags/GameplayTasks descriptor correction, AttributeSet replication fix, battle-pet cooldown fix, CharacterMovement/PlayerState includes, mount Controller shadow naming, targeting `TSubclassOf` ambiguity fix, and AI spline Path Following include fix.

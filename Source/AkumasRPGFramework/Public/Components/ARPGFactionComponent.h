@@ -25,6 +25,7 @@ public:
     UPROPERTY(BlueprintAssignable) FARPGOnPrimaryFactionChanged OnPrimaryFactionChanged;
 
     UFUNCTION(BlueprintPure, Category="ARPG|Faction") FName GetPrimaryFactionId() const;
+    UFUNCTION(BlueprintPure, Category="ARPG|Faction") bool HasFactionIdentity() const { return !GetPrimaryFactionId().IsNone(); }
     UFUNCTION(BlueprintCallable, Category="ARPG|Faction", meta=(BlueprintAuthorityOnly)) void SetPrimaryFaction(UARPGFactionDefinition* NewFaction);
     UFUNCTION(BlueprintCallable, Category="ARPG|Faction", meta=(BlueprintAuthorityOnly)) void SetPrimaryFactionId(FName NewFactionId);
     UFUNCTION(BlueprintPure, Category="ARPG|Faction") int32 GetReputation(FName FactionId) const;
@@ -34,6 +35,7 @@ public:
     UFUNCTION(BlueprintPure, Category="ARPG|Faction") int32 GetBaseRelationshipTo(const UARPGFactionComponent* Other) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Faction") int32 GetBaseRelationshipToFactionId(FName OtherFactionId) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Faction") bool IsHostileTo(const UARPGFactionComponent* Other) const;
+    UFUNCTION(BlueprintPure, Category="ARPG|Faction") bool ShouldAttackOnSight(const UARPGFactionComponent* Other) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Faction") bool IsFriendlyTo(const UARPGFactionComponent* Other) const;
     UFUNCTION(BlueprintCallable, Category="ARPG|Faction", meta=(BlueprintAuthorityOnly)) void ReplaceReputation(const TArray<FARPGFactionStanding>& NewReputation);
 

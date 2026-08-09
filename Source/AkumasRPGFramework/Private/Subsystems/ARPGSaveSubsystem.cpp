@@ -8,6 +8,7 @@
 #include "Crafting/ARPGCraftingStationActor.h"
 #include "Components/ARPGFactionOwnershipComponent.h"
 #include "Components/ARPGStatsComponent.h"
+#include "Components/ARPGCombatComponent.h"
 #include "Components/ARPGProgressionComponent.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGQuestComponent.h"
@@ -80,6 +81,7 @@ bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverr
     const FARPGCharacterSaveData& D = Save->Character;
     Character->CharacterId = D.CharacterId; Character->RPGCharacterName = D.CharacterName;
     Character->SetActorLocationAndRotation(D.Location, D.Rotation, false, nullptr, ETeleportType::TeleportPhysics);
+    if (Character->Combat) Character->Combat->SetRespawnTransform(Character->GetActorTransform());
     if (Character->Progression) Character->Progression->SetProgression(D.Level, D.XP);
     if (Character->Stats) { Character->Stats->Health=FMath::Clamp(D.Health,0.f,Character->Stats->MaxHealth); Character->Stats->Mana=FMath::Clamp(D.Mana,0.f,Character->Stats->MaxMana); Character->Stats->Stamina=FMath::Clamp(D.Stamina,0.f,Character->Stats->MaxStamina); }
     if (Character->Inventory) Character->Inventory->ReplaceInventory(D.Inventory);

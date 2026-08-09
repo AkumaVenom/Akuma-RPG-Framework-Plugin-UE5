@@ -56,6 +56,203 @@ for p in root.rglob("*.cpp"):
     if re.search(r"SetTimer(?:ForNextTick)?\([^\n]*&\w+::(?:SaveNow|LoadNow|SavePersistentWorld|LoadPersistentWorld)", s):
         issues.append(f"{p.relative_to(root)} timer appears bound to a bool-returning method")
 
+    # MSVC/UE can reject a conditional expression that mixes TSubclassOf<T> with a raw StaticClass() UClass*.
+    if re.search(r"TSubclassOf<[^>]+>[^;=]*=\s*[^;?]+\?[^;:]+:\s*[^;]+StaticClass\(\)", s):
+        issues.append(f"{p.relative_to(root)} ambiguous TSubclassOf/StaticClass conditional expression")
+
+
+ai_character_cpp = root / "Private" / "Actors" / "ARPGAICharacter.cpp"
+if ai_character_cpp.exists():
+    ai_text = ai_character_cpp.read_text(errors="replace")
+    if "DeathPresentation.bUseRagdollOnDeath = true" not in ai_text:
+        issues.append("ARPGAICharacter must enable automatic ragdoll death by default")
+    if "DeathPresentation.bFallbackToDeathMontage = true" not in ai_text:
+        issues.append("ARPGAICharacter must keep Death montage fallback enabled by default")
+
+combat_cpp = root / "Private" / "Components" / "ARPGCombatComponent.cpp"
+if combat_cpp.exists():
+    combat_text = combat_cpp.read_text(errors="replace")
+    for required in ("TryStartRagdollLocal", "MulticastBeginDeathPresentation", "ResetDeathPresentationLocal"):
+        if required not in combat_text:
+            issues.append(f"Combat death presentation missing required ragdoll path: {required}")
+
+# UE 5.8.1 AIController.h can leave EPathFollowingRequestResult as a forward declaration.
+# Any spline source that uses concrete request-result enumerators must include the defining header.
+spline_cpp = root / "Private" / "Components" / "ARPGAISplineComponent.cpp"
+if spline_cpp.exists():
+    spline_text = spline_cpp.read_text(errors="replace")
+    if "EPathFollowingRequestResult::" in spline_text and '#include "Navigation/PathFollowingComponent.h"' not in spline_text:
+        issues.append("ARPGAISplineComponent uses EPathFollowingRequestResult enumerators without Navigation/PathFollowingComponent.h")
+
+
+
+# First-class AI spline route requirements.
+ai_character_cpp = root / "Private" / "Actors" / "ARPGAICharacter.cpp"
+if ai_character_cpp.exists():
+    ai_text = ai_character_cpp.read_text(errors="replace")
+    if "CreateDefaultSubobject<UARPGAISplineComponent>" not in ai_text:
+        issues.append("ARPGAICharacter must create the automatic AI spline movement component by default")
+
+spline_cpp = root / "Private" / "Components" / "ARPGAISplineComponent.cpp"
+if spline_cpp.exists():
+    spline_text = spline_cpp.read_text(errors="replace")
+    for required in ("ProjectPointToNavigation", "MoveToLocation", "NotifyCombatStarted", "NotifyCombatEnded", "RejoinNearestRouteLocation"):
+        if required not in spline_text:
+            issues.append(f"AI spline movement missing required NavMesh/combat path: {required}")
+    for forbidden in ("AttachToActor", "AttachToComponent", "SetActorLocation("):
+        if forbidden in spline_text:
+            issues.append(f"AI spline movement must not attach/teleport pawns along the route: found {forbidden}")
+
+route_cpp = root / "Private" / "Actors" / "ARPGAISplineRoute.cpp"
+if route_cpp.exists():
+    route_text = route_cpp.read_text(errors="replace")
+    if "GetLocationAtDistanceAlongSpline" not in route_text or "GetDistanceAlongSplineAtLocation" not in route_text:
+        issues.append("AI spline route must expose native distance/location spline sampling")
+
+spawner_cpp = root / "Private" / "Actors" / "ARPGAISpawner.cpp"
+if spawner_cpp.exists():
+    spawner_text = spawner_cpp.read_text(errors="replace")
+    if "AssignedSplineRoute" not in spawner_text or "SplineMovement->SetRoute" not in spawner_text:
+        issues.append("AI spawner must support automatic spline-route assignment")
+
+ai_combat_cpp = root / "Private" / "Components" / "ARPGAICombatComponent.cpp"
+if ai_combat_cpp.exists():
+    ai_combat_text = ai_combat_cpp.read_text(errors="replace")
+    if "SplineMovement->NotifyCombatStarted" not in ai_combat_text or "SplineMovement->NotifyCombatEnded" not in ai_combat_text:
+        issues.append("AI combat must suspend/resume spline movement automatically")
+
+
+# v1.5 polished AI route/group/free-roam requirements.
+route_header = root / "Public" / "Actors" / "ARPGAISplineRoute.h"
+if route_header.exists():
+    route_header_text = route_header.read_text(errors="replace")
+    if "bLoopRoute = true" not in route_header_text:
+        issues.append("AI spline route must expose Loop Route enabled by default")
+    if "bReverseAtOpenEnds = true" not in route_header_text:
+        issues.append("AI spline route must expose open-end reverse looping by default")
+
+spline_header = root / "Public" / "Components" / "ARPGAISplineComponent.h"
+if spline_header.exists():
+    spline_header_text = spline_header.read_text(errors="replace")
+    for required in ("bUseRouteTraversalSettings = true", "GroupDirectionLeader", "SetGroupDirectionLeader"):
+        if required not in spline_header_text:
+            issues.append(f"AI spline group/route traversal missing required API: {required}")
+
+spawner_header = root / "Public" / "Actors" / "ARPGAISpawner.h"
+if spawner_header.exists():
+    spawner_header_text = spawner_header.read_text(errors="replace")
+    for required in ("bStayTogether = true", "GroupCohesionRadius", "bSynchronizeSplineGroupDirection = true", "EARPGSpawnerMovementMode", "FreeRoamRadius", "bFreeRoamLeashedToSpawner = true"):
+        if required not in spawner_header_text:
+            issues.append(f"AI spawner polished movement missing required setting: {required}")
+
+if spawner_cpp.exists():
+    spawner_text = spawner_cpp.read_text(errors="replace")
+    for required in ("CheckGroupCohesion", "ConfigureFreeRoamPawn", "RefreshSplineGroupDirectionLeaders", "SetGroupDirectionLeader"):
+        if required not in spawner_text:
+            issues.append(f"AI spawner polished movement missing required runtime path: {required}")
+
+wanderer_cpp = root / "Private" / "Components" / "ARPGWandererComponent.cpp"
+if wanderer_cpp.exists():
+    wanderer_text = wanderer_cpp.read_text(errors="replace")
+    for required in ("GetRandomReachablePointInRadius", "CurrentTarget", "ForceReturnHome", "EnsureThinkTimer"):
+        if required not in wanderer_text:
+            issues.append(f"Wanderer/free-roam missing required runtime path: {required}")
+
+if ai_character_cpp.exists():
+    ai_text = ai_character_cpp.read_text(errors="replace")
+    if "CreateDefaultSubobject<UARPGWandererComponent>" not in ai_text or "AIWanderer->bEnabled = false" not in ai_text:
+        issues.append("ARPGAICharacter must include a disabled-by-default AI Wanderer for spawner free roam")
+
+# v1.6 combat-feel polish requirements.
+targeting_header = root / "Public" / "Components" / "ARPGTargetingComponent.h"
+targeting_cpp = root / "Private" / "Components" / "ARPGTargetingComponent.cpp"
+if targeting_header.exists():
+    targeting_header_text = targeting_header.read_text(errors="replace")
+    for required in ("bFaceContinuouslyWhileLocked = true", "bLockCameraToTarget = true", "bAutoConfigureCameraRigForLock = true", "bOverrideMovementFacingWhileLocked = true"):
+        if required not in targeting_header_text:
+            issues.append(f"Targeting polish missing required default: {required}")
+if targeting_cpp.exists():
+    targeting_text = targeting_cpp.read_text(errors="replace")
+    for required in ("SetControlRotation", "bUsePawnControlRotation", "ApplyLockedMovementFacing", "UpdateCameraLock"):
+        if required not in targeting_text:
+            issues.append(f"Targeting polish missing runtime path: {required}")
+
+combat_types_header = root / "Public" / "Combat" / "ARPGCombatTypes.h"
+if combat_types_header.exists():
+    combat_types_text = combat_types_header.read_text(errors="replace")
+    for required in ("FARPGCombatFXSettings", "FARPGCombatAudioSettings", "FARPGStaggerSettings", "CriticalStaggerChance", "HitNiagara", "HitCascadeFallback"):
+        if required not in combat_types_text:
+            issues.append(f"Combat feedback/stagger definition missing: {required}")
+
+if combat_cpp.exists():
+    combat_text = combat_cpp.read_text(errors="replace")
+    for required in ("SpawnSystemAtLocation", "SpawnEmitterAtLocation", "PlaySoundAtLocation", "LaunchCharacter", "TryApplyCriticalStaggerAuthority", "MulticastPlayCombatCue"):
+        if required not in combat_text:
+            issues.append(f"Combat feedback/stagger runtime missing: {required}")
+    for required_include in ('#include "NiagaraComponentPoolMethodEnum.h"', '#include "Particles/WorldPSCPool.h"'):
+        if required_include not in combat_text:
+            issues.append(f"Combat feedback requires explicit UE pooling enum include: {required_include}")
+
+if ai_combat_cpp.exists():
+    ai_combat_text = ai_combat_cpp.read_text(errors="replace")
+    if "MyCombat->bIsStaggered" not in ai_combat_text or "AI->StopMovement()" not in ai_combat_text:
+        issues.append("AI combat must stop movement while staggered so knockback is not immediately overridden")
+
+build_cs = root / "AkumasRPGFramework.Build.cs"
+if build_cs.exists() and '"Niagara"' not in build_cs.read_text(errors="replace"):
+    issues.append("AkumasRPGFramework.Build.cs must depend on Niagara for combat feedback")
+
+
+# v1.7 automatic AI retaliation / ally assist requirements.
+ai_combat_header = root / "Public" / "Components" / "ARPGAICombatComponent.h"
+if ai_combat_header.exists():
+    ai_combat_header_text = ai_combat_header.read_text(errors="replace")
+    for required in (
+        "bRetaliateWhenAttacked = true",
+        "bRetaliationOverridesNeutralFaction = true",
+        "bRetaliateWhenFactionUnknown = true",
+        "bCallForHelpWhenAttacked = true",
+        "bAssistSameSpawnGroup = true",
+        "bAssistSameClassWhenFactionUnknown = true",
+        "IsTargetConsideredHostile",
+        "ReceiveAggroCall",
+    ):
+        if required not in ai_combat_header_text:
+            issues.append(f"AI retaliation/assist missing required setting/API: {required}")
+
+if ai_combat_cpp.exists():
+    ai_combat_text = ai_combat_cpp.read_text(errors="replace")
+    for required in (
+        "OnCombatHitReceived.AddDynamic",
+        "HandleCombatHitReceived",
+        "RememberAggression",
+        "CallForHelp",
+        "ReceiveAggroCall",
+        "IsTargetConsideredHostile(CurrentTarget)",
+    ):
+        if required not in ai_combat_text:
+            issues.append(f"AI retaliation/assist runtime missing: {required}")
+
+if combat_cpp.exists():
+    combat_text = combat_cpp.read_text(errors="replace")
+    if "AICombat->IsTargetConsideredHostile(Target)" not in combat_text:
+        issues.append("Combat damage legality must honor temporary AI retaliation hostility")
+
+if spawner_cpp.exists():
+    spawner_text = spawner_cpp.read_text(errors="replace")
+    if "AICombat->SetSpawnGroupOwner(this)" not in spawner_text:
+        issues.append("AI spawner must register spawned AI for spawn-group ally assistance")
+
+faction_header = root / "Public" / "Data" / "ARPGFactionDefinition.h"
+if faction_header.exists() and "DefaultRelationshipToUnlistedFactions" not in faction_header.read_text(errors="replace"):
+    issues.append("Faction Definition must expose a default relationship for unlisted factions")
+
+faction_cpp = root / "Private" / "Components" / "ARPGFactionComponent.cpp"
+if faction_cpp.exists():
+    faction_text = faction_cpp.read_text(errors="replace")
+    if "ShouldAttackOnSight" not in faction_text or "bAttackHostileOnSight" not in faction_text:
+        issues.append("Faction attack-on-sight flag must be consumed by runtime faction logic")
+
 storage_header = root / "Public" / "Crafting" / "ARPGStorageActor.h"
 if storage_header.exists() and "TObjectPtr<UARPGFactionOwnershipComponent> Ownership" in storage_header.read_text():
     issues.append("Storage actor duplicates base building Ownership component")
@@ -66,6 +263,8 @@ try:
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
             issues.append(f".uplugin incorrectly declares runtime module {module_only_name} as a plugin dependency")
+    if "Niagara" not in plugin_refs:
+        issues.append(".uplugin must enable Niagara for v1.6 combat feedback")
 except Exception as exc:
     issues.append(f"invalid .uplugin JSON: {exc}")
 

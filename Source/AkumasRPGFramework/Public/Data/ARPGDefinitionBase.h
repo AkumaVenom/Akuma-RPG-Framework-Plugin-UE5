@@ -5,7 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "ARPGDefinitionBase.generated.h"
 
-UCLASS(Abstract, BlueprintType)
+UCLASS(Abstract, BlueprintType, NotBlueprintable)
 class AKUMASRPGFRAMEWORK_API UARPGDefinitionBase : public UPrimaryDataAsset
 {
     GENERATED_BODY()

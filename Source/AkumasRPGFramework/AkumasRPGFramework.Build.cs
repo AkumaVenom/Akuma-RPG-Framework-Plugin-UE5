@@ -18,7 +18,11 @@ public class AkumasRPGFramework : ModuleRules
             "AIModule",
             "NavigationSystem",
             "NetCore",
-            "DeveloperSettings"
+            "DeveloperSettings",
+            "UMG",
+            "Slate",
+            "SlateCore",
+            "Niagara"
         });
     }
 }

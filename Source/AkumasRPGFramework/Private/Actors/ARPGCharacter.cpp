@@ -21,6 +21,9 @@
 #include "Building/ARPGBuildingComponent.h"
 #include "Mounts/ARPGMountComponent.h"
 #include "Social/ARPGGroupComponent.h"
+#include "Components/ARPGThreatComponent.h"
+#include "Components/ARPGAICombatComponent.h"
+#include "Components/ARPGTargetingComponent.h"
 #include "Net/UnrealNetwork.h"
 
 AARPGCharacter::AARPGCharacter()
@@ -49,6 +52,9 @@ AARPGCharacter::AARPGCharacter()
     Building = CreateDefaultSubobject<UARPGBuildingComponent>(TEXT("Building"));
     Mounts = CreateDefaultSubobject<UARPGMountComponent>(TEXT("Mounts"));
     Group = CreateDefaultSubobject<UARPGGroupComponent>(TEXT("Group"));
+    Threat = CreateDefaultSubobject<UARPGThreatComponent>(TEXT("Threat"));
+    AICombat = CreateDefaultSubobject<UARPGAICombatComponent>(TEXT("AICombat"));
+    Targeting = CreateDefaultSubobject<UARPGTargetingComponent>(TEXT("Targeting"));
 }
 
 void AARPGCharacter::BeginPlay()
@@ -58,7 +64,7 @@ void AARPGCharacter::BeginPlay()
     {
         EnsureCharacterId();
         const UARPGDeveloperSettings* Settings = GetDefault<UARPGDeveloperSettings>();
-        if (Faction && Faction->GetPrimaryFactionId().IsNone() && Settings && !Settings->DefaultPlayerFactionId.IsNone())
+        if (IsPlayerControlled() && Faction && Faction->GetPrimaryFactionId().IsNone() && Settings && !Settings->DefaultPlayerFactionId.IsNone())
             Faction->SetPrimaryFactionId(Settings->DefaultPlayerFactionId);
         if (Inventory && Settings) Inventory->MaxSlots = FMath::Max(1, Settings->DefaultInventorySlots);
         if (Quests && Settings) Quests->MaxActiveQuests = FMath::Max(1, Settings->MaxActiveQuests);
@@ -72,6 +78,13 @@ void AARPGCharacter::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
     if (AbilitySystem) AbilitySystem->InitAbilityActorInfo(this, this);
+    if (HasAuthority() && NewController && NewController->IsPlayerController())
+    {
+        const UARPGDeveloperSettings* Settings = GetDefault<UARPGDeveloperSettings>();
+        if (Faction && Faction->GetPrimaryFactionId().IsNone() && Settings && !Settings->DefaultPlayerFactionId.IsNone())
+            Faction->SetPrimaryFactionId(Settings->DefaultPlayerFactionId);
+        if (Combat) Combat->bAutoRespawn = bEnablePlayerAutoRespawn;
+    }
 }
 
 void AARPGCharacter::OnRep_PlayerState()
@@ -90,4 +103,49 @@ void AARPGCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(AARPGCharacter, CharacterId);
     DOREPLIFETIME(AARPGCharacter, RPGCharacterName);
+}
+
+
+bool AARPGCharacter::BasicAttack(AActor* OptionalTarget)
+{
+    AActor* ResolvedTarget = OptionalTarget;
+    if (!ResolvedTarget && Targeting) ResolvedTarget = Targeting->GetCurrentTarget();
+    if (Targeting) Targeting->RequestAttackFacing();
+    return Combat ? Combat->PerformBasicAttack(ResolvedTarget) : false;
+}
+
+bool AARPGCharacter::Dodge(EARPGDodgeDirection Direction)
+{
+    return Combat ? Combat->PerformDodge(Direction) : false;
+}
+
+bool AARPGCharacter::BlockPressed()
+{
+    return Combat ? Combat->StartBlocking() : false;
+}
+
+void AARPGCharacter::BlockReleased()
+{
+    if (Combat) Combat->StopBlocking();
+}
+
+
+bool AARPGCharacter::ToggleLockOn()
+{
+    return Targeting ? Targeting->ToggleLockOn() : false;
+}
+
+bool AARPGCharacter::TargetLeft()
+{
+    return Targeting ? Targeting->SwitchTargetLeft() : false;
+}
+
+bool AARPGCharacter::TargetRight()
+{
+    return Targeting ? Targeting->SwitchTargetRight() : false;
+}
+
+void AARPGCharacter::ClearLockOn()
+{
+    if (Targeting) Targeting->UnlockTarget();
 }

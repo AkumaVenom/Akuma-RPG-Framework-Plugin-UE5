@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
+#include "Combat/ARPGCombatTypes.h"
 #include "ARPGCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -26,6 +27,9 @@ class UARPGInteractionComponent;
 class UARPGBuildingComponent;
 class UARPGMountComponent;
 class UARPGGroupComponent;
+class UARPGThreatComponent;
+class UARPGAICombatComponent;
+class UARPGTargetingComponent;
 
 UCLASS(BlueprintType, Blueprintable)
 class AKUMASRPGFRAMEWORK_API AARPGCharacter : public ACharacter, public IAbilitySystemInterface
@@ -36,6 +40,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, SaveGame, Category="Identity") FGuid CharacterId;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, SaveGame, Category="Identity") FString RPGCharacterName = TEXT("Hero");
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ARPG|Combat") bool bEnablePlayerAutoRespawn = true;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UAbilitySystemComponent> AbilitySystem;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGStatsComponent> Stats;
@@ -58,6 +63,18 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGBuildingComponent> Building;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGMountComponent> Mounts;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGGroupComponent> Group;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGThreatComponent> Threat;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGAICombatComponent> AICombat;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGTargetingComponent> Targeting;
+
+    UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool BasicAttack(AActor* OptionalTarget = nullptr);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool Dodge(EARPGDodgeDirection Direction = EARPGDodgeDirection::Auto);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool BlockPressed();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") void BlockReleased();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") bool ToggleLockOn();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") bool TargetLeft();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") bool TargetRight();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") void ClearLockOn();
 
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return AbilitySystem; }
     virtual void BeginPlay() override;

@@ -1,5 +1,30 @@
 # Quick Start — Akuma's RPG Framework
 
+
+
+## Definition assets: create Data Assets, not Blueprint Classes
+
+Framework definition types (`ARPGClassDefinition`, `ARPGItemDefinition`, `ARPGQuestDefinition`, `ARPGFactionDefinition`, etc.) are native Primary Data Asset types. Create them with **Content Browser > Miscellaneous > Data Asset**, then choose the requested `ARPG...Definition` class.
+
+Do not make a normal Blueprint Class just to hold definition values. Version 1.1 marks the shared definition base `NotBlueprintable` so the editor workflow is harder to misuse while keeping the definition objects readable in Blueprint variables and pickers.
+
+## Combat — player in four input calls
+
+Assign an `ARPGClassDefinition` to the Class Component. Put melee attacks in the Class Definition's `Animation Set -> Melee Attacks` array in combo order, then use:
+
+```text
+Attack Pressed -> Basic Attack
+Dodge Pressed -> Dodge (Auto)
+Block Pressed -> Block Pressed
+Block Released -> Block Released
+```
+
+The Class Definition `Combat Profile` controls attack type, damage/range/timing, ranged projectile or hitscan behavior, dodge montages/windows and shield block/parry/guard-break behavior. Leaving `Detailed Combo Steps` empty uses the montage array as the automatic combo. See `Docs/COMBAT.md`.
+
+For an automatic NPC, use a Blueprint child of `ARPGAICharacter`, assign Class Definition + Faction, put it on NavMesh, and author hostile faction relationships. The included AI Combat component can acquire, chase, attack, dodge, block and use configured GAS ability tags without a Behavior Tree. `ARPGAICharacter` also ragdolls automatically on death; give the Skeletal Mesh a Physics Asset. If ragdoll is unavailable, its configured Death montage is used automatically as the fallback.
+
+As of v1.7, NPC self-defence does not depend on perfect faction authoring: `AICombat -> Retaliate When Attacked` is enabled by default, neutral/missing faction attackers can temporarily become valid hostile targets, and nearby allies can assist automatically. See `Docs/AI_AGGRO_ASSIST.md`.
+
 ## 1. Install and compile
 
 Copy the plugin to `YourProject/Plugins/AkumasRPGFramework`, register its Primary Asset types, regenerate project files, then compile the Development Editor target with UE 5.8.
@@ -101,6 +126,17 @@ Configure:
 
 Use a `NavMeshBoundsVolume` over areas where AI should navigate.
 
+### AI spline patrol / travel
+
+`ARPGAICharacter` already owns **AI Spline Movement**. For a placed patrol NPC:
+
+1. Place `ARPG AI Spline Route`.
+2. Edit the route spline over NavMesh.
+3. Select the NPC instance -> `AI Spline Movement` -> assign `Route`.
+4. Leave `Enabled` + `Auto Start` on.
+
+The NPC follows the route through Navigation; it is not attached to the spline. Combat automatically suspends the route, uses the route departure point as the chase leash anchor, and rejoins after combat. `ARPGAISpawner` can also assign `Assigned Spline Route` automatically to spawned NPCs. See `Docs/AI_SPLINE.md`.
+
 ## 11. Bosses and dungeons
 
 Add `ARPGBossComponent` to a boss and assign a Boss Definition. Configure boss type, phases, enrage, leash, scaling and world-respawn options.
@@ -166,3 +202,40 @@ Use the Network Subsystem for:
 Example LAN address: `192.168.1.25:7777`.
 
 For public Internet games, replace local-profile trust with a real identity/backend provider and account for firewall/NAT/session discovery requirements.
+
+## Player lock-on targeting
+
+`ARPGCharacter` already owns an `ARPGTargetingComponent`. You do **not** create the marker widget or find targets manually.
+
+In the player Character Blueprint, select **Targeting** and set any presentation overrides you want:
+
+- `Target Marker Texture` or `Target Marker Material`
+- `Target Marker Color`
+- marker size and height offset
+- optional target/marker socket names
+- acquire animation duration and pulse settings
+- acquire/maintain distance and LOS rules
+- facing interpolation speed
+
+Then bind input:
+
+```text
+Lock-On Pressed -> Toggle Lock On
+Optional Previous Target -> Target Left
+Optional Next Target -> Target Right
+```
+
+The existing `Basic Attack` Character function automatically uses the locked target. GAS ability activation automatically requests facing as well. For the cleanest target-aware ability Blueprints, create the Gameplay Ability with parent class `ARPGGameplayAbility`, select its lock-on policy, and use `Get Lock On Target` or `Make Lock On Target Data`.
+
+The default targeting filter is hostile factions. Make sure the Player faction and enemy faction relationship is negative, or disable `Only Hostile Targets` for a different project rule.
+
+## v1.5 spawner movement modes
+
+For `ARPGAISpawner`, choose `Movement Mode`:
+
+- **Automatic**: uses Assigned Spline Route when present.
+- **Spline Route**: forces route travel. Route actor `Loop Route` is enabled by default.
+- **Free Roam**: enables the NPC's AI Wanderer and selects reachable NavMesh destinations inside `Free Roam Radius`.
+- **No Automatic Travel**: leaves idle travel to your own logic.
+
+`Stay Together` is now independent from spawn grouping. Turn it OFF to keep the group count/respawn semantics while allowing all members to roam independently. Turn it ON for group-leader cohesion recovery. Spline groups also synchronize route direction by default so they do not split and run both ways at an endpoint. See `Docs/AI_SPAWNER_MOVEMENT.md`.

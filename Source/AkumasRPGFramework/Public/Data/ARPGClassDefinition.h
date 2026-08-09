@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "ARPGTypes.h"
+#include "Combat/ARPGCombatTypes.h"
 #include "Data/ARPGDefinitionBase.h"
 #include "ARPGClassDefinition.generated.h"
 
@@ -15,4 +16,5 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Class") FGameplayTagContainer ClassTags;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Class") TArray<TSubclassOf<class UGameplayAbility>> GrantedAbilities;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Class") FARPGCombatMontageSet AnimationSet;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat") FARPGCombatProfile CombatProfile;
 };
