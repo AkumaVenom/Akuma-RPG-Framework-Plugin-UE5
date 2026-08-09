@@ -1,0 +1,25 @@
+{
+  "FileVersion": 3,
+  "Version": 102,
+  "VersionName": "1.0.2-alpha",
+  "FriendlyName": "Akuma's RPG Framework",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with GAS integration, combat, classes, progression, inventory/equipment, quests, Slayer/skills, factions, vendors, battle pets, bosses/dungeons, AI spawning/wanderers, unified chat, local profiles/saves, direct IP networking, faction-aware building, storage/crafting/furnaces, and mounts.",
+  "Category": "Gameplay",
+  "CreatedBy": "Akuma",
+  "CanContainContent": true,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "AkumasRPGFramework",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "GameplayAbilities",
+      "Enabled": true
+    }
+  ]
+}
