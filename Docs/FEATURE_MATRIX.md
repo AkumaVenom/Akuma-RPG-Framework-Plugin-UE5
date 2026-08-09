@@ -1,4 +1,4 @@
-# Feature Matrix — v1.6 Combat Feel Polish
+# Feature Matrix — v1.8 Group Combat Polish
 
 Legend:
 
@@ -23,12 +23,12 @@ Legend:
 | Player faction/building ownership | Implemented | Player-built structures inherit character/account/faction identity. |
 | Vendors | Implemented | Buy/sell, finite/unlimited stock, restock, quest/faction/level gates, discounts and buyback. |
 | Vendor services | Foundation | BlueprintNativeEvent service hook for repair/trainer/project-specific services. |
-| Automatic NPC combat AI | Implemented | `ARPGAICharacter`/`ARPGAICombatComponent` auto-acquire hostile faction targets, use threat, chase, face, attack, dodge/block and optionally activate GAS ability tags without requiring a Behavior Tree. |
+| Automatic NPC combat AI | Implemented | `ARPGAICharacter`/`ARPGAICombatComponent` auto-acquire/retaliate, use threat, chase, face, attack, dodge/block, optionally activate GAS ability tags, immediately restore temporary-retaliation targets to original disposition after death, and coordinate allied melee attack slots/wait-orbit movement without requiring a Behavior Tree. |
 | Automatic NPC ragdoll death | Implemented | `ARPGAICharacter` ragdolls by default with capsule/collision handling, inherited velocity, killing-hit impulse, multiplayer death presentation, respawn reset and automatic Death montage fallback when physics is unavailable. |
 | AI spline patrol / travel | Implemented | `ARPGAISplineRoute` + inherited `ARPGAISplineComponent`: NavMesh look-ahead following without attachment, route-level Loop/closed/open-end behavior, group direction synchronization, route-point waits/events, Route Id lookup, spawner assignment, combat suspension/leash/rejoin and Wanderer conflict handling. |
 | Advanced AI spawner | Implemented | Weighted group spawn, count range, shape/radius, NavMesh projection, independent group-vs-cohesion semantics, synchronized spline direction, selectable Automatic/Spline/Free-Roam/Hold movement, spawner-leashed reachable-point roaming, combat-home leash integration, dead-pawn corpse cleanup and respawn. |
 | Wanderer AI | Foundation | Optional autonomous roaming/activity foundation; game-specific playerbot brains can extend it. |
-| Threat/aggro | Implemented | Threat table, highest target, taunt/set/clear utilities and automatic AI target preference. |
+| Threat/aggro | Implemented | Threat table, highest target, taunt/set/clear utilities, temporary aggression/ally assist, target-death threat cleanup, original-disposition restoration and automatic AI target preference. |
 | Bosses | Implemented | Boss types, encounter state, phases, enrage, leash/reset, scaling, contributions and world respawn. |
 | Dungeons/raids | Foundation | Encounter state machine, wipes, checkpoints, completion/persistence and definitions. Online instancing/matchmaking services remain project-level. |
 | Battle pets | Foundation | Collection/team/XP, wild battle start, turns/abilities/swaps/capture and persistence. Extend for exact game-specific family/weather/rulesets. |

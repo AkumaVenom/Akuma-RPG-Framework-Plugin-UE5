@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "NavigationSystem.h"
 #include "TimerManager.h"
 
 UARPGAICombatComponent::UARPGAICombatComponent()
@@ -54,6 +55,35 @@ void UARPGAICombatComponent::SetSpawnGroupOwner(AActor* NewSpawnGroupOwner)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
     SpawnGroupOwner = NewSpawnGroupOwner;
+}
+
+void UARPGAICombatComponent::ForgetTemporaryAggressionAgainst(AActor* Actor, bool bClearThreat)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !Actor) return;
+    RetaliationMemory.Remove(TWeakObjectPtr<AActor>(Actor));
+    if (bClearThreat)
+        if (UARPGThreatComponent* Threat = GetOwner()->FindComponentByClass<UARPGThreatComponent>())
+            Threat->RemoveActor(Actor);
+}
+
+void UARPGAICombatComponent::ForgetAllTemporaryAggression(bool bClearThreat)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    TArray<TWeakObjectPtr<AActor>> RememberedActors;
+    RememberedActors.Reserve(RetaliationMemory.Num());
+    for (const TPair<TWeakObjectPtr<AActor>, float>& Pair : RetaliationMemory)
+        RememberedActors.Add(Pair.Key);
+    RetaliationMemory.Reset();
+
+    if (bClearThreat)
+    {
+        if (UARPGThreatComponent* Threat = GetOwner()->FindComponentByClass<UARPGThreatComponent>())
+        {
+            for (const TWeakObjectPtr<AActor>& Remembered : RememberedActors)
+                if (AActor* Actor = Remembered.Get()) Threat->RemoveActor(Actor);
+        }
+    }
 }
 
 bool UARPGAICombatComponent::HasAIController() const
@@ -185,10 +215,37 @@ void UARPGAICombatComponent::PruneRetaliationMemory()
 {
     if (!GetWorld()) return;
     const float Now = GetWorld()->GetTimeSeconds();
+    TArray<TWeakObjectPtr<AActor>> ThreatEntriesToRemove;
+
     for (auto It = RetaliationMemory.CreateIterator(); It; ++It)
     {
-        if (!It.Key().IsValid() || It.Value() <= Now)
+        AActor* RememberedActor = It.Key().Get();
+        const bool bExpired = It.Value() <= Now;
+        bool bDead = false;
+        if (RememberedActor)
+        {
+            if (const UARPGCombatComponent* RememberedCombat = RememberedActor->FindComponentByClass<UARPGCombatComponent>())
+                bDead = !RememberedCombat->IsAlive();
+        }
+
+        const bool bRemoveForDeath = bDead && bRestoreOriginalDispositionAfterTargetDeath;
+        if (!RememberedActor || bExpired || bRemoveForDeath)
+        {
+            if (RememberedActor)
+            {
+                const bool bTemporaryOnly = !IsTargetHostile(RememberedActor) && !IsProactiveHostileTarget(RememberedActor);
+                if ((bRemoveForDeath && bClearThreatAgainstDeadTargets) || (bExpired && bTemporaryOnly))
+                    ThreatEntriesToRemove.Add(It.Key());
+            }
             It.RemoveCurrent();
+        }
+    }
+
+    if (ThreatEntriesToRemove.Num() > 0)
+    {
+        if (UARPGThreatComponent* Threat = GetOwner() ? GetOwner()->FindComponentByClass<UARPGThreatComponent>() : nullptr)
+            for (const TWeakObjectPtr<AActor>& Entry : ThreatEntriesToRemove)
+                if (AActor* Actor = Entry.Get()) Threat->RemoveActor(Actor);
     }
 }
 
@@ -320,6 +377,63 @@ void UARPGAICombatComponent::ForceCombatTarget(AActor* NewTarget)
     SetTargetAuthority(NewTarget);
 }
 
+void UARPGAICombatComponent::BindTargetLifeState(AActor* Target)
+{
+    UnbindTargetLifeState();
+    if (!Target) return;
+    if (UARPGCombatComponent* TargetCombat = Target->FindComponentByClass<UARPGCombatComponent>())
+    {
+        TargetCombat->OnLifeStateChanged.RemoveDynamic(this, &UARPGAICombatComponent::HandleTargetLifeStateChanged);
+        TargetCombat->OnLifeStateChanged.AddDynamic(this, &UARPGAICombatComponent::HandleTargetLifeStateChanged);
+        BoundTargetCombat = TargetCombat;
+    }
+}
+
+void UARPGAICombatComponent::UnbindTargetLifeState()
+{
+    if (UARPGCombatComponent* TargetCombat = BoundTargetCombat.Get())
+        TargetCombat->OnLifeStateChanged.RemoveDynamic(this, &UARPGAICombatComponent::HandleTargetLifeStateChanged);
+    BoundTargetCombat.Reset();
+}
+
+void UARPGAICombatComponent::HandleTargetLifeStateChanged(EARPGLifeState NewState)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || NewState == EARPGLifeState::Alive) return;
+    AActor* DeadTarget = CurrentTarget;
+    if (!DeadTarget) return;
+
+    if (bRestoreOriginalDispositionAfterTargetDeath)
+        ForgetTemporaryAggressionAgainst(DeadTarget, bClearThreatAgainstDeadTargets);
+
+    ClearCombatTarget(bReturnHomeAfterCombat);
+}
+
+void UARPGAICombatComponent::ResetActiveMoveState()
+{
+    ActiveMoveTarget.Reset();
+    ActiveMoveLocation = FVector::ZeroVector;
+    bHasActiveMoveLocation = false;
+    LastMoveIssuedAt = -1000.f;
+}
+
+void UARPGAICombatComponent::ResetGroupCombatRuntime()
+{
+    bHadAttackSlotLastThink = false;
+    AttackSlotGrantedAt = -1.f;
+    NextAttackSlotEligibleAt = -1.f;
+    SetGroupCombatRole(EARPGGroupCombatRole::Solo, 1, 0, true);
+}
+
+void UARPGAICombatComponent::SetGroupCombatRole(EARPGGroupCombatRole NewRole, int32 GroupSize, int32 SlotIndex, bool bHasAttackSlot)
+{
+    const bool bChanged = CurrentGroupCombatRole != NewRole || EngagementGroupSize != GroupSize || EngagementSlotIndex != SlotIndex || bHasMeleeAttackSlot != bHasAttackSlot;
+    CurrentGroupCombatRole = NewRole;
+    EngagementGroupSize = FMath::Max(1, GroupSize);
+    EngagementSlotIndex = FMath::Max(0, SlotIndex);
+    bHasMeleeAttackSlot = bHasAttackSlot;
+    if (bChanged) OnGroupCombatRoleChanged.Broadcast(CurrentGroupCombatRole, EngagementGroupSize, EngagementSlotIndex);
+}
+
 void UARPGAICombatComponent::SetTargetAuthority(AActor* NewTarget)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
@@ -342,12 +456,23 @@ void UARPGAICombatComponent::SetTargetAuthority(AActor* NewTarget)
         }
     }
 
+    UnbindTargetLifeState();
     CurrentTarget = NewTarget;
-    ActiveMoveTarget.Reset();
+    BindTargetLifeState(NewTarget);
+    ResetActiveMoveState();
+    ResetGroupCombatRuntime();
     bMovingHome = false;
     ObservedEnemyAttackSerial = INDEX_NONE;
     ReactedEnemyAttackSerial = INDEX_NONE;
     ReactionDueAt = -1.f;
+
+    APawn* Pawn = Cast<APawn>(GetOwner());
+    if (AAIController* AI = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr)
+    {
+        if (NewTarget) AI->SetFocus(NewTarget, EAIFocusPriority::Gameplay);
+        else AI->ClearFocus(EAIFocusPriority::Gameplay);
+    }
+
     if (UARPGCombatComponent* Combat = GetOwner()->FindComponentByClass<UARPGCombatComponent>()) Combat->SetCombatTarget(NewTarget);
     SetWandererSuppressed(NewTarget != nullptr);
     OnTargetChanged.Broadcast(NewTarget);
@@ -358,19 +483,14 @@ void UARPGAICombatComponent::ClearCombatTarget(bool bReturnHome)
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
     APawn* Pawn = Cast<APawn>(GetOwner());
     SetTargetAuthority(nullptr);
-    ActiveMoveTarget.Reset();
+    ResetActiveMoveState();
     bMovingHome = false;
     if (AAIController* AI = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr)
     {
         AI->StopMovement();
-        if (UARPGAISplineComponent* SplineMovement = GetOwner()->FindComponentByClass<UARPGAISplineComponent>())
-        {
-            if (SplineMovement->IsRouteActive())
-            {
-                SplineMovement->NotifyCombatEnded();
-                return;
-            }
-        }
+        if (const UARPGAISplineComponent* SplineMovement = GetOwner()->FindComponentByClass<UARPGAISplineComponent>())
+            if (SplineMovement->IsRouteActive()) return;
+
         if (bReturnHome)
         {
             AI->MoveToLocation(HomeLocation, 100.f, true, true, true, false, nullptr, true);
@@ -391,6 +511,196 @@ void UARPGAICombatComponent::SetWandererSuppressed(bool bSuppressed) const
         }
         Wanderer->SetWandererEnabled(!bSuppressed);
     }
+}
+
+void UARPGAICombatComponent::GatherCoordinatedMeleeAttackers(AActor* Target, TArray<UARPGAICombatComponent*>& OutMembers) const
+{
+    OutMembers.Reset();
+    if (!bEnableGroupCombatCoordination || !GetOwner() || !GetWorld() || !Target) return;
+
+    FCollisionObjectQueryParams Objects;
+    Objects.AddObjectTypesToQuery(ECC_Pawn);
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(ARPGAIGroupCombatScan), false, Target);
+    TArray<FOverlapResult> Overlaps;
+    GetWorld()->OverlapMultiByObjectType(
+        Overlaps,
+        Target->GetActorLocation(),
+        FQuat::Identity,
+        Objects,
+        FCollisionShape::MakeSphere(FMath::Max(300.f, GroupCombatCoordinationRadius)),
+        Params);
+
+    TSet<TWeakObjectPtr<AActor>> Processed;
+    for (const FOverlapResult& Result : Overlaps)
+    {
+        AActor* CandidateActor = Result.GetActor();
+        if (!CandidateActor || Processed.Contains(TWeakObjectPtr<AActor>(CandidateActor))) continue;
+        Processed.Add(TWeakObjectPtr<AActor>(CandidateActor));
+
+        UARPGAICombatComponent* CandidateAI = CandidateActor->FindComponentByClass<UARPGAICombatComponent>();
+        UARPGCombatComponent* CandidateCombat = CandidateActor->FindComponentByClass<UARPGCombatComponent>();
+        if (!CandidateAI || !CandidateCombat || !CandidateAI->bEnabled || !CandidateCombat->IsAlive()) continue;
+        if (CandidateAI->CurrentTarget != Target) continue;
+        if (CandidateCombat->GetCombatProfile().BasicAttackType != EARPGBasicAttackType::Melee) continue;
+        if (bCoordinateOnlyWithAllies && CandidateAI != this && !IsPotentialAlly(CandidateActor)) continue;
+        OutMembers.Add(CandidateAI);
+    }
+
+    if (!OutMembers.Contains(const_cast<UARPGAICombatComponent*>(this)))
+        OutMembers.Add(const_cast<UARPGAICombatComponent*>(this));
+
+    OutMembers.Sort([](const UARPGAICombatComponent& A, const UARPGAICombatComponent& B)
+    {
+        const AActor* OwnerA = A.GetOwner();
+        const AActor* OwnerB = B.GetOwner();
+        const uint32 IdA = OwnerA ? OwnerA->GetUniqueID() : 0u;
+        const uint32 IdB = OwnerB ? OwnerB->GetUniqueID() : 0u;
+        return IdA < IdB;
+    });
+}
+
+bool UARPGAICombatComponent::EvaluateMeleeAttackSlot(AActor* Target, UARPGCombatComponent* MyCombat, int32& OutSlotIndex, int32& OutGroupSize, int32& OutOrbitDirectionSign)
+{
+    OutSlotIndex = 0;
+    OutGroupSize = 1;
+    OutOrbitDirectionSign = 1;
+    if (!Target || !MyCombat || !GetWorld() || !bEnableGroupCombatCoordination) return true;
+
+    const float Now = GetWorld()->GetTimeSeconds();
+    if (bHadAttackSlotLastThink && !MyCombat->bIsAttacking && AttackSlotGrantedAt >= 0.f && Now - AttackSlotGrantedAt >= FMath::Max(0.5f, AttackSlotMaxHoldSeconds))
+    {
+        bHadAttackSlotLastThink = false;
+        AttackSlotGrantedAt = -1.f;
+        NextAttackSlotEligibleAt = FMath::Max(NextAttackSlotEligibleAt, Now + FMath::Max(0.f, AttackSlotYieldSeconds));
+    }
+
+    TArray<UARPGAICombatComponent*> Members;
+    GatherCoordinatedMeleeAttackers(Target, Members);
+    OutGroupSize = FMath::Max(1, Members.Num());
+    if (Members.Num() == 0) return true;
+
+    int32 MaxAttackers = MAX_int32;
+    for (int32 Index = 0; Index < Members.Num(); ++Index)
+    {
+        UARPGAICombatComponent* Member = Members[Index];
+        if (!Member) continue;
+        MaxAttackers = FMath::Min(MaxAttackers, FMath::Max(1, Member->MaxSimultaneousMeleeAttackers));
+        if (Member == this) OutSlotIndex = Index;
+    }
+    MaxAttackers = FMath::Clamp(MaxAttackers == MAX_int32 ? 1 : MaxAttackers, 1, Members.Num());
+    OutOrbitDirectionSign = (Members[0] && Members[0]->GetOwner() && (Members[0]->GetOwner()->GetUniqueID() & 1u)) ? -1 : 1;
+
+    if (Members.Num() <= MaxAttackers)
+    {
+        if (!MyCombat->bIsAttacking && !bHadAttackSlotLastThink)
+        {
+            bHadAttackSlotLastThink = true;
+            AttackSlotGrantedAt = Now;
+        }
+        return true;
+    }
+
+    TArray<UARPGAICombatComponent*> Candidates = Members;
+    Candidates.Sort([Now, Target](const UARPGAICombatComponent& A, const UARPGAICombatComponent& B)
+    {
+        const UARPGCombatComponent* CombatA = A.GetOwner() ? A.GetOwner()->FindComponentByClass<UARPGCombatComponent>() : nullptr;
+        const UARPGCombatComponent* CombatB = B.GetOwner() ? B.GetOwner()->FindComponentByClass<UARPGCombatComponent>() : nullptr;
+        const bool bAttackingA = CombatA && CombatA->bIsAttacking;
+        const bool bAttackingB = CombatB && CombatB->bIsAttacking;
+        if (bAttackingA != bAttackingB) return bAttackingA;
+
+        const bool bLeaseA = A.bHadAttackSlotLastThink && A.AttackSlotGrantedAt >= 0.f && Now - A.AttackSlotGrantedAt < FMath::Max(0.5f, A.AttackSlotMaxHoldSeconds);
+        const bool bLeaseB = B.bHadAttackSlotLastThink && B.AttackSlotGrantedAt >= 0.f && Now - B.AttackSlotGrantedAt < FMath::Max(0.5f, B.AttackSlotMaxHoldSeconds);
+        if (bLeaseA != bLeaseB) return bLeaseA;
+
+        const bool bEligibleA = Now >= A.NextAttackSlotEligibleAt;
+        const bool bEligibleB = Now >= B.NextAttackSlotEligibleAt;
+        if (bEligibleA != bEligibleB) return bEligibleA;
+
+        if (!FMath::IsNearlyEqual(A.LastAttackCommitAt, B.LastAttackCommitAt)) return A.LastAttackCommitAt < B.LastAttackCommitAt;
+
+        const float DistA = A.GetOwner() ? FVector::DistSquared2D(A.GetOwner()->GetActorLocation(), Target->GetActorLocation()) : TNumericLimits<float>::Max();
+        const float DistB = B.GetOwner() ? FVector::DistSquared2D(B.GetOwner()->GetActorLocation(), Target->GetActorLocation()) : TNumericLimits<float>::Max();
+        if (!FMath::IsNearlyEqual(DistA, DistB)) return DistA < DistB;
+
+        const uint32 IdA = A.GetOwner() ? A.GetOwner()->GetUniqueID() : 0u;
+        const uint32 IdB = B.GetOwner() ? B.GetOwner()->GetUniqueID() : 0u;
+        return IdA < IdB;
+    });
+
+    bool bHasSlot = false;
+    int32 Assigned = 0;
+    for (UARPGAICombatComponent* Candidate : Candidates)
+    {
+        if (!Candidate) continue;
+        UARPGCombatComponent* CandidateCombat = Candidate->GetOwner() ? Candidate->GetOwner()->FindComponentByClass<UARPGCombatComponent>() : nullptr;
+        const bool bCurrentlyAttacking = CandidateCombat && CandidateCombat->bIsAttacking;
+        const bool bLeaseActive = Candidate->bHadAttackSlotLastThink && Candidate->AttackSlotGrantedAt >= 0.f && Now - Candidate->AttackSlotGrantedAt < FMath::Max(0.5f, Candidate->AttackSlotMaxHoldSeconds);
+        const bool bEligible = Now >= Candidate->NextAttackSlotEligibleAt;
+        if (!bCurrentlyAttacking && !bLeaseActive && !bEligible) continue;
+        if (Assigned >= MaxAttackers) break;
+        if (Candidate == this) bHasSlot = true;
+        ++Assigned;
+    }
+
+    if (bHasSlot)
+    {
+        if (!MyCombat->bIsAttacking && !bHadAttackSlotLastThink)
+        {
+            bHadAttackSlotLastThink = true;
+            AttackSlotGrantedAt = Now;
+        }
+    }
+    else
+    {
+        bHadAttackSlotLastThink = false;
+        AttackSlotGrantedAt = -1.f;
+    }
+    return bHasSlot;
+}
+
+FVector UARPGAICombatComponent::ComputeCombatRingPosition(AActor* Target, int32 SlotIndex, int32 GroupSize, int32 OrbitDirectionSign, float Radius, bool bOrbit) const
+{
+    if (!Target) return GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
+    const int32 SafeGroupSize = FMath::Max(1, GroupSize);
+    float AngleDegrees = (360.f * static_cast<float>(FMath::Max(0, SlotIndex))) / static_cast<float>(SafeGroupSize);
+    AngleDegrees += Target->GetActorRotation().Yaw;
+    if (bOrbit && GetWorld())
+        AngleDegrees += GetWorld()->GetTimeSeconds() * FMath::Max(0.f, OrbitDegreesPerSecond) * static_cast<float>(OrbitDirectionSign >= 0 ? 1 : -1);
+
+    const float Radians = FMath::DegreesToRadians(AngleDegrees);
+    const FVector Offset(FMath::Cos(Radians) * Radius, FMath::Sin(Radians) * Radius, 0.f);
+    return Target->GetActorLocation() + Offset;
+}
+
+bool UARPGAICombatComponent::ProjectCombatPositionToNavigation(const FVector& Desired, FVector& OutProjected) const
+{
+    OutProjected = Desired;
+    if (!bProjectCombatPositionsToNavMesh) return true;
+    UNavigationSystemV1* Nav = GetWorld() ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()) : nullptr;
+    if (!Nav) return false;
+    FNavLocation Projected;
+    if (!Nav->ProjectPointToNavigation(Desired, Projected, CombatNavProjectionExtent)) return false;
+    OutProjected = Projected.Location;
+    return true;
+}
+
+void UARPGAICombatComponent::MoveToCombatPosition(AAIController* AI, const FVector& DesiredGoal, float AcceptanceRadius)
+{
+    if (!AI || !GetWorld()) return;
+    FVector Goal = DesiredGoal;
+    if (!ProjectCombatPositionToNavigation(DesiredGoal, Goal)) return;
+
+    const float Now = GetWorld()->GetTimeSeconds();
+    const bool bGoalMoved = !bHasActiveMoveLocation || FVector::DistSquared2D(ActiveMoveLocation, Goal) >= FMath::Square(FMath::Max(10.f, CombatMoveGoalRefreshDistance));
+    const bool bRefreshDue = Now - LastMoveIssuedAt >= FMath::Max(0.1f, CombatMoveGoalRefreshSeconds);
+    if (!bGoalMoved && !bRefreshDue) return;
+
+    AI->MoveToLocation(Goal, FMath::Max(25.f, AcceptanceRadius), true, true, true, false, nullptr, true);
+    ActiveMoveTarget.Reset();
+    ActiveMoveLocation = Goal;
+    bHasActiveMoveLocation = true;
+    LastMoveIssuedAt = Now;
 }
 
 bool UARPGAICombatComponent::HasLineOfSightTo(AActor* Target) const
@@ -484,6 +794,20 @@ void UARPGAICombatComponent::Think()
 
     PruneRetaliationMemory();
 
+    if (IsValid(CurrentTarget))
+    {
+        if (UARPGCombatComponent* TargetCombat = CurrentTarget->FindComponentByClass<UARPGCombatComponent>())
+        {
+            if (!TargetCombat->IsAlive())
+            {
+                if (bRestoreOriginalDispositionAfterTargetDeath)
+                    ForgetTemporaryAggressionAgainst(CurrentTarget, bClearThreatAgainstDeadTargets);
+                ClearCombatTarget(bReturnHomeAfterCombat);
+                return;
+            }
+        }
+    }
+
     // The leash constrains a combat chase, not normal patrol/travel. Spline routes may legitimately
     // carry an NPC far from its original spawn point before combat begins.
     if (IsValid(CurrentTarget) && bUseHomeLeash && FVector::DistSquared(HomeLocation, GetOwner()->GetActorLocation()) > FMath::Square(MaxChaseDistanceFromHome))
@@ -501,6 +825,7 @@ void UARPGAICombatComponent::Think()
 
     if (!CurrentTarget)
     {
+        ResetGroupCombatRuntime();
         if (const UARPGAISplineComponent* SplineMovement = GetOwner()->FindComponentByClass<UARPGAISplineComponent>())
             if (SplineMovement->IsRouteActive()) return;
 
@@ -517,19 +842,64 @@ void UARPGAICombatComponent::Think()
         return;
     }
 
+    AI->SetFocus(CurrentTarget, EAIFocusPriority::Gameplay);
     UARPGCombatComponent* EnemyCombat = CurrentTarget->FindComponentByClass<UARPGCombatComponent>();
     UpdateDefenceAgainstTarget(MyCombat, EnemyCombat);
     if (MyCombat->bIsStaggered)
     {
         AI->StopMovement();
-        ActiveMoveTarget.Reset();
+        ResetActiveMoveState();
         return;
     }
     if (MyCombat->bIsDodging || MyCombat->bGuardBroken) return;
 
     const float Distance = FVector::Dist2D(GetOwner()->GetActorLocation(), CurrentTarget->GetActorLocation());
-    const float DesiredRange = DesiredRangeOverride > 0.f ? DesiredRangeOverride : MyCombat->GetPreferredCombatRange();
+    const float DesiredRange = FMath::Max(50.f, DesiredRangeOverride > 0.f ? DesiredRangeOverride : MyCombat->GetPreferredCombatRange());
     const bool bLOS = !bRequireLineOfSightToAttack || HasLineOfSightTo(CurrentTarget);
+    const FARPGCombatProfile Profile = MyCombat->GetCombatProfile();
+    const bool bMelee = Profile.BasicAttackType == EARPGBasicAttackType::Melee;
+
+    int32 SlotIndex = 0;
+    int32 GroupSize = 1;
+    int32 OrbitDirectionSign = 1;
+    const bool bHasAttackSlot = !bMelee || EvaluateMeleeAttackSlot(CurrentTarget, MyCombat, SlotIndex, GroupSize, OrbitDirectionSign);
+
+    if (bMelee && bEnableGroupCombatCoordination && GroupSize > 1)
+    {
+        if (!bHasAttackSlot)
+        {
+            SetGroupCombatRole(EARPGGroupCombatRole::WaitingOrbit, GroupSize, SlotIndex, false);
+            const float MinRadius = FMath::Min(WaitingRingRadiusMin, WaitingRingRadiusMax);
+            const float MaxRadius = FMath::Max(WaitingRingRadiusMin, WaitingRingRadiusMax);
+            const uint32 StableId = GetOwner()->GetUniqueID();
+            const float RadiusAlpha = static_cast<float>(StableId % 101u) / 100.f;
+            const float WaitingRadius = FMath::Lerp(FMath::Max(DesiredRange * 1.35f, MinRadius), FMath::Max(DesiredRange * 1.35f, MaxRadius), RadiusAlpha);
+            const FVector WaitingGoal = ComputeCombatRingPosition(CurrentTarget, SlotIndex, GroupSize, OrbitDirectionSign, WaitingRadius, bOrbitWhileWaiting);
+
+            if (!MyCombat->bIsAttacking && !MyCombat->bIsBlocking)
+                MoveToCombatPosition(AI, WaitingGoal, FMath::Max(MoveAcceptanceRadius, 70.f));
+
+            if (bFaceTargetWhileWaiting) FaceTarget(CurrentTarget);
+            if (bAllowAbilitiesWhileWaitingForMeleeSlot && !MyCombat->bIsBlocking) TryUseAutomaticAbility();
+            return;
+        }
+
+        SetGroupCombatRole(EARPGGroupCombatRole::ActiveAttacker, GroupSize, SlotIndex, true);
+        const float AttackRadius = FMath::Max(MinimumAttackApproachRadius, DesiredRange * FMath::Clamp(AttackApproachRadiusMultiplier, 0.35f, 1.f));
+        const FVector AttackGoal = ComputeCombatRingPosition(CurrentTarget, SlotIndex, GroupSize, OrbitDirectionSign, AttackRadius, false);
+        const bool bNearAttackGoal = FVector::DistSquared2D(GetOwner()->GetActorLocation(), AttackGoal) <= FMath::Square(FMath::Max(25.f, AttackPositionTolerance));
+
+        if (!MyCombat->bIsAttacking && (!bNearAttackGoal || Distance > DesiredRange || !bLOS))
+        {
+            if (!MyCombat->bIsBlocking) MoveToCombatPosition(AI, AttackGoal, FMath::Max(25.f, AttackPositionTolerance * 0.65f));
+            FaceTarget(CurrentTarget);
+            return;
+        }
+    }
+    else
+    {
+        SetGroupCombatRole(EARPGGroupCombatRole::Solo, GroupSize, SlotIndex, true);
+    }
 
     if (Distance > DesiredRange || !bLOS)
     {
@@ -537,14 +907,25 @@ void UARPGAICombatComponent::Think()
         {
             AI->MoveToActor(CurrentTarget, FMath::Max(25.f, MoveAcceptanceRadius), true, true, true, nullptr, true);
             ActiveMoveTarget = CurrentTarget;
+            bHasActiveMoveLocation = false;
+            LastMoveIssuedAt = GetWorld() ? GetWorld()->GetTimeSeconds() : LastMoveIssuedAt;
         }
         return;
     }
 
     AI->StopMovement();
-    ActiveMoveTarget.Reset();
+    ResetActiveMoveState();
     FaceTarget(CurrentTarget);
     if (MyCombat->bIsBlocking) return;
     if (TryUseAutomaticAbility()) return;
-    MyCombat->PerformBasicAttack(CurrentTarget);
+    if (MyCombat->PerformBasicAttack(CurrentTarget))
+    {
+        if (GetWorld())
+        {
+            LastAttackCommitAt = GetWorld()->GetTimeSeconds();
+            NextAttackSlotEligibleAt = LastAttackCommitAt + FMath::Max(0.f, AttackSlotCooldownAfterAttack);
+        }
+        bHadAttackSlotLastThink = false;
+        AttackSlotGrantedAt = -1.f;
+    }
 }

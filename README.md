@@ -7,6 +7,20 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 1.8.0-alpha disposition reset + coordinated group combat
+
+This revision completes the retaliation lifecycle and upgrades multi-NPC melee encounters:
+
+- temporary neutral/missing-faction retaliation is cleared immediately when the aggressor dies, so a respawned player is evaluated from the NPC's original faction/fallback settings instead of inheriting stale hostility;
+- stale temporary threat against dead targets is cleared with the aggression memory by default;
+- genuine authored hostile factions remain genuine hostiles and can reacquire a respawned player normally;
+- allied melee AI attacking the same target share engagement openings, with three simultaneous active attackers by default;
+- waiting attackers spread around an outer combat ring, stay focused/facing the target, orbit/reposition through NavMesh, and rotate into openings after committed attacks or yielded/unreachable slots;
+- attack and waiting positions are projected to Navigation and move goals are throttled so the system does not restart a path every AI think;
+- Blueprint runtime state exposes each NPC's combat role, group size, slot index and whether it currently owns a melee attack opening.
+
+See `Docs/GROUP_COMBAT.md` and `Docs/AI_AGGRO_ASSIST.md`.
+
 ## 1.7.0-alpha automatic aggro / retaliation / ally assist
 
 This revision makes `ARPGAICharacter` reliably defend itself and help nearby allies even when faction authoring is neutral, incomplete, or temporarily missing:

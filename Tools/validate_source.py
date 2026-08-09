@@ -253,6 +253,44 @@ if faction_cpp.exists():
     if "ShouldAttackOnSight" not in faction_text or "bAttackHostileOnSight" not in faction_text:
         issues.append("Faction attack-on-sight flag must be consumed by runtime faction logic")
 
+
+# v1.8 target-death disposition reset + coordinated melee group combat requirements.
+if ai_combat_header.exists():
+    ai_combat_header_text = ai_combat_header.read_text(errors="replace")
+    for required in (
+        "bRestoreOriginalDispositionAfterTargetDeath = true",
+        "bClearThreatAgainstDeadTargets = true",
+        "bEnableGroupCombatCoordination = true",
+        "MaxSimultaneousMeleeAttackers = 3",
+        "EARPGGroupCombatRole",
+        "CurrentGroupCombatRole",
+        "bHasMeleeAttackSlot",
+        "ForgetTemporaryAggressionAgainst",
+        "ForgetAllTemporaryAggression",
+    ):
+        if required not in ai_combat_header_text:
+            issues.append(f"v1.8 AI target reset/group combat missing setting or API: {required}")
+
+if ai_combat_cpp.exists():
+    ai_combat_text = ai_combat_cpp.read_text(errors="replace")
+    for required in (
+        "BindTargetLifeState",
+        "UnbindTargetLifeState",
+        "HandleTargetLifeStateChanged",
+        "OnLifeStateChanged.AddDynamic",
+        "ForgetTemporaryAggressionAgainst(DeadTarget",
+        "GatherCoordinatedMeleeAttackers",
+        "EvaluateMeleeAttackSlot",
+        "ComputeCombatRingPosition",
+        "ProjectCombatPositionToNavigation",
+        "MoveToCombatPosition",
+        "SetFocus(CurrentTarget",
+        "EARPGGroupCombatRole::WaitingOrbit",
+        "EARPGGroupCombatRole::ActiveAttacker",
+    ):
+        if required not in ai_combat_text:
+            issues.append(f"v1.8 AI target reset/group combat runtime missing: {required}")
+
 storage_header = root / "Public" / "Crafting" / "ARPGStorageActor.h"
 if storage_header.exists() and "TObjectPtr<UARPGFactionOwnershipComponent> Ownership" in storage_header.read_text():
     issues.append("Storage actor duplicates base building Ownership component")

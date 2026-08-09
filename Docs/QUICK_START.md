@@ -229,6 +229,14 @@ The existing `Basic Attack` Character function automatically uses the locked tar
 
 The default targeting filter is hostile factions. Make sure the Player faction and enemy faction relationship is negative, or disable `Only Hostile Targets` for a different project rule.
 
+## v1.8 group-combat defaults
+
+Normal `ARPGAICharacter` NPCs require no extra Blueprint graph for coordinated melee combat. Leave `Enable Group Combat Coordination` ON and the default `Max Simultaneous Melee Attackers = 3`: when a crowd shares one target, up to three melee NPCs commit while the rest spread/orbit around the target through NavMesh and rotate into openings.
+
+For passive retaliation creatures, also leave `Restore Original Disposition After Target Death` and `Clear Threat Against Dead Targets` ON. If a neutral chicken kills a player who attacked it, the temporary aggression is forgotten immediately; the respawned player is evaluated from the chicken's original faction/fallback settings again.
+
+See `Docs/GROUP_COMBAT.md`.
+
 ## v1.5 spawner movement modes
 
 For `ARPGAISpawner`, choose `Movement Mode`:

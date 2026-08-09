@@ -21,6 +21,20 @@ Result:
 
 Retaliation is temporary. `Retaliation Memory Seconds` controls how long a neutral/unknown aggressor is treated as a valid hostile combat target.
 
+## Returning to the original disposition after a kill
+
+Temporary retaliation is now explicitly life-state scoped. `Restore Original Disposition After Target Death` and `Clear Threat Against Dead Targets` are enabled by default on `ARPGAICombatComponent`.
+
+When the current retaliation target dies or enters another non-Alive combat life state, the AI immediately removes that actor from temporary retaliation memory, removes its stale temporary threat entry, clears the combat target and resumes its normal spline/free-roam/home behavior. A respawned player is therefore evaluated again from the authored faction relationship and proactive fallback values.
+
+This distinction is intentional:
+
+- a **neutral/passive chicken** that only fought because the player attacked it becomes neutral/passive again after that player dies;
+- a creature whose faction is genuinely **Hostile** to Player remains authored hostile and may acquire the respawned player again;
+- `Fallback: Attack Players On Sight` also remains a deliberate proactive rule and is not erased by retaliation cleanup.
+
+Advanced Blueprint/server logic can call `Forget Temporary Aggression Against` or `Forget All Temporary Aggression` without rewriting the faction Data Asset.
+
 ## Nearby chickens / allies helping
 
 `Call For Help When Attacked` is enabled by default. The directly attacked AI scans `Ally Assist Radius` for compatible ARPG AI and sends a one-hop help call.
