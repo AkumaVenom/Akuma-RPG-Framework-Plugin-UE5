@@ -7,6 +7,21 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 1.9.1-alpha host-synchronized day/night world time
+
+This revision adds a first-class `ARPGDayNightCycle` world actor designed to work out of the box:
+
+- `Host System Clock` is the default source and uses the authority machine's local PC time, including its time-zone/DST behavior;
+- clients receive the authority clock and extrapolate smoothly between replicated clock samples so multiplayer worlds share one time of day;
+- the placed actor includes a Sun, Moon, Sky Atmosphere, real-time-capture Sky Light and Exponential Height Fog, while external lighting actors can be assigned instead;
+- sun/moon rotation, intensity, sky fill and fog transition continuously through the 24-hour clock;
+- Dawn / Day / Dusk / Night phase boundaries are designer-exposed and separate from visual brightness;
+- global Blueprint-pure green nodes provide `Is Day`, `Is Night`, `Get World Hour`, `Get World Date Time`, `Get Day Night Phase` and `Get Daylight Amount`;
+- phase/hour delegates provide dawn, day, dusk, night and hourly gameplay events;
+- Fixed Time and accelerated Simulated Clock modes are included for PIE/testing without changing the host PC clock.
+
+See `Docs/DAY_NIGHT.md`.
+
 ## 1.8.0-alpha disposition reset + coordinated group combat
 
 This revision completes the retaliation lifecycle and upgrades multi-NPC melee encounters:

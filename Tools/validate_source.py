@@ -291,6 +291,60 @@ if ai_combat_cpp.exists():
         if required not in ai_combat_text:
             issues.append(f"v1.8 AI target reset/group combat runtime missing: {required}")
 
+
+# v1.9 host-synchronized day/night requirements.
+daynight_header = root / "Public" / "World" / "ARPGDayNightCycle.h"
+daynight_cpp = root / "Private" / "World" / "ARPGDayNightCycle.cpp"
+time_lib_header = root / "Public" / "Utilities" / "ARPGWorldTimeLibrary.h"
+time_lib_cpp = root / "Private" / "Utilities" / "ARPGWorldTimeLibrary.cpp"
+if not daynight_header.exists() or not daynight_cpp.exists():
+    issues.append("v1.9 requires the first-class ARPGDayNightCycle actor")
+else:
+    dh = daynight_header.read_text(errors="replace")
+    dc = daynight_cpp.read_text(errors="replace")
+    for required in (
+        "HostSystemClock",
+        "bUseBuiltInLightingRig = true",
+        "UDirectionalLightComponent",
+        "USkyLightComponent",
+        "USkyAtmosphereComponent",
+        "UExponentialHeightFogComponent",
+        "IsDay() const",
+        "IsNight() const",
+        "GetDayNightPhase() const",
+        "OnDawnStarted",
+        "OnNightStarted",
+        "ReplicatedHostDateTime",
+    ):
+        if required not in dh:
+            issues.append(f"v1.9 day/night header missing: {required}")
+    for required in (
+        "FDateTime::Now()",
+        "DOREPLIFETIME(AARPGDayNightCycle, ReplicatedHostDateTime)",
+        "GetRealTimeSeconds",
+        "SetAtmosphereSunLight(true)",
+        "SetRealTimeCapture",
+        "SetFogDensity",
+        "SetWorldRotation",
+    ):
+        if required not in dc:
+            issues.append(f"v1.9 day/night runtime missing: {required}")
+    if "RecaptureSky(" in dc:
+        issues.append("v1.9 day/night must not repeatedly use costly RecaptureSky; use Real Time Capture")
+    if '#include "Engine/SkyAtmosphere.h"' in dc:
+        issues.append('ARPGDayNightCycle uses obsolete UE5.8 include Engine/SkyAtmosphere.h; use Components/SkyAtmosphereComponent.h')
+    if '#include "Components/SkyAtmosphereComponent.h"' not in dc:
+        issues.append('ARPGDayNightCycle must include Components/SkyAtmosphereComponent.h for UE5.8 Sky Atmosphere types')
+
+if not time_lib_header.exists() or not time_lib_cpp.exists():
+    issues.append("v1.9 requires global ARPGWorldTimeLibrary pure Blueprint nodes")
+else:
+    th = time_lib_header.read_text(errors="replace")
+    for required in ('DisplayName=\"Is Day\"', 'DisplayName=\"Is Night\"', 'DisplayName=\"Get World Hour\"', 'DisplayName=\"Get World Date Time\"', 'DisplayName=\"Get Day Night Phase\"', 'DisplayName=\"Get Daylight Amount\"'):
+        if required not in th:
+            issues.append(f"v1.9 world-time library missing pure node: {required}")
+
+
 storage_header = root / "Public" / "Crafting" / "ARPGStorageActor.h"
 if storage_header.exists() and "TObjectPtr<UARPGFactionOwnershipComponent> Ownership" in storage_header.read_text():
     issues.append("Storage actor duplicates base building Ownership component")

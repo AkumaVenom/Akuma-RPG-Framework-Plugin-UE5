@@ -1,3 +1,22 @@
+## 1.9.1-alpha — 2026-08-10
+
+- Fixed the UE 5.8.1 Day/Night compile failure caused by the invalid `Engine/SkyAtmosphere.h` include.
+- `ASkyAtmosphere` and `USkyAtmosphereComponent` are declared by `Components/SkyAtmosphereComponent.h` in UE 5.8; the day/night implementation now relies on that correct Engine header only.
+- Added validator coverage that rejects the obsolete `Engine/SkyAtmosphere.h` include and requires `Components/SkyAtmosphereComponent.h` for the day/night source.
+- No Day/Night behavior was removed: host-system-clock authority, replicated world time, built-in sun/moon/sky/fog rig, pure day/night queries, and test clock modes are retained.
+
+## 1.9.0-alpha — 2026-08-10
+
+- Added `ARPGDayNightCycle`, a drop-in replicated day/night actor that follows the authority/host computer's local system clock by default.
+- Added a built-in dynamic Sun + Moon + Sky Atmosphere + real-time Sky Light + Exponential Height Fog rig for one-actor level setup.
+- Added optional external Sun/Moon/Sky Light/Sky Atmosphere/Fog actor references for projects that already own a lighting rig.
+- Added smooth client clock extrapolation between replicated authority snapshots so celestial movement does not visibly step with network updates.
+- Added explicit Dawn/Day/Dusk/Night phases, exposed semantic boundaries, phase/hour events and lighting-independent day/night gameplay checks.
+- Added global Blueprint-pure `ARPG World Time` nodes: Is Day, Is Night, Get World Hour, Get World Date Time, Get Day Night Phase and Get Daylight Amount.
+- Added Fixed Time and accelerated Simulated Clock testing modes plus a designer clock offset.
+- Added smooth sun/moon rotation and exposed day/night intensity, color, skylight and fog tuning.
+- Uses Sky Light Real Time Capture for dynamic environment lighting rather than repeatedly calling costly manual sky recaptures.
+
 # Changelog
 
 ## 1.8.0-alpha — 2026-08-10

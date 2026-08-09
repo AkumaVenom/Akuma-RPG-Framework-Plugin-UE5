@@ -1,6 +1,6 @@
-# Source Validation — Akuma's RPG Framework v1.8.0-alpha
+# Source Validation — Akuma's RPG Framework v1.9.1-alpha
 
-Package: **Akuma's RPG Framework — 1.8.0-alpha Group Combat Polish**  
+Package: **Akuma's RPG Framework — 1.9.1-alpha Day/Night Compile Fix**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
@@ -8,6 +8,32 @@ Target: **Unreal Engine 5.8 / 5.8.1**
 This generation environment does not contain Epic's UE 5.8.1 build toolchain, so the package is **not** claimed to have completed a real Unreal Development Editor compile here. The user's local UE 5.8.1 build remains authoritative. Static/source validation is used to catch structural and known source regressions before that build.
 
 All previous real-build fixes through v1.4.1 are retained, including the explicit `Navigation/PathFollowingComponent.h` dependency used by the AI spline component.
+
+
+## v1.9.1 UE 5.8.1 compile fix
+
+The user's UE 5.8.1 Development Editor build reached the new day/night translation unit and failed on `#include "Engine/SkyAtmosphere.h"`. UE 5.8 declares both `ASkyAtmosphere` and `USkyAtmosphereComponent` in `Components/SkyAtmosphereComponent.h`. The invalid Engine include has been removed, and the source validator now checks this exact regression.
+
+## v1.9 day/night checks
+
+The static validator additionally checks that:
+
+- the framework contains the placeable replicated `ARPGDayNightCycle` actor and global `ARPGWorldTimeLibrary` Blueprint-pure query library;
+- Host System Clock remains the default source and the runtime uses `FDateTime::Now()` on authority;
+- the authority clock is replicated and clients extrapolate from replicated time using real elapsed seconds;
+- the built-in rig contains Sun, Moon, Sky Light, Sky Atmosphere and Exponential Height Fog components;
+- Sky Light Real Time Capture is used for dynamic time-of-day rather than repeated `RecaptureSky()` calls;
+- pure Is Day / Is Night / world-hour / date-time / phase / daylight nodes and phase events remain present.
+
+### v1.9 runtime cases
+
+1. Place one `ARPG Day Night Cycle`, leave Host System Clock selected, start PIE and verify the displayed/getter time matches the host PC local clock.
+2. Test around configured Day Start / Night Start using Fixed Time; confirm Is Day / Is Night and Dawn/Day/Dusk/Night phase nodes/events change at the authored boundaries.
+3. Use Simulated Clock at a high rate; verify sun/moon rotation, Sky Light fill and fog transition smoothly through sunrise/sunset.
+4. Listen-server + client: verify both machines report the host's world hour even if the client PC clock differs.
+5. Disconnect/reconnect a client and verify the replicated time snaps to the host once, then advances smoothly rather than stepping every replication interval.
+6. Disable Built-In Lighting Rig, assign external Sun/Moon/Sky/Fog actors and confirm the same clock drives the project lighting rig.
+
 
 ## v1.8 target-reset + group-combat checks
 
@@ -48,20 +74,22 @@ Run:
 python Tools/validate_source.py
 ```
 
-The machine-readable result is emitted separately as `AkumasRPGFramework_validation_v1.8.0.json` during packaging.
+The machine-readable result is emitted separately as `AkumasRPGFramework_validation_v1.9.1.json` during packaging.
 
 ## Recommended UE 5.8.1 test pass
 
-1. Replace the complete previous plugin folder with v1.8.0 and clear project/plugin `Intermediate` plus old plugin `Binaries`.
+1. Replace the complete previous plugin folder with v1.9.1 and clear project/plugin `Intermediate` plus old plugin `Binaries`.
 2. Build Development Editor / Win64.
-3. Create/use a passive `ARPGAICharacter` chicken with no faction configured. Leave `Retaliate When Attacked`, `Retaliate When Faction Unknown`, `Call For Help When Attacked`, and `Assist Same Class When Faction Unknown` enabled. Attack one chicken and confirm it immediately stops free roam, targets the player, chases and attacks.
-4. Place another chicken inside `Ally Assist Radius`; confirm it joins the fight even with no faction Data Asset.
-5. Spawn several chickens from one `ARPGAISpawner`; confirm same-spawner-group assistance works even when `Stay Together` is disabled.
-6. Assign a Chicken Faction Data Asset and keep Player relationship at `0`; confirm the chicken remains passive until hit, then retaliates because neutral retaliation override is enabled.
-7. Set Chicken -> Player relationship negative with `Attack Hostile On Sight = true`; confirm proactive acquisition works.
-8. Set `Attack Hostile On Sight = false` while keeping the negative relationship; confirm the chicken does not initiate combat but still retaliates when attacked.
-9. Set `Fallback: Attack Players On Sight = true` with missing/neutral faction data; confirm proactive faction-free monster behavior works.
-10. Re-test free roam/spline resumption after combat, ragdoll death, lock-on camera, hit FX/audio and stagger/knockback.
+3. Place one `ARPG Day Night Cycle` and test Host System Clock, Fixed Time and accelerated Simulated Clock before the retained combat/AI regression pass.
+4. In a listen-server + client PIE session, verify both peers report the host world time and the client lighting transitions smoothly between clock syncs.
+5. Create/use a passive `ARPGAICharacter` chicken with no faction configured. Leave `Retaliate When Attacked`, `Retaliate When Faction Unknown`, `Call For Help When Attacked`, and `Assist Same Class When Faction Unknown` enabled. Attack one chicken and confirm it immediately stops free roam, targets the player, chases and attacks.
+6. Place another chicken inside `Ally Assist Radius`; confirm it joins the fight even with no faction Data Asset.
+7. Spawn several chickens from one `ARPGAISpawner`; confirm same-spawner-group assistance works even when `Stay Together` is disabled.
+8. Assign a Chicken Faction Data Asset and keep Player relationship at `0`; confirm the chicken remains passive until hit, then retaliates because neutral retaliation override is enabled.
+9. Set Chicken -> Player relationship negative with `Attack Hostile On Sight = true`; confirm proactive acquisition works.
+10. Set `Attack Hostile On Sight = false` while keeping the negative relationship; confirm the chicken does not initiate combat but still retaliates when attacked.
+11. Set `Fallback: Attack Players On Sight = true` with missing/neutral faction data; confirm proactive faction-free monster behavior works.
+12. Re-test free roam/spline resumption after combat, ragdoll death, lock-on camera, hit FX/audio and stagger/knockback.
 
 ### v1.8 runtime cases
 
@@ -73,4 +101,4 @@ The machine-readable result is emitted separately as `AkumasRPGFramework_validat
 
 ## Retained compile fixes
 
-The v1.8 tree retains prior fixes discovered through real UE 5.8.1 Development Editor builds: GameplayTags/GameplayTasks descriptor correction, AttributeSet replication fix, battle-pet cooldown fix, CharacterMovement/PlayerState includes, mount Controller shadow naming, targeting `TSubclassOf` ambiguity fix, and AI spline Path Following include fix.
+The v1.9 tree retains prior fixes discovered through real UE 5.8.1 Development Editor builds: GameplayTags/GameplayTasks descriptor correction, AttributeSet replication fix, battle-pet cooldown fix, CharacterMovement/PlayerState includes, mount Controller shadow naming, targeting `TSubclassOf` ambiguity fix, and AI spline Path Following include fix.

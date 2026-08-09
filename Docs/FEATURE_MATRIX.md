@@ -1,4 +1,4 @@
-# Feature Matrix — v1.8 Group Combat Polish
+# Feature Matrix — v1.9 Host-Synchronized Day/Night
 
 Legend:
 
@@ -8,6 +8,7 @@ Legend:
 | Area | Status | Included in this source build |
 |---|---|---|
 | Ready RPG character | Implemented | Main components preinstalled on `AARPGCharacter`. |
+| Day / night world time | Implemented | Drop-in `ARPGDayNightCycle` with host-PC local time authority, replicated/smoothed client clock, built-in sun/moon/Sky Atmosphere/real-time Sky Light/fog rig, external-light support, semantic dawn/day/dusk/night phases, events and global Blueprint-pure time/day/night nodes. |
 | GAS integration | Implemented | Ability-system component/attribute set/ability bridge, `ARPGGameplayAbility` lock-on targeting policy/TargetData helpers and effect-friendly data hooks. |
 | Automatic action-RPG combat | Implemented | Class-driven melee/ranged/magic basic attacks, ordered montage combos, timed sphere traces/hitscan/projectiles, damage/crit/armor, dodge, block/parry/guard break, critical-hit stagger/knockback, Niagara/Cascade impact FX, exposed combat audio, hit reactions and combat state tags. |
 | Player lock-on targeting | Implemented | `ARPGTargetingComponent` is preinstalled on `ARPGCharacter`: toggle lock, camera-centered hostile acquisition, continuous Z-target camera/control-rotation tracking, continuous player facing/strafe mode, left/right switching, LOS/range validation, animated marker, server target validation and GAS target-data helpers. |

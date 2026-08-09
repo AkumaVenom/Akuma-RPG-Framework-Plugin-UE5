@@ -51,6 +51,27 @@ For the complete default flow, derive project classes from:
 
 This gives you the persistent-world hooks and unified chat routing used by the framework.
 
+## 3A. Add the automatic day / night cycle
+
+Place **`ARPG Day Night Cycle`** once in the persistent level. For the fastest setup, leave **Use Built-In Lighting Rig** enabled and remove/disable duplicate project Sun / Sky Light / Sky Atmosphere actors.
+
+Default behavior is **Host System Clock**: in standalone/listen-server play the world follows the host PC's local time; connected clients follow the replicated host clock. No Level Blueprint Tick graph is required.
+
+Global Blueprint-pure nodes are available anywhere with world context:
+
+```text
+Is Day
+Is Night
+Get World Hour
+Get World Date Time
+Get Day Night Phase
+Get Daylight Amount
+```
+
+Bind the placed actor's `On Dawn Started`, `On Day Started`, `On Dusk Started`, `On Night Started`, `On Phase Changed` or `On Hour Changed` delegates when event-driven gameplay is preferred.
+
+For testing, change **Time Source** to Fixed Time or Simulated Clock. See `Docs/DAY_NIGHT.md`.
+
 ## 4. Create content as Data Assets
 
 Create Data Assets for the systems you use:
