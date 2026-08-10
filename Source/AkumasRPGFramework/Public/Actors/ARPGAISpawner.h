@@ -19,6 +19,7 @@ struct AKUMASRPGFRAMEWORK_API FARPGSpawnEntry
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FARPGOnSpawnedAI, APawn*, Pawn);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FARPGOnSpawnGroupDefeated);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FARPGOnSpawnerPopulationStateChanged);
 
 UENUM(BlueprintType)
 enum class EARPGSpawnerMovementMode : uint8
@@ -55,6 +56,53 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn", meta=(ClampMin="0")) float RespawnDelay = 20.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn", meta=(ClampMin="0")) float CorpseDespawnDelay = 8.f;
 
+    /**
+     * Performance streaming for spawned AI. When enabled, this spawner stays unloaded until a player-controlled pawn
+     * enters Spawn Activation Radius, then unloads again only after every relevant player is beyond Despawn Radius.
+     * Separate radii provide hysteresis so standing near the boundary cannot rapidly spawn/despawn the population.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population")
+    bool bEnableDistanceBasedPopulation = true;
+
+    /** Automatically load/spawn this population when a player enters Spawn Activation Radius. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population")
+    bool bAutoSpawnWhenPlayerIsNear = true;
+
+    /** Distance from the spawner at which an unloaded population becomes relevant and spawns. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population", meta=(ClampMin="100.0", Units="cm"))
+    float SpawnActivationRadius = 6000.f;
+
+    /** Distance at which an already-loaded population may unload. Keep this larger than Spawn Activation Radius. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population", meta=(ClampMin="100.0", Units="cm"))
+    float DespawnRadius = 8000.f;
+
+    /** How often this server-only spawner evaluates player relevance. No Actor Tick is used. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population", meta=(ClampMin="0.25", ClampMax="30.0", Units="s"))
+    float PopulationCheckInterval = 1.25f;
+
+    /** Player must remain outside the despawn radius for this long before the population is unloaded. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population", meta=(ClampMin="0.0", ClampMax="60.0", Units="s"))
+    float DistanceDespawnDelay = 3.f;
+
+    /** Ignore vertical separation when measuring relevance. Recommended for normal outdoor/open-world spawners. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population")
+    bool bUse2DPlayerDistance = true;
+
+    /**
+     * Keep a loaded group relevant while a player is near one of its spawned NPCs, even if that NPC has travelled far
+     * from the spawner on a spline/free-roam route. Inactive spawners still activate from the spawner origin.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population")
+    bool bKeepLoadedNearSpawnedPawns = true;
+
+    /** Optional persistence override. Disabled by default so leaving an area always wins for performance. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population")
+    bool bPreventDistanceDespawnWhileInCombat = false;
+
+    /** Re-roll Min/Max Group Size each time distance streaming reloads the group. Disabled preserves the previous desired count. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|Distance Population")
+    bool bRerollGroupSizeOnDistanceReload = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Leash") bool bStayInRange = true;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Leash", meta=(ClampMin="100")) float MaxLeashDistance = 2500.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Leash", meta=(ClampMin="0.1")) float LeashCheckInterval = 1.f;
@@ -86,8 +134,14 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime") TArray<TObjectPtr<APawn>> SpawnedPawns;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime") TObjectPtr<APawn> GroupLeader;
+    /** True while this spawner's NPC population is currently loaded/relevant. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime|Performance") bool bPopulationActive = false;
+    /** Nearest relevant player distance from the spawner/population. -1 means no player-controlled pawn is currently available. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime|Performance") float NearestRelevantPlayerDistance = -1.f;
     UPROPERTY(BlueprintAssignable) FARPGOnSpawnedAI OnSpawnedAI;
     UPROPERTY(BlueprintAssignable) FARPGOnSpawnGroupDefeated OnSpawnGroupDefeated;
+    UPROPERTY(BlueprintAssignable, Category="ARPG|AI Spawner|Performance") FARPGOnSpawnerPopulationStateChanged OnPopulationActivated;
+    UPROPERTY(BlueprintAssignable, Category="ARPG|AI Spawner|Performance") FARPGOnSpawnerPopulationStateChanged OnPopulationDeactivated;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner", meta=(BlueprintAuthorityOnly)) void SpawnGroup();
     UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner", meta=(BlueprintAuthorityOnly)) APawn* SpawnOne();
@@ -96,6 +150,13 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner", meta=(BlueprintAuthorityOnly)) void SetStayTogether(bool bNewStayTogether);
     UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner", meta=(BlueprintAuthorityOnly)) void SetMovementMode(EARPGSpawnerMovementMode NewMode, bool bApplyToExisting = true);
     UFUNCTION(BlueprintPure, Category="ARPG|AI Spawner") int32 GetAliveCount() const;
+    UFUNCTION(BlueprintPure, Category="ARPG|AI Spawner|Performance") bool IsPopulationActive() const { return bPopulationActive; }
+    UFUNCTION(BlueprintPure, Category="ARPG|AI Spawner|Performance") float GetNearestRelevantPlayerDistance() const { return NearestRelevantPlayerDistance; }
+    UFUNCTION(BlueprintPure, Category="ARPG|AI Spawner|Performance") bool IsPlayerInsideSpawnActivationRadius() const;
+    /** Immediately re-evaluate player proximity instead of waiting for the next staggered performance timer. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner|Performance", meta=(BlueprintAuthorityOnly)) void EvaluatePopulationRelevanceNow();
+    /** Manually load/unload the distance-streamed population. Automatic distance checks continue afterward. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner|Performance", meta=(BlueprintAuthorityOnly)) void SetPopulationActive(bool bNewActive);
 
     virtual void BeginPlay() override;
 protected:
@@ -103,11 +164,26 @@ protected:
     FTimerHandle LeashTimer;
     FTimerHandle GroupCohesionTimer;
     FTimerHandle RespawnTimer;
+    FTimerHandle PopulationRelevanceTimer;
     TSet<TWeakObjectPtr<APawn>> CohesionRecoveringPawns;
     int32 CurrentGroupSplineDirectionSign = 1;
+    int32 PreservedImmediatePopulationCount = 0;
+    double OutOfRangeSinceTime = -1.0;
+    double RespawnNotBeforeTime = 0.0;
+    bool bWholeGroupRespawnPending = false;
     FVector ChooseSpawnLocation() const;
     TSubclassOf<APawn> ChoosePawnClass() const;
     void CheckLeashes();
+    void CheckPopulationRelevance();
+    void ActivateDistancePopulation();
+    void DeactivateDistancePopulation();
+    void StartActiveRuntimeTimers();
+    void StopActiveRuntimeTimers();
+    void SpawnUntilAliveCount(int32 TargetAliveCount);
+    float FindNearestRelevantPlayerDistance(bool bIncludeSpawnedPawnAnchors) const;
+    float GetEffectiveDespawnRadius() const;
+    bool HasAnySpawnedPawnInCombat() const;
+    void ResumePopulationAfterDistanceLoad();
     void CheckGroupCohesion();
     void ReplenishGroup();
     void ConfigureSpawnedPawn(APawn* Pawn);

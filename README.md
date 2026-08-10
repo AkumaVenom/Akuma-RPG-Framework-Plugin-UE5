@@ -7,6 +7,20 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 1.10.0-alpha distance-streamed AI populations
+
+`ARPGAISpawner` now treats NPC population as a streamed gameplay resource instead of leaving every spawned AI alive forever:
+
+- distance population streaming is enabled by default; unloaded spawners wait until a player enters the exposed activation radius before spawning their group;
+- a larger despawn radius plus delay creates hysteresis so players near the edge do not cause rapid spawn/despawn cycling;
+- active patrol/free-roam groups remain loaded when a player is close to one of the spawned NPCs, even if that NPC travelled far away from the spawner;
+- unloading is not death and cannot grant loot/XP/quest credit or fire group-defeated events;
+- inactive spawners stop their ordinary leash/cohesion work and keep only a staggered low-frequency server relevance timer;
+- pending individual/whole-group respawn cooldowns survive distance unloads, and Never-respawn populations stay permanently defeated;
+- Blueprint exposes population state, nearest-player distance, force/evaluate helpers and activation/deactivation events.
+
+See `Docs/AI_SPAWNER_PERFORMANCE.md`.
+
 ## 1.9.1-alpha host-synchronized day/night world time
 
 This revision adds a first-class `ARPGDayNightCycle` world actor designed to work out of the box:

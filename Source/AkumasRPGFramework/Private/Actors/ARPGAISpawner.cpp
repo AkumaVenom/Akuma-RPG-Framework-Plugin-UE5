@@ -7,6 +7,8 @@
 #include "Components/ARPGCombatComponent.h"
 #include "Components/ARPGWandererComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "Engine/World.h"
 #include "NavigationSystem.h"
 #include "TimerManager.h"
 
@@ -22,28 +24,262 @@ void AARPGAISpawner::BeginPlay()
     if (!HasAuthority()) return;
 
     CurrentGroupSplineDirectionSign = ChooseGroupSplineDirectionSign();
-    if (bSpawnOnBeginPlay) SpawnGroup();
 
-    if (GetWorld())
+    if (bEnableDistanceBasedPopulation)
     {
-        // This timer also handles corpse cleanup, so it remains active even when positional leash is disabled.
-        GetWorld()->GetTimerManager().SetTimer(
-            LeashTimer,
-            this,
-            &AARPGAISpawner::CheckLeashes,
-            FMath::Max(0.1f, LeashCheckInterval),
-            true);
-
-        if (bStayTogether)
+        // Distance streaming supersedes unconditional BeginPlay population so far-away spawners start unloaded.
+        bPopulationActive = false;
+        if (GetWorld())
         {
+            const float Rate = FMath::Max(0.25f, PopulationCheckInterval);
+            const float FirstDelay = FMath::FRandRange(0.05f, Rate); // Stagger many spawners across frames.
             GetWorld()->GetTimerManager().SetTimer(
-                GroupCohesionTimer,
+                PopulationRelevanceTimer,
                 this,
-                &AARPGAISpawner::CheckGroupCohesion,
-                FMath::Max(0.1f, GroupCohesionCheckInterval),
-                true);
+                &AARPGAISpawner::CheckPopulationRelevance,
+                Rate,
+                true,
+                FirstDelay);
+        }
+        CheckPopulationRelevance();
+    }
+    else
+    {
+        bPopulationActive = true;
+        if (bSpawnOnBeginPlay) SpawnGroup();
+        StartActiveRuntimeTimers();
+    }
+}
+
+
+void AARPGAISpawner::StartActiveRuntimeTimers()
+{
+    if (!HasAuthority() || !GetWorld()) return;
+
+    FTimerManager& Timers = GetWorld()->GetTimerManager();
+    Timers.ClearTimer(LeashTimer);
+    Timers.ClearTimer(GroupCohesionTimer);
+
+    // Also owns corpse cleanup, so keep this running for every loaded population.
+    Timers.SetTimer(
+        LeashTimer,
+        this,
+        &AARPGAISpawner::CheckLeashes,
+        FMath::Max(0.1f, LeashCheckInterval),
+        true);
+
+    if (bStayTogether)
+    {
+        Timers.SetTimer(
+            GroupCohesionTimer,
+            this,
+            &AARPGAISpawner::CheckGroupCohesion,
+            FMath::Max(0.1f, GroupCohesionCheckInterval),
+            true);
+    }
+}
+
+void AARPGAISpawner::StopActiveRuntimeTimers()
+{
+    if (!GetWorld()) return;
+    FTimerManager& Timers = GetWorld()->GetTimerManager();
+    Timers.ClearTimer(LeashTimer);
+    Timers.ClearTimer(GroupCohesionTimer);
+}
+
+float AARPGAISpawner::GetEffectiveDespawnRadius() const
+{
+    // Always keep a real hysteresis band even if a designer accidentally enters a smaller despawn radius.
+    return FMath::Max(FMath::Max(100.f, DespawnRadius), FMath::Max(100.f, SpawnActivationRadius) + 100.f);
+}
+
+float AARPGAISpawner::FindNearestRelevantPlayerDistance(bool bIncludeSpawnedPawnAnchors) const
+{
+    UWorld* World = GetWorld();
+    if (!World) return -1.f;
+
+    float BestDistanceSq = MAX_flt;
+    bool bFoundPlayer = false;
+    const FVector SpawnerLocation = GetActorLocation();
+
+    for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+    {
+        const APlayerController* PC = It->Get();
+        if (!IsValid(PC)) continue;
+        const APawn* PlayerPawn = PC->GetPawn();
+        if (!IsValid(PlayerPawn)) continue;
+
+        bFoundPlayer = true;
+        const FVector PlayerLocation = PlayerPawn->GetActorLocation();
+        const float SpawnerDistanceSq = bUse2DPlayerDistance
+            ? FVector::DistSquared2D(PlayerLocation, SpawnerLocation)
+            : FVector::DistSquared(PlayerLocation, SpawnerLocation);
+        BestDistanceSq = FMath::Min(BestDistanceSq, SpawnerDistanceSq);
+
+        if (!bIncludeSpawnedPawnAnchors) continue;
+        for (const APawn* SpawnedPawn : SpawnedPawns)
+        {
+            if (!IsValid(SpawnedPawn)) continue;
+            const float PawnDistanceSq = bUse2DPlayerDistance
+                ? FVector::DistSquared2D(PlayerLocation, SpawnedPawn->GetActorLocation())
+                : FVector::DistSquared(PlayerLocation, SpawnedPawn->GetActorLocation());
+            BestDistanceSq = FMath::Min(BestDistanceSq, PawnDistanceSq);
         }
     }
+
+    return bFoundPlayer ? FMath::Sqrt(BestDistanceSq) : -1.f;
+}
+
+bool AARPGAISpawner::IsPlayerInsideSpawnActivationRadius() const
+{
+    const float Distance = FindNearestRelevantPlayerDistance(false);
+    return Distance >= 0.f && Distance <= FMath::Max(100.f, SpawnActivationRadius);
+}
+
+bool AARPGAISpawner::HasAnySpawnedPawnInCombat() const
+{
+    for (const APawn* Pawn : SpawnedPawns)
+        if (IsPawnAlive(Pawn) && IsPawnInCombat(Pawn)) return true;
+    return false;
+}
+
+void AARPGAISpawner::SpawnUntilAliveCount(int32 TargetAliveCount)
+{
+    const int32 SafeTarget = FMath::Max(0, TargetAliveCount);
+    while (GetAliveCount() < SafeTarget)
+        if (!SpawnOne()) break;
+}
+
+void AARPGAISpawner::ResumePopulationAfterDistanceLoad()
+{
+    if (!HasAuthority() || !GetWorld()) return;
+
+    GroupLeader = nullptr;
+    CohesionRecoveringPawns.Reset();
+    CurrentGroupSplineDirectionSign = ChooseGroupSplineDirectionSign();
+
+    if (DesiredGroupSize <= 0)
+    {
+        SpawnGroup();
+        PreservedImmediatePopulationCount = GetAliveCount();
+        return;
+    }
+
+    // Never-respawn groups must not be resurrected simply because world-distance streaming unloaded/reloaded them.
+    if (RespawnMode == EARPGRespawnMode::Never)
+    {
+        SpawnUntilAliveCount(FMath::Clamp(PreservedImmediatePopulationCount, 0, DesiredGroupSize));
+        RefreshSplineGroupDirectionLeaders();
+        return;
+    }
+
+    const double Now = GetWorld()->GetTimeSeconds();
+    const float RemainingRespawn = RespawnNotBeforeTime > Now
+        ? static_cast<float>(RespawnNotBeforeTime - Now)
+        : 0.f;
+
+    if (RemainingRespawn > 0.f)
+    {
+        // Restore only members that were alive when the area unloaded; dead members keep their real respawn cooldown.
+        SpawnUntilAliveCount(FMath::Clamp(PreservedImmediatePopulationCount, 0, DesiredGroupSize));
+        if (bWholeGroupRespawnPending && GetAliveCount() == 0)
+            GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &AARPGAISpawner::SpawnGroup, RemainingRespawn, false);
+        else
+            GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &AARPGAISpawner::ReplenishGroup, RemainingRespawn, false);
+    }
+    else if (bWholeGroupRespawnPending || bRerollGroupSizeOnDistanceReload)
+    {
+        SpawnGroup();
+    }
+    else
+    {
+        SpawnUntilAliveCount(DesiredGroupSize);
+        RespawnNotBeforeTime = 0.0;
+    }
+
+    RefreshSplineGroupDirectionLeaders();
+    PreservedImmediatePopulationCount = GetAliveCount();
+}
+
+void AARPGAISpawner::ActivateDistancePopulation()
+{
+    if (!HasAuthority() || bPopulationActive) return;
+
+    bPopulationActive = true;
+    OutOfRangeSinceTime = -1.0;
+    StartActiveRuntimeTimers();
+    ResumePopulationAfterDistanceLoad();
+    OnPopulationActivated.Broadcast();
+}
+
+void AARPGAISpawner::DeactivateDistancePopulation()
+{
+    if (!HasAuthority() || !bPopulationActive) return;
+
+    PreservedImmediatePopulationCount = GetAliveCount();
+    OutOfRangeSinceTime = -1.0;
+    StopActiveRuntimeTimers();
+    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(RespawnTimer);
+
+    // Remove delegates before destroying actors so distance-unload is never mistaken for defeat/death.
+    DespawnAll(true);
+    bPopulationActive = false;
+    OnPopulationDeactivated.Broadcast();
+}
+
+void AARPGAISpawner::CheckPopulationRelevance()
+{
+    if (!HasAuthority() || !bEnableDistanceBasedPopulation) return;
+
+    const bool bUsePawnAnchors = bPopulationActive && bKeepLoadedNearSpawnedPawns;
+    NearestRelevantPlayerDistance = FindNearestRelevantPlayerDistance(bUsePawnAnchors);
+
+    if (!bPopulationActive)
+    {
+        OutOfRangeSinceTime = -1.0;
+        if (bAutoSpawnWhenPlayerIsNear && NearestRelevantPlayerDistance >= 0.f &&
+            NearestRelevantPlayerDistance <= FMath::Max(100.f, SpawnActivationRadius))
+        {
+            ActivateDistancePopulation();
+        }
+        return;
+    }
+
+    if (bPreventDistanceDespawnWhileInCombat && HasAnySpawnedPawnInCombat())
+    {
+        OutOfRangeSinceTime = -1.0;
+        return;
+    }
+
+    const bool bStillRelevant = NearestRelevantPlayerDistance >= 0.f &&
+        NearestRelevantPlayerDistance <= GetEffectiveDespawnRadius();
+    if (bStillRelevant)
+    {
+        OutOfRangeSinceTime = -1.0;
+        return;
+    }
+
+    const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+    if (OutOfRangeSinceTime < 0.0)
+    {
+        OutOfRangeSinceTime = Now;
+        return;
+    }
+
+    if (DistanceDespawnDelay <= 0.f || (Now - OutOfRangeSinceTime) >= DistanceDespawnDelay)
+        DeactivateDistancePopulation();
+}
+
+void AARPGAISpawner::EvaluatePopulationRelevanceNow()
+{
+    CheckPopulationRelevance();
+}
+
+void AARPGAISpawner::SetPopulationActive(bool bNewActive)
+{
+    if (!HasAuthority()) return;
+    if (bNewActive) ActivateDistancePopulation();
+    else DeactivateDistancePopulation();
 }
 
 bool AARPGAISpawner::IsPawnAlive(const APawn* Pawn) const
@@ -269,12 +505,21 @@ APawn* AARPGAISpawner::SpawnOne()
     APawn* Pawn = GetWorld()->SpawnActor<APawn>(Class, ChooseSpawnLocation(), GetActorRotation(), Params);
     if (!Pawn) return nullptr;
 
+    const bool bWasInactive = !bPopulationActive;
+    if (bWasInactive)
+    {
+        bPopulationActive = true;
+        OutOfRangeSinceTime = -1.0;
+        StartActiveRuntimeTimers();
+    }
+
     Pawn->OnDestroyed.AddDynamic(this, &AARPGAISpawner::HandlePawnDestroyed);
     SpawnedPawns.Add(Pawn);
     RefreshGroupLeader();
     ConfigureSpawnedPawn(Pawn);
     RefreshSplineGroupDirectionLeaders();
     OnSpawnedAI.Broadcast(Pawn);
+    if (bWasInactive) OnPopulationActivated.Broadcast();
     return Pawn;
 }
 
@@ -294,7 +539,7 @@ void AARPGAISpawner::SetStayTogether(bool bNewStayTogether)
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().ClearTimer(GroupCohesionTimer);
-        if (bStayTogether)
+        if (bStayTogether && (!bEnableDistanceBasedPopulation || bPopulationActive))
         {
             GetWorld()->GetTimerManager().SetTimer(
                 GroupCohesionTimer,
@@ -320,6 +565,17 @@ void AARPGAISpawner::SpawnGroup()
 {
     if (!HasAuthority()) return;
 
+    const bool bWasInactive = !bPopulationActive;
+    if (bWasInactive)
+    {
+        bPopulationActive = true;
+        OutOfRangeSinceTime = -1.0;
+        StartActiveRuntimeTimers();
+    }
+
+    RespawnNotBeforeTime = 0.0;
+    bWholeGroupRespawnPending = false;
+
     if (GetAliveCount() == 0)
     {
         GroupLeader = nullptr;
@@ -335,6 +591,8 @@ void AARPGAISpawner::SpawnGroup()
         SpawnOne();
 
     RefreshSplineGroupDirectionLeaders();
+    PreservedImmediatePopulationCount = GetAliveCount();
+    if (bWasInactive) OnPopulationActivated.Broadcast();
 }
 
 void AARPGAISpawner::DespawnAll(bool bDestroyActors)
@@ -367,23 +625,34 @@ void AARPGAISpawner::HandlePawnDestroyed(AActor* DestroyedActor)
     RefreshSplineGroupDirectionLeaders();
 
     if (!HasAuthority() || !GetWorld()) return;
+    if (bEnableDistanceBasedPopulation && !bPopulationActive) return;
+
     if (GetAliveCount() == 0) OnSpawnGroupDefeated.Broadcast();
 
+    const float SafeRespawnDelay = FMath::Max(0.f, RespawnDelay);
     if (RespawnMode == EARPGRespawnMode::Individual)
     {
-        GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &AARPGAISpawner::ReplenishGroup, RespawnDelay, false);
+        bWholeGroupRespawnPending = false;
+        RespawnNotBeforeTime = GetWorld()->GetTimeSeconds() + SafeRespawnDelay;
+        GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &AARPGAISpawner::ReplenishGroup, SafeRespawnDelay, false);
     }
     else if (RespawnMode == EARPGRespawnMode::WholeGroup && GetAliveCount() == 0)
     {
-        GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &AARPGAISpawner::SpawnGroup, RespawnDelay, false);
+        bWholeGroupRespawnPending = true;
+        RespawnNotBeforeTime = GetWorld()->GetTimeSeconds() + SafeRespawnDelay;
+        GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &AARPGAISpawner::SpawnGroup, SafeRespawnDelay, false);
     }
 }
 
 void AARPGAISpawner::ReplenishGroup()
 {
     if (!HasAuthority()) return;
-    while (GetAliveCount() < DesiredGroupSize)
-        if (!SpawnOne()) break;
+    if (bEnableDistanceBasedPopulation && !bPopulationActive) return;
+
+    SpawnUntilAliveCount(DesiredGroupSize);
+    RespawnNotBeforeTime = 0.0;
+    bWholeGroupRespawnPending = false;
+    PreservedImmediatePopulationCount = GetAliveCount();
     RefreshSplineGroupDirectionLeaders();
 }
 

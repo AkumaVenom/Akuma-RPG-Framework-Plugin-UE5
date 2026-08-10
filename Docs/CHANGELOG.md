@@ -1,3 +1,17 @@
+## 1.10.0-alpha — 2026-08-10
+
+- Added first-class distance-based AI population streaming directly to `ARPGAISpawner`, enabled by default for performance.
+- Unloaded spawners automatically create their NPC population when a player-controlled pawn enters the exposed Spawn Activation Radius.
+- Loaded populations automatically despawn after all players remain beyond the larger Despawn Radius for the exposed delay, providing hysteresis and preventing boundary pop/thrash.
+- Active spline/free-roam populations can remain relevant while a player is near any spawned NPC, preventing long-route NPCs from disappearing beside the player merely because they travelled away from their spawner origin.
+- Distance unload is a clean streaming despawn: it removes destruction callbacks first, so no kill credit, loot, quest kills, group-defeated events or false respawn scheduling are generated.
+- Inactive spawners stop leash/group-cohesion timers; only a low-frequency server relevance timer remains, with randomized first-delay staggering across many spawners.
+- Added exposed optional combat retention, 2D/3D relevance distance, activation/despawn radii, unload delay, check interval and group-size re-roll policy.
+- Distance reload preserves desired group size by default and preserves real pending respawn cooldowns; members that were alive can return immediately while still-dead members wait out their remaining delay.
+- `Respawn Mode = Never` remains permanent across unload/reload and cannot be bypassed by leaving/re-entering the area.
+- Added Blueprint runtime status/controls: `Is Population Active`, `Get Nearest Relevant Player Distance`, `Is Player Inside Spawn Activation Radius`, `Evaluate Population Relevance Now`, `Set Population Active`, plus population activated/deactivated events.
+- Added `Docs/AI_SPAWNER_PERFORMANCE.md` and validator coverage for distance population streaming invariants.
+
 ## 1.9.1-alpha — 2026-08-10
 
 - Fixed the UE 5.8.1 Day/Night compile failure caused by the invalid `Engine/SkyAtmosphere.h` include.

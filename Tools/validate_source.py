@@ -345,6 +345,51 @@ else:
             issues.append(f"v1.9 world-time library missing pure node: {required}")
 
 
+
+# v1.10 distance-streamed AI spawner population requirements.
+spawner_header = root / "Public" / "Actors" / "ARPGAISpawner.h"
+spawner_cpp = root / "Private" / "Actors" / "ARPGAISpawner.cpp"
+if spawner_header.exists() and spawner_cpp.exists():
+    sh = spawner_header.read_text(errors="replace")
+    sc = spawner_cpp.read_text(errors="replace")
+    for required in (
+        "bEnableDistanceBasedPopulation = true",
+        "bAutoSpawnWhenPlayerIsNear = true",
+        "SpawnActivationRadius = 6000.f",
+        "DespawnRadius = 8000.f",
+        "DistanceDespawnDelay = 3.f",
+        "bKeepLoadedNearSpawnedPawns = true",
+        "IsPopulationActive() const",
+        "EvaluatePopulationRelevanceNow",
+        "OnPopulationActivated",
+        "OnPopulationDeactivated",
+    ):
+        if required not in sh:
+            issues.append(f"v1.10 AI spawner distance population missing setting/API: {required}")
+    for required in (
+        "GetPlayerControllerIterator",
+        "CheckPopulationRelevance",
+        "ActivateDistancePopulation",
+        "DeactivateDistancePopulation",
+        "FindNearestRelevantPlayerDistance",
+        "bKeepLoadedNearSpawnedPawns",
+        "PreservedImmediatePopulationCount",
+        "RespawnNotBeforeTime",
+        "EARPGRespawnMode::Never",
+        "RemoveDynamic(this, &AARPGAISpawner::HandlePawnDestroyed)",
+        "StopActiveRuntimeTimers",
+        "ClearTimer(LeashTimer)",
+        "ClearTimer(GroupCohesionTimer)",
+    ):
+        if required not in sc:
+            issues.append(f"v1.10 AI spawner distance population runtime missing: {required}")
+    if "PrimaryActorTick.bCanEverTick = true" in sc:
+        issues.append("v1.10 AI spawner distance population must remain timer-driven, not Actor Tick driven")
+    if "const APlayerController* PC = It->Get();" not in sc:
+        issues.append("v1.10 player-controller iteration must unwrap the FConstPlayerControllerIterator TWeakObjectPtr with It->Get()")
+else:
+    issues.append("v1.10 requires ARPGAISpawner source/header")
+
 storage_header = root / "Public" / "Crafting" / "ARPGStorageActor.h"
 if storage_header.exists() and "TObjectPtr<UARPGFactionOwnershipComponent> Ownership" in storage_header.read_text():
     issues.append("Storage actor duplicates base building Ownership component")

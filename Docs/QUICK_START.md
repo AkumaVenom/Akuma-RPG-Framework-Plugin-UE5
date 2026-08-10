@@ -147,6 +147,20 @@ Configure:
 
 Use a `NavMeshBoundsVolume` over areas where AI should navigate.
 
+### Spawner performance / distance population
+
+Distance population streaming is enabled by default on `ARPGAISpawner`. Recommended starting values are:
+
+- `Enable Distance Based Population` = true
+- `Auto Spawn When Player Is Near` = true
+- `Spawn Activation Radius` = 6000
+- `Despawn Radius` = 8000
+- `Population Check Interval` = 1.25 seconds
+- `Distance Despawn Delay` = 3 seconds
+- `Keep Loaded Near Spawned Pawns` = true
+
+An inactive spawner creates its group when a player enters the activation radius. After activation, the larger despawn radius and delay prevent edge thrashing. Spline/free-roam NPCs also count as relevance anchors by default so a player following an NPC away from its spawner does not watch it vanish. Distance unload is not treated as death and preserves normal respawn semantics. See `Docs/AI_SPAWNER_PERFORMANCE.md`.
+
 ### AI spline patrol / travel
 
 `ARPGAICharacter` already owns **AI Spline Movement**. For a placed patrol NPC:

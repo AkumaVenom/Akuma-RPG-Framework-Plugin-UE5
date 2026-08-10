@@ -1,6 +1,6 @@
-# Source Validation — Akuma's RPG Framework v1.9.1-alpha
+# Source Validation — Akuma's RPG Framework v1.10.0-alpha
 
-Package: **Akuma's RPG Framework — 1.9.1-alpha Day/Night Compile Fix**  
+Package: **Akuma's RPG Framework — 1.10.0-alpha Distance-Streamed AI Population**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
@@ -9,6 +9,19 @@ This generation environment does not contain Epic's UE 5.8.1 build toolchain, so
 
 All previous real-build fixes through v1.4.1 are retained, including the explicit `Navigation/PathFollowingComponent.h` dependency used by the AI spline component.
 
+
+
+## v1.10 distance-population checks
+
+The static validator additionally checks that:
+
+- `ARPGAISpawner` exposes default-on distance population streaming, separate activation/despawn radii, unload delay, player-distance mode and route-aware spawned-pawn relevance;
+- the runtime iterates server player controllers using UE world player-controller iteration rather than per-frame Actor Tick;
+- activation/deactivation paths exist and clean unload removes the pawn destruction delegate before destroying streamed actors;
+- inactive population runtime timers are stopped;
+- desired/alive-count preservation and pending respawn timing state exist;
+- `Respawn Mode = Never` is explicitly handled so streaming cannot resurrect permanent kills;
+- Blueprint status, evaluation/control helpers and activation/deactivation delegates remain exposed.
 
 ## v1.9.1 UE 5.8.1 compile fix
 
@@ -74,11 +87,11 @@ Run:
 python Tools/validate_source.py
 ```
 
-The machine-readable result is emitted separately as `AkumasRPGFramework_validation_v1.9.1.json` during packaging.
+The machine-readable result is emitted separately as `AkumasRPGFramework_validation_v1.10.0.json` during packaging.
 
 ## Recommended UE 5.8.1 test pass
 
-1. Replace the complete previous plugin folder with v1.9.1 and clear project/plugin `Intermediate` plus old plugin `Binaries`.
+1. Replace the complete previous plugin folder with v1.10.0 and clear project/plugin `Intermediate` plus old plugin `Binaries`.
 2. Build Development Editor / Win64.
 3. Place one `ARPG Day Night Cycle` and test Host System Clock, Fixed Time and accelerated Simulated Clock before the retained combat/AI regression pass.
 4. In a listen-server + client PIE session, verify both peers report the host world time and the client lighting transitions smoothly between clock syncs.
@@ -101,4 +114,16 @@ The machine-readable result is emitted separately as `AkumasRPGFramework_validat
 
 ## Retained compile fixes
 
-The v1.9 tree retains prior fixes discovered through real UE 5.8.1 Development Editor builds: GameplayTags/GameplayTasks descriptor correction, AttributeSet replication fix, battle-pet cooldown fix, CharacterMovement/PlayerState includes, mount Controller shadow naming, targeting `TSubclassOf` ambiguity fix, and AI spline Path Following include fix.
+The v1.10 tree retains prior fixes discovered through real UE 5.8.1 Development Editor builds: GameplayTags/GameplayTasks descriptor correction, AttributeSet replication fix, battle-pet cooldown fix, CharacterMovement/PlayerState includes, mount Controller shadow naming, targeting `TSubclassOf` ambiguity fix, and AI spline Path Following include fix.
+
+## v1.10 detailed distance-population runtime cases
+
+1. Place an `ARPGAISpawner` with `Enable Distance Based Population` on, Activation Radius 3000 and Despawn Radius 4500. Start farther than 4500 units away and confirm no spawned pawns exist.
+2. Walk inside 3000 units and confirm the configured group appears and `Is Population Active` becomes true.
+3. Walk between 3000 and 4500 units and confirm the population stays loaded (hysteresis).
+4. Walk beyond 4500 units and remain there longer than `Distance Despawn Delay`; confirm the actors are destroyed without `On Spawn Group Defeated` firing.
+5. Return inside 3000 units and confirm the group is rebuilt from the spawner.
+6. On a long spline, follow a spawned NPC far beyond the spawner's Despawn Radius with `Keep Loaded Near Spawned Pawns` on; confirm it remains loaded while the player is near that NPC.
+7. Kill one member of an Individual-respawn group, leave before its respawn delay expires, then return immediately; confirm previously living members return while the killed member waits for the remaining cooldown.
+8. Repeat with `Respawn Mode = Never`; confirm killed members do not return after distance unload/reload.
+9. With the spawner inactive, profile that its leash/cohesion timers are stopped and only the staggered population relevance timer remains.

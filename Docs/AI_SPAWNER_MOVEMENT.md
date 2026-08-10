@@ -90,3 +90,7 @@ The normal editor workflow needs no Blueprint logic. Advanced runtime control is
 - `Despawn All`
 
 The inherited AI Wanderer also exposes `Set Wanderer Enabled`, `Set Home Location`, `Force Choose New Destination` and `Force Return Home`.
+
+## v1.10 performance streaming
+
+Spawner movement and group behavior are now wrapped by default-on player-distance population streaming. A far-away spawner can remain completely unloaded until a player enters its activation radius. Once loaded, spline/free-roam NPC locations can keep the population relevant so following a travelling NPC does not make it disappear simply because the spawner origin is far away. See `Docs/AI_SPAWNER_PERFORMANCE.md`.
