@@ -32,6 +32,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Stats", meta=(BlueprintAuthorityOnly)) bool Heal(float Amount);
     UFUNCTION(BlueprintCallable, Category="ARPG|Stats", meta=(BlueprintAuthorityOnly)) bool SpendMana(float Amount);
     UFUNCTION(BlueprintCallable, Category="ARPG|Stats", meta=(BlueprintAuthorityOnly)) bool SpendStamina(float Amount);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Stats", meta=(BlueprintAuthorityOnly)) void RestoreMana(float Amount);
     UFUNCTION(BlueprintCallable, Category="ARPG|Stats", meta=(BlueprintAuthorityOnly)) void RestoreStamina(float Amount);
     UFUNCTION(BlueprintCallable, Category="ARPG|Stats", meta=(BlueprintAuthorityOnly)) void RestoreAllVitals();
     UFUNCTION(BlueprintPure, Category="ARPG|Stats") float GetHealthPercent() const;

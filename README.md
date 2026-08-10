@@ -7,6 +7,39 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 2.2.3-alpha.2 Blueprint compatibility hotfix
+
+This release preserves the exact public Quick Access C++ header/reflection schema from 2.2.3-alpha.1 while implementing active-slot replacement auto-equip entirely in private C++ logic. Existing Blueprint casts and serialized nodes therefore do not need to be reconstructed for this gameplay fix.
+
+
+## 2.2.3-alpha.1 UE 5.8 compile correction
+
+Corrected `UARPGQuickAccessComponent::ClearSlotAuthority` so its canonical-slot guard returns the function's actual `bool` type (`false`) instead of an `EARPGQuickAccessResult` enum value. This is a compile-only correction to the 2.2.3 active-equipment handoff release; gameplay behavior and Blueprint APIs are otherwise unchanged.
+
+## 2.2.3-alpha Quick Access active-equipment handoff fix
+
+Quick Access now enforces one active held weapon/tool by default. Switching from an Axe to a Sword (or replacing the active slot and then activating its new item) explicitly unequips the previously Quick-Access-activated runtime item first, even if Tool and Weapon use different logical Equipment Slot tags. Armor and unrelated equipment remain untouched, and consumables do not unequip the held item.
+
+## 2.2.2-alpha Quick Access atomic-move integrity fix
+
+Quick Access assignment now carries a per-slot assignment revision and canonicalizes duplicate state with the **newly dropped target slot as the winner**. This removes array-order ambiguity from legacy/save/replication repair. UI-facing `Get Slot View` also refuses to expose a non-canonical duplicate, so one runtime item cannot render as multiple hotbar entries even if stale state is encountered during migration.
+
+## 2.2.1-alpha Quick Access duplicate-instance integrity fix
+
+Quick Access now enforces a strict runtime identity invariant: **one owned runtime item instance GUID can occupy at most one hotbar slot**. Dragging the same Stone Axe, sword, tool, food stack or potion stack to another slot is therefore a real move at the authoritative component layer, not a UI convention. This remains true even if `Allow Same Item Type In Multiple Slots` is enabled; that option now only permits *different owned runtime instances/stacks* of the same ItemId in separate slots.
+
+Assignment, load-time repair and fallback rebinding all exclude runtime instances already claimed by another slot. Existing duplicate state from older v2.2.0 saves/runtime sessions is normalized automatically on authority. `Find Slot For Item Instance` is also available to Blueprint for exact-GUID diagnostics/UI. See `Docs/QUICK_ACCESS.md`.
+
+## 2.2.0-alpha Quick Access / active item slots
+
+The ready `ARPGCharacter` now includes a first-class **Quick Access** component for the familiar action-RPG hotbar workflow: assign owned runtime inventory items to numbered slots, press a slot to make it active, and let the framework perform the correct action automatically. Equippable weapons/tools route through the existing authoritative Equipment component; usable food/potions route through the new generic item-use path; selection-only items can still be pinned for project-specific behavior.
+
+Quick Access is built on top of the v2.1.1 runtime-item rule rather than around it. A slot stores a stable ItemId bookmark plus the exact currently-bound inventory instance GUID. If a consumable stack is depleted or rebuilt, the authority can rebind the slot to another **owned** runtime stack of the same item. Merely having an Item Definition Data Asset in Content never makes the hotbar item available. Slot assignments and the active slot save with the character and replicate owner-only, while actual equipment remains normal replicated Inventory/Equipment state for other players.
+
+Item Definitions now expose `Quick Access Action`, `Usable`, consume quantity, use cooldown, Health/Mana/Stamina restoration, optional GAS Gameplay Effect, use montage and use sound. This lets a health potion or food item work without a one-off Blueprint graph while still leaving GAS available for buffs and project-specific effects. Starter inventory entries can optionally specify a Quick Access slot so a starting sword/axe can spawn directly into slot 1, slot 2, etc.
+
+For player input, the clean path is simply `Quick Access Pressed(1)`, `Quick Access Pressed(2)`, and so on. `Quick Access Next` / `Quick Access Previous` are included for D-pad or wheel cycling, and `Use Active Quick Access Item` supports a separate use button when desired. See `Docs/QUICK_ACCESS.md`.
+
 ## 2.1.1-alpha equipment + Woodcutting runtime fix
 
 Runtime inventory entries now retain the exact Item Definition soft reference that created them. Equipment visuals/audio and Woodcutting consume validated equipped runtime instances instead of treating a definition lookup as equipment state. Item Definition assets can also use their asset name automatically when `DefinitionId` is left blank.
@@ -332,6 +365,7 @@ The package contains functional foundations for all major requested areas, but "
 
 - `Docs/QUICK_START.md` — fastest editor setup.
 - `Docs/WOODCUTTING.md` — Woodcutting progression, axes/tools, harvestable tree Blueprints, falling trunks, drops and building-resource integration.
+- `Docs/QUICK_ACCESS.md` — active hotbar slots, weapon/tool switching, consumables, input wiring, UMG data and persistence/network behavior.
 - `Docs/COMBAT.md` — automatic player/NPC combat, combos, dodge, block/parry and ranged/magic setup.
 - `Docs/AI_SPLINE.md` — automatic NavMesh spline patrol/travel, route looping, synchronized group direction, route points, spawner assignment and combat rejoin.
 - `Docs/AI_SPAWNER_MOVEMENT.md` — spawn groups versus cohesion, movement modes, independent/group free roam and spawner-centered wandering.

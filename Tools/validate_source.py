@@ -768,10 +768,151 @@ storage_header = root / "Public" / "Crafting" / "ARPGStorageActor.h"
 if storage_header.exists() and "TObjectPtr<UARPGFactionOwnershipComponent> Ownership" in storage_header.read_text():
     issues.append("Storage actor duplicates base building Ownership component")
 
+
+# v2.2/v2.2.3 first-class Quick Access / hotbar switching, consumable use, runtime-instance uniqueness and exclusive active-equipment handoff.
+quick_header_v22 = root / "Public" / "Components" / "ARPGQuickAccessComponent.h"
+quick_cpp_v22 = root / "Private" / "Components" / "ARPGQuickAccessComponent.cpp"
+character_header_v22 = root / "Public" / "Actors" / "ARPGCharacter.h"
+character_cpp_v22 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+save_cpp_v22 = root / "Private" / "Subsystems" / "ARPGSaveSubsystem.cpp"
+if not quick_header_v22.exists() or not quick_cpp_v22.exists():
+    issues.append("v2.2 requires ARPGQuickAccessComponent")
+else:
+    qh22 = quick_header_v22.read_text(errors="replace")
+    qc22 = quick_cpp_v22.read_text(errors="replace")
+    for required in (
+        "MaxQuickAccessSlots = 8",
+        "QuickAccessSlots",
+        "ActiveSlotNumber",
+        "AssignItemToSlot",
+        "AssignItemIdToSlot",
+        "ActivateSlot",
+        "UseActiveSlot",
+        "ActivateNextSlot",
+        "ActivatePreviousSlot",
+        "GetSlotView",
+        "FindSlotForItemInstance",
+        "ReplaceQuickAccessState",
+        "COND_OwnerOnly",
+    ):
+        if required not in qh22 and required not in qc22:
+            issues.append(f"v2.2 Quick Access missing required API/runtime path: {required}")
+    for required in (
+        "ResolveOwnedEntry",
+        "Inventory->ResolveItemDefinition(*Entry)",
+        "Inventory->IsItemInstanceEquipped",
+        "Equipment->EquipItem",
+        "Definition->bUsable",
+        "Definition->bConsumeOnUse",
+        "Inventory->RemoveItemInstance",
+        "Definition->UseGameplayEffect",
+        "Stats->Heal",
+        "Stats->RestoreMana",
+        "Stats->RestoreStamina",
+        "MulticastPlayItemUsePresentation",
+        "CooldownEndByItemId",
+        "FindOwnedEntryByIdExcluding",
+        "bSameRuntimeInstance",
+        "ClaimedInstanceIds",
+        "AssignmentRevision",
+        "IsCanonicalSlotForView",
+    ):
+        if required not in qc22:
+            issues.append(f"v2.2 Quick Access runtime missing: {required}")
+    if "ResolveDefinitionById" in qc22:
+        issues.append("v2.2 Quick Access must resolve actions from owned runtime inventory entries, not project Data Asset lookup alone")
+    # v2.2.1 invariant: the exact same runtime inventory GUID can never occupy multiple Quick Access slots.
+    if "OtherSlot.ItemInstanceId == Entry->InstanceId" not in qc22:
+        issues.append("v2.2.1 Quick Access assignment must clear prior slots containing the exact runtime InstanceId")
+    if "FindOwnedEntryByIdExcluding(Slot.ItemId, ClaimedInstanceIds)" not in qc22:
+        issues.append("v2.2.2 Quick Access repair must rebind only to unclaimed runtime instances")
+    if "The exact same runtime instance is always unique" not in qh22:
+        issues.append("v2.2.2 Quick Access duplicate policy must document exact runtime-instance uniqueness")
+    for required in ("RepairRuntimeBindingsAuthority(SlotNumber)", "IsCanonicalSlotForView", "PreferredSlotNumber"):
+        if required not in qh22 and required not in qc22:
+            issues.append(f"v2.2.2 Quick Access revision-aware duplicate repair missing: {required}")
+    for required in (
+        "bExclusiveActiveQuickAccessEquipment = true",
+        "LastQuickAccessEquippedInstanceId",
+        "CaptureTrackedQuickAccessEquipmentFromSlotAuthority",
+        "UnequipPreviousQuickAccessEquipmentAuthority",
+    ):
+        if required not in qh22 and required not in qc22:
+            issues.append(f"v2.2.3 Quick Access exclusive active-equipment handoff missing: {required}")
+    if "Equipment->UnequipItem(PreviousInstanceId)" not in qc22:
+        issues.append("v2.2.3 Quick Access must unequip the previous runtime equipment instance before switching held items")
+    if "if (!IsCanonicalSlotForView(SlotNumber)) return EARPGQuickAccessResult::EmptySlot;" in qc22:
+        # This exact guard belongs to enum-returning selection functions, never bool ClearSlotAuthority.
+        clear_start = qc22.find("bool UARPGQuickAccessComponent::ClearSlotAuthority")
+        clear_end = qc22.find("bool UARPGQuickAccessComponent::SwapSlots", clear_start)
+        if clear_start >= 0 and clear_end > clear_start and "EARPGQuickAccessResult::" in qc22[clear_start:clear_end]:
+            issues.append("v2.2.3-alpha.1 Quick Access ClearSlotAuthority must return bool, not EARPGQuickAccessResult")
+
+if arpgt_types_v211.exists():
+    types22 = arpgt_types_v211.read_text(errors="replace")
+    for required in ("EARPGQuickAccessAction", "EARPGQuickAccessResult", "FARPGQuickAccessSlot", "QuickAccessSlots", "ActiveQuickAccessSlotNumber"):
+        if required not in types22:
+            issues.append(f"v2.2 shared/save types missing: {required}")
+    if "AssignmentRevision" not in types22:
+        issues.append("v2.2.2 Quick Access slot state must persist assignment revision")
+
+if item_header.exists():
+    item22 = item_header.read_text(errors="replace")
+    for required in (
+        "bAllowQuickAccess = true",
+        "QuickAccessAction",
+        "bUsable = false",
+        "bConsumeOnUse = true",
+        "ConsumeQuantity = 1",
+        "UseCooldownSeconds",
+        "RestoreHealth",
+        "RestoreMana",
+        "RestoreStamina",
+        "UseGameplayEffect",
+        "UseMontage",
+        "UseSound",
+    ):
+        if required not in item22:
+            issues.append(f"v2.2 Item Definition quick-use metadata missing: {required}")
+
+if character_header_v22.exists() and character_cpp_v22.exists():
+    ch22 = character_header_v22.read_text(errors="replace")
+    cc22 = character_cpp_v22.read_text(errors="replace")
+    for required in ("UARPGQuickAccessComponent", "QuickAccessPressed", "QuickAccessNext", "QuickAccessPrevious", "UseActiveQuickAccessItem"):
+        if required not in ch22:
+            issues.append(f"v2.2 Character Quick Access API missing: {required}")
+    if "CreateDefaultSubobject<UARPGQuickAccessComponent>" not in cc22:
+        issues.append("v2.2 ready ARPGCharacter must create QuickAccess by default")
+
+if inventory_header_v2.exists() and inventory_cpp_v2.exists():
+    ih22 = inventory_header_v2.read_text(errors="replace")
+    ic22 = inventory_cpp_v2.read_text(errors="replace")
+    if "QuickAccessSlot = 0" not in ih22:
+        issues.append("v2.2 Starting Items must expose optional Quick Access Slot authoring")
+    for required in ("QuickAccessAssignments", "AssignItemIdToSlot", "PreferredActiveQuickAccessSlot"):
+        if required not in ic22:
+            issues.append(f"v2.2 Starting Item -> Quick Access integration missing: {required}")
+
+if save_cpp_v22.exists():
+    save22 = save_cpp_v22.read_text(errors="replace")
+    for required in ("D.QuickAccessSlots", "D.ActiveQuickAccessSlotNumber", "ReplaceQuickAccessState"):
+        if required not in save22:
+            issues.append(f"v2.2 Quick Access persistence missing: {required}")
+
+# v2.2.3-alpha.2 must preserve the 2.2.3-alpha.1 public reflection API: no active-slot auto-equip UPROPERTY.
+if quick_header_v22.exists():
+    qh_compat = quick_header_v22.read_text(errors="replace")
+    if "bAutoEquipReplacementInActiveSlot" in qh_compat:
+        issues.append("v2.2.3-alpha.2 must not add reflected active-slot auto-equip state to the public Quick Access header")
+if quick_cpp_v22.exists():
+    qc_compat = quick_cpp_v22.read_text(errors="replace")
+    if "bReplacedCurrentlyActiveSlot" not in qc_compat or "ActivateSlotAuthority(SlotNumber, ActivatedInstanceId)" not in qc_compat:
+        issues.append("v2.2.3-alpha.2 private active-slot replacement handoff missing")
+
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 2101 or descriptor.get("VersionName") != "2.1.1-alpha":
-        issues.append("package descriptor must identify v2.1.1-alpha")
+    if descriptor.get("Version") != 2232 or descriptor.get("VersionName") != "2.2.3-alpha.2":
+        issues.append("package descriptor must identify v2.2.3-alpha.2")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:

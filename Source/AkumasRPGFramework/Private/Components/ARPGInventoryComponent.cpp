@@ -1,5 +1,6 @@
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGEquipmentComponent.h"
+#include "Components/ARPGQuickAccessComponent.h"
 #include "Data/ARPGItemDefinition.h"
 #include "Utilities/ARPGAssetLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -100,6 +101,8 @@ bool UARPGInventoryComponent::ApplyStartingItems(bool bForce)
 
     bool bAddedAny = false;
     TArray<const UARPGItemDefinition*> AutoEquipDefinitions;
+    TArray<TPair<const UARPGItemDefinition*, int32>> QuickAccessAssignments;
+    int32 PreferredActiveQuickAccessSlot = 0;
     for (const FARPGStartingInventoryItem& Starting : StartingItems)
     {
         if (!Starting.Item || Starting.Quantity <= 0) continue;
@@ -108,6 +111,11 @@ bool UARPGInventoryComponent::ApplyStartingItems(bool bForce)
         {
             bAddedAny = true;
             if (Starting.bEquipOnSpawn && Starting.Item->bEquippable) AutoEquipDefinitions.Add(Starting.Item);
+            if (Starting.QuickAccessSlot > 0)
+            {
+                QuickAccessAssignments.Emplace(Starting.Item, Starting.QuickAccessSlot);
+                if (PreferredActiveQuickAccessSlot == 0 && Starting.bEquipOnSpawn) PreferredActiveQuickAccessSlot = Starting.QuickAccessSlot;
+            }
         }
     }
     bStartingItemsApplied = true;
@@ -125,6 +133,20 @@ bool UARPGInventoryComponent::ApplyStartingItems(bool bForce)
                 });
                 if (Entry) Equipment->EquipItem(Entry->InstanceId);
             }
+        }
+    }
+
+    if (QuickAccessAssignments.Num() > 0)
+    {
+        if (UARPGQuickAccessComponent* QuickAccess = GetOwner()->FindComponentByClass<UARPGQuickAccessComponent>())
+        {
+            for (const TPair<const UARPGItemDefinition*, int32>& Assignment : QuickAccessAssignments)
+            {
+                if (!Assignment.Key || Assignment.Value <= 0) continue;
+                const FName StableId = Assignment.Key->DefinitionId.IsNone() ? Assignment.Key->GetFName() : Assignment.Key->DefinitionId;
+                QuickAccess->AssignItemIdToSlot(Assignment.Value, StableId);
+            }
+            if (PreferredActiveQuickAccessSlot > 0) QuickAccess->SelectSlot(PreferredActiveQuickAccessSlot);
         }
     }
     return bAddedAny;

@@ -1,6 +1,6 @@
-# Source Validation — Akuma's RPG Framework v2.0.2-alpha
+# Source Validation — Akuma's RPG Framework v2.2.1-alpha
 
-Package: **Akuma's RPG Framework — 2.0.2-alpha Woodcutting Combat & Tree Variation Polish**  
+Package: **Akuma's RPG Framework — 2.2.1-alpha Quick Access / Active Item Slots**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
@@ -11,6 +11,37 @@ All previous real-build fixes through v1.4.1 are retained, including the explici
 
 
 
+
+## v2.2.1 Quick Access duplicate-instance regression
+
+1. Start with one owned Stone Axe runtime entry (quantity 1) assigned to slot 1. Drag/assign that exact `InstanceId` to slots 4, 7 and 2 in succession. After every assignment, exactly one slot may contain that runtime GUID and the newest target slot must win.
+2. Repeat with `Allow Same Item Type In Multiple Slots` enabled. The same exact runtime GUID must still move rather than duplicate.
+3. Add two separately owned runtime entries with the same ItemId and different valid `InstanceId` values. With same-item-type duplicates enabled, each distinct instance may occupy its own slot; with the option disabled, assigning either item type moves/removes the other ItemId assignment.
+4. Load/replace a deliberately duplicated legacy Quick Access state containing the same runtime GUID in multiple slots. Authority repair must normalize it to unique runtime bindings and must never resolve two slots to the same owned instance.
+5. Deplete/remove a bound stack and add a replacement stack of the same ItemId. Rebinding may choose only an unclaimed positive-quantity runtime instance.
+6. Verify `Find Slot For Item Instance` returns the exact 1-based slot for a valid bound GUID and 0 for an invalid/unassigned GUID.
+
+## v2.2 Quick Access / consumable checks
+
+The repository validator now asserts that:
+
+- `ARPGCharacter` creates `ARPGQuickAccessComponent` by default and exposes the 1-based input wrappers;
+- Quick Access activation resolves real owned runtime Inventory entries and never calls global Item Definition lookup as an ownership substitute;
+- equippable slot activation routes through Equipment, while usable items route through the authoritative consumable path;
+- consumables support Health/Mana/Stamina restoration, optional Gameplay Effect, exact-stack consumption, cooldown and multicast presentation;
+- slot/active state persists in character save data and is owner-only replicated;
+- Starting Items can assign a Quick Access slot after their real runtime entry exists.
+
+Recommended in-editor smoke test:
+
+1. Put a sword/axe in Starting Items with `Equip On Spawn = true`, `Quick Access Slot = 1`; put a stack of health potions in slot 2.
+2. Bind keyboard `1` to `Quick Access Pressed(1)` and `2` to `Quick Access Pressed(2)`.
+3. Press 1 and confirm the exact runtime weapon/tool equips and its normal held visual/audio path remains correct.
+4. Damage the character, press 2, and confirm Health restores, quantity decrements, use montage/sound plays and cooldown rejects spam.
+5. At full Health, press a health-only potion and confirm it is rejected without consuming quantity.
+6. Exhaust a potion stack while another stack exists and confirm the hotbar assignment rebinds to the remaining owned runtime stack.
+7. Save/reload and confirm slot assignments/active slot restore against the loaded Inventory GUIDs.
+8. In multiplayer PIE, confirm clients cannot create/use an item by assigning a Data Asset alone and remote players still see switched equipment normally.
 
 ## v2.1 inventory/equipment usability checks
 

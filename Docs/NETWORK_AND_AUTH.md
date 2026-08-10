@@ -23,7 +23,9 @@ After login, the framework can register a character ID to the current account. T
 
 ## Server authority
 
-Inventory mutation, currency transactions, quest acceptance/completion, Slayer assignments, building placement, crafting, vendor transactions, battle-pet battle state and similar gameplay mutations are intended to execute on the server.
+Inventory mutation, Quick Access assignment/selection/use, equipment switching, currency transactions, quest acceptance/completion, Slayer assignments, building placement, crafting, vendor transactions, battle-pet battle state and similar gameplay mutations are intended to execute on the server.
+
+Quick Access slot layout and active-slot state replicate owner-only. This keeps a player's private hotbar off unrelated clients; other players still receive normal replicated Inventory/Equipment state for visible held gear. Consumable quantity/effects are server authoritative.
 
 World interactions use the player-owned `ARPGInteractionComponent` for RPC routing. This avoids relying on a client to own the vendor/chest/station/NPC actor.
 

@@ -11,6 +11,7 @@
 #include "Components/ARPGCombatComponent.h"
 #include "Components/ARPGProgressionComponent.h"
 #include "Components/ARPGInventoryComponent.h"
+#include "Components/ARPGQuickAccessComponent.h"
 #include "Components/ARPGQuestComponent.h"
 #include "Components/ARPGSkillComponent.h"
 #include "Components/ARPGSlayerComponent.h"
@@ -58,6 +59,7 @@ bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverr
     if (Character->Stats) { D.Health=Character->Stats->Health; D.Mana=Character->Stats->Mana; D.Stamina=Character->Stats->Stamina; }
     if (Character->Progression) { D.Level = Character->Progression->Level; D.XP = Character->Progression->XP; }
     if (Character->Inventory) D.Inventory = Character->Inventory->Items;
+    if (Character->QuickAccess) { D.QuickAccessSlots = Character->QuickAccess->QuickAccessSlots; D.ActiveQuickAccessSlotNumber = Character->QuickAccess->ActiveSlotNumber; }
     if (Character->Quests) D.Quests = Character->Quests->Quests;
     if (Character->Skills) D.Skills = Character->Skills->Skills;
     if (Character->Slayer) { D.SlayerTask = Character->Slayer->ActiveTask; D.SlayerPoints = Character->Slayer->SlayerPoints; D.SlayerStreak = Character->Slayer->TaskStreak; }
@@ -85,6 +87,7 @@ bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverr
     if (Character->Progression) Character->Progression->SetProgression(D.Level, D.XP);
     if (Character->Stats) { Character->Stats->Health=FMath::Clamp(D.Health,0.f,Character->Stats->MaxHealth); Character->Stats->Mana=FMath::Clamp(D.Mana,0.f,Character->Stats->MaxMana); Character->Stats->Stamina=FMath::Clamp(D.Stamina,0.f,Character->Stats->MaxStamina); }
     if (Character->Inventory) Character->Inventory->ReplaceInventory(D.Inventory);
+    if (Character->QuickAccess) Character->QuickAccess->ReplaceQuickAccessState(D.QuickAccessSlots, D.ActiveQuickAccessSlotNumber);
     if (Character->Quests) Character->Quests->ReplaceQuests(D.Quests);
     if (Character->Skills) Character->Skills->ReplaceSkills(D.Skills);
     if (Character->Slayer) Character->Slayer->RestoreSlayerState(D.SlayerTask, D.SlayerPoints, D.SlayerStreak);

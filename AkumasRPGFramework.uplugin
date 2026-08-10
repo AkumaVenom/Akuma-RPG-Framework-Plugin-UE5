@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 2101,
-  "VersionName": "2.1.1-alpha",
+  "Version": 2232,
+  "VersionName": "2.2.3-alpha.2",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with runtime-entry-backed item definitions, strict equipped-item validation, automatic equipment visuals/audio, designer-friendly starting inventories, polished Woodcutting/harvestable falling trees, context-sensitive axe Basic Attacks, replicated tree variation, distance-streamed AI, host-synchronized day/night, coordinated combat, Z-targeting, GAS, factions, quests, building/crafting, mounts, saves and networking.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with Blueprint-compatible server-authoritative persistent Quick Access/hotbar switching; exclusive active Quick Access weapon/tool handoff; revision-aware atomic hotbar moves and defensive duplicate suppression; runtime-entry-backed inventory/equipment; generic item-use effects; automatic equipment visuals/audio; polished Woodcutting/harvestable falling trees; context-sensitive axe Basic Attacks; distance-streamed AI; host-synchronized day/night; coordinated combat; Z-targeting; GAS; factions; quests; building/crafting; mounts; saves and networking.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,

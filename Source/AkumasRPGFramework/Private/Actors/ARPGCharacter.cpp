@@ -6,6 +6,7 @@
 #include "Components/ARPGProgressionComponent.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGEquipmentComponent.h"
+#include "Components/ARPGQuickAccessComponent.h"
 #include "Components/ARPGCurrencyComponent.h"
 #include "Components/ARPGQuestComponent.h"
 #include "Components/ARPGSkillComponent.h"
@@ -39,6 +40,7 @@ AARPGCharacter::AARPGCharacter()
     Progression = CreateDefaultSubobject<UARPGProgressionComponent>(TEXT("Progression"));
     Inventory = CreateDefaultSubobject<UARPGInventoryComponent>(TEXT("Inventory"));
     Equipment = CreateDefaultSubobject<UARPGEquipmentComponent>(TEXT("Equipment"));
+    QuickAccess = CreateDefaultSubobject<UARPGQuickAccessComponent>(TEXT("QuickAccess"));
     Currencies = CreateDefaultSubobject<UARPGCurrencyComponent>(TEXT("Currencies"));
     Quests = CreateDefaultSubobject<UARPGQuestComponent>(TEXT("Quests"));
     Skills = CreateDefaultSubobject<UARPGSkillComponent>(TEXT("Skills"));
@@ -153,6 +155,25 @@ void AARPGCharacter::ClearLockOn()
     if (Targeting) Targeting->UnlockTarget();
 }
 
+bool AARPGCharacter::QuickAccessPressed(int32 SlotNumber)
+{
+    return QuickAccess ? QuickAccess->ActivateSlot(SlotNumber) : false;
+}
+
+bool AARPGCharacter::QuickAccessNext()
+{
+    return QuickAccess ? QuickAccess->ActivateNextSlot() : false;
+}
+
+bool AARPGCharacter::QuickAccessPrevious()
+{
+    return QuickAccess ? QuickAccess->ActivatePreviousSlot() : false;
+}
+
+bool AARPGCharacter::UseActiveQuickAccessItem()
+{
+    return QuickAccess ? QuickAccess->UseActiveSlot() : false;
+}
 
 bool AARPGCharacter::StartWoodcuttingFromView()
 {

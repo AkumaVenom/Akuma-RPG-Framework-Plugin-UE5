@@ -15,6 +15,33 @@ enum class EARPGLifeState : uint8 { Alive, Downed, Dead, Respawning };
 UENUM(BlueprintType)
 enum class EARPGRarity : uint8 { Poor, Common, Uncommon, Rare, Epic, Legendary, Mythic };
 
+// Defines what pressing a quick-access slot does. Auto keeps existing item assets backward-compatible:
+// equippable items equip/switch, usable items use immediately, and other items become selection-only.
+UENUM(BlueprintType)
+enum class EARPGQuickAccessAction : uint8
+{
+    Auto,
+    Equip,
+    Use,
+    SelectOnly
+};
+
+UENUM(BlueprintType)
+enum class EARPGQuickAccessResult : uint8
+{
+    Success,
+    InvalidSlot,
+    EmptySlot,
+    ItemUnavailable,
+    ItemNotAllowed,
+    EquipFailed,
+    ItemNotUsable,
+    OnCooldown,
+    InsufficientQuantity,
+    NoUsefulEffect,
+    UseFailed
+};
+
 UENUM(BlueprintType)
 enum class EARPGQuestState : uint8 { Inactive, Active, ObjectivesComplete, Completed, Failed };
 
@@ -92,6 +119,26 @@ struct AKUMASRPGFRAMEWORK_API FARPGCombatMontageSet
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Animation") TSoftObjectPtr<UAnimMontage> Death;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Animation") TSoftObjectPtr<UAnimMontage> Revive;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Animation") TSoftObjectPtr<UAnimMontage> Interact;
+};
+
+USTRUCT(BlueprintType)
+struct AKUMASRPGFRAMEWORK_API FARPGQuickAccessSlot
+{
+    GENERATED_BODY()
+
+    // Stable assignment identity. This is only a bookmark; activation still requires a real owned runtime entry.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FName ItemId = NAME_None;
+
+    // Exact currently-bound runtime inventory instance. If a stack is depleted/rebuilt, the component can rebind
+    // ItemId to another owned runtime instance without ever treating a project Data Asset as ownership.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid ItemInstanceId;
+
+    // Monotonic assignment revision. This lets duplicate repair deterministically keep the most recently assigned
+    // slot, including across replication/save migration where legacy duplicate state may already exist.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame) int32 AssignmentRevision = 0;
+
+    // Runtime-only server time for UI cooldown display. Intentionally not SaveGame.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly) float CooldownEndServerTime = 0.f;
 };
 
 USTRUCT(BlueprintType)
@@ -363,6 +410,8 @@ struct AKUMASRPGFRAMEWORK_API FARPGCharacterSaveData
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) float Mana = 100.f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) float Stamina = 100.f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGInventoryEntry> Inventory;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGQuickAccessSlot> QuickAccessSlots;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) int32 ActiveQuickAccessSlotNumber = 0;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGQuestRuntime> Quests;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGSkillState> Skills;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FARPGSlayerTask SlayerTask;

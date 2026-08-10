@@ -12,6 +12,7 @@ class UARPGCombatComponent;
 class UARPGProgressionComponent;
 class UARPGInventoryComponent;
 class UARPGEquipmentComponent;
+class UARPGQuickAccessComponent;
 class UARPGCurrencyComponent;
 class UARPGQuestComponent;
 class UARPGSkillComponent;
@@ -50,6 +51,7 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGProgressionComponent> Progression;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGInventoryComponent> Inventory;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGEquipmentComponent> Equipment;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGQuickAccessComponent> QuickAccess;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGCurrencyComponent> Currencies;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGQuestComponent> Quests;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGSkillComponent> Skills;
@@ -78,6 +80,12 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") bool TargetLeft();
     UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") bool TargetRight();
     UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") void ClearLockOn();
+
+    // 1-based quick-access wrappers keep player Blueprints clean: key 1 -> slot 1, key 2 -> slot 2, etc.
+    UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access|Input") bool QuickAccessPressed(int32 SlotNumber);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access|Input") bool QuickAccessNext();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access|Input") bool QuickAccessPrevious();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access|Input") bool UseActiveQuickAccessItem();
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcuttingFromView();
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcutting(AARPGTree* Tree);

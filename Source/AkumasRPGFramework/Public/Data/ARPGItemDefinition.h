@@ -23,6 +23,28 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Item") int64 BaseValue = 0;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Item") FGameplayTagContainer ItemTags;
 
+    // Quick-access / hotbar behavior. Existing equippable items work immediately through Auto without
+    // requiring every older Item Definition to be re-authored. Designers can disable individual items.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Quick Access") bool bAllowQuickAccess = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Quick Access") EARPGQuickAccessAction QuickAccessAction = EARPGQuickAccessAction::Auto;
+
+    // Generic item-use path for food, potions and other consumables. Direct vital restoration works with
+    // the framework Stats component; UseGameplayEffect supports project-specific GAS effects/buffs.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use") bool bUsable = false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use", meta=(EditCondition="bUsable")) bool bConsumeOnUse = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use", meta=(EditCondition="bUsable && bConsumeOnUse", ClampMin="1")) int32 ConsumeQuantity = 1;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use", meta=(EditCondition="bUsable", ClampMin="0.0")) float UseCooldownSeconds = 0.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Vitals", meta=(EditCondition="bUsable", ClampMin="0.0")) float RestoreHealth = 0.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Vitals", meta=(EditCondition="bUsable", ClampMin="0.0")) float RestoreMana = 0.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Vitals", meta=(EditCondition="bUsable", ClampMin="0.0")) float RestoreStamina = 0.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Effects", meta=(EditCondition="bUsable")) TSubclassOf<UGameplayEffect> UseGameplayEffect;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Effects", meta=(EditCondition="bUsable", ClampMin="0.01")) float UseGameplayEffectLevel = 1.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable")) TSoftObjectPtr<UAnimMontage> UseMontage;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable")) TSoftObjectPtr<USoundBase> UseSound;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable", ClampMin="0.0")) float UseAudioVolume = 1.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable", ClampMin="0.01")) float UseAudioPitchMin = 0.97f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable", ClampMin="0.01")) float UseAudioPitchMax = 1.03f;
+
     // Generic gathering-tool metadata. Woodcutting uses these values automatically for equipped axes,
     // and future gathering professions can reuse the same item definition instead of creating tool-specific item classes.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Gathering") FGameplayTagContainer GatheringToolTags;

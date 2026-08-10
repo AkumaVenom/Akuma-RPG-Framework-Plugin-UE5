@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.2.3-alpha.2 — 2026-08-11
+
+- Blueprint-compatibility hotfix based directly on the known-compiling 2.2.3-alpha.1 public API/schema.
+- Reverted the 2.2.4 reflected `UARPGQuickAccessComponent` property addition so existing Blueprint casts, component references, and serialized nodes do not see a changed native reflection schema.
+- Active-slot replacement auto-equip is implemented privately in `ARPGQuickAccessComponent.cpp`: dropping/assigning a different Equip-action weapon/tool into the currently active Quick Access slot immediately performs the existing exclusive equipment handoff.
+- Consumables are never auto-used by assignment.
+- No public header, UFUNCTION, UPROPERTY, USTRUCT, or delegate signature changes versus 2.2.3-alpha.1.
+
+## 2.2.3-alpha.1 — 2026-08-11
+
+- Fixed UE 5.8 C++ compilation in `UARPGQuickAccessComponent::ClearSlotAuthority`: the non-canonical-slot guard now returns `false` from the `bool` function instead of `EARPGQuickAccessResult::EmptySlot`.
+- No Quick Access gameplay or Blueprint API behavior was changed by this compile-only correction.
+
+## 2.2.3-alpha — 2026-08-11
+
+- Fixed Quick Access weapon/tool activation leaving the previously active held item equipped when the new item used a different logical `EquipmentSlot` tag (for example Tool vs Weapon), which could render both meshes in the same hand.
+- Quick Access now tracks the last item it activated as equipment and explicitly unequips that runtime instance before equipping a different Quick Access weapon/tool.
+- Replacing or clearing the currently active hotbar slot preserves the previous held-item runtime GUID long enough for the next activation to perform a clean handoff, so drag-replacing an active Axe with a Sword cannot orphan the Axe in-hand.
+- Added `Exclusive Active Quick Access Equipment` (enabled by default) to keep Quick Access as one active held-item channel without changing the general Equipment system's support for independent armor/offhand slots.
+- Consumable activation intentionally does not unequip the currently held weapon/tool.
+- Added v2.2.3 source validation for the exclusive active-equipment handoff path.
+
+## 2.2.2-alpha — 2026-08-11
+
+- Reworked Quick Access duplicate handling around a deterministic per-slot `AssignmentRevision`. The most recently assigned target slot now wins duplicate repair instead of repair depending on array iteration order.
+- Quick Access assignment is now treated as an atomic move: all prior claims for the runtime `InstanceId` (and same `ItemId` when duplicate item types are disabled) are cleared before the target is written.
+- `Get Slot View`, item lookup helpers and availability queries now defensively suppress non-canonical duplicate slots even if legacy, replicated or corrupted state reaches the owner UI.
+- Save/load repair is revision-aware and backward-compatible: older slots default to revision 0 and are normalized deterministically.
+- Added v2.2.2 regression validation for assignment revisions, target-preferred repair, and defensive UI projection.
+
+## 2.2.1-alpha — 2026-08-11
+
+- Fixed Quick Access allowing the exact same runtime Inventory `InstanceId` to remain assigned to multiple hotbar slots in configurations where same-item-type duplicates were enabled/serialized.
+- The exact runtime inventory GUID is now **always unique across Quick Access slots**. Reassigning an owned item instance clears every previous slot holding that same instance before the target slot is written, so inventory-to-hotbar drag/drop behaves as a true move.
+- Clarified `Allow Same Item Type In Multiple Slots`: when enabled it permits only different owned runtime instances/stacks of the same `ItemId`; it never permits cloning one runtime instance across multiple slots.
+- Hardened runtime/save repair so duplicate or stale bindings select only unclaimed positive-quantity owned instances. Existing duplicate v2.2.0 state is repaired automatically on BeginPlay/load/inventory refresh.
+- Fallback `ItemId` rebinding no longer steals an instance already claimed by another Quick Access slot.
+- Added Blueprint-pure `Find Slot For Item Instance` for exact runtime-GUID diagnostics and UI workflows.
+- Active-slot notifications now refresh correctly when the contents of the already-active target slot change during reassignment.
+- Added v2.2.1 source-regression validation for strict runtime-instance uniqueness and package version integrity.
+
+## 2.2.0-alpha — 2026-08-10
+
+- Added inherited `ARPGQuickAccessComponent` to the ready `ARPGCharacter`, providing persistent numbered active-item slots for weapons, gathering tools, food, potions and project-specific items.
+- Added one-button `Activate Slot`: `Quick Access Action = Auto` equips equippable items through the existing Equipment component, uses `bUsable` items immediately, and falls back to selection-only for other items.
+- Added 1-based Blueprint input wrappers on `ARPGCharacter`: `Quick Access Pressed`, `Quick Access Next`, `Quick Access Previous` and `Use Active Quick Access Item`, so keyboard number keys and gamepad D-pad/wheel controls do not need hand-written Equip/SetEquipped graphs.
+- Quick-access assignments retain both stable ItemId and the exact owned runtime inventory instance GUID. Runtime activation never treats an Item Definition Data Asset as ownership.
+- Added authoritative hotbar rebinding when a stack instance disappears: a slot may reconnect to another positive-quantity owned runtime stack of the same ItemId; if none exists the assignment remains as an unavailable bookmark and cannot be activated.
+- Quick Access slot layout and active slot are SaveGame-backed and owner-only replicated; remote players continue to receive only the normal equipment/inventory presentation state they actually need.
+- Added optional duplicate-assignment prevention, slot swapping/clearing, next/previous cycling, active-slot events, action-result events, item-used events, quantity/availability helpers and a UMG-ready `Quick Access Slot View`.
+- Added generic Item Definition use metadata for food/potions: `Usable`, consume-on-use/quantity, cooldown, Health/Mana/Stamina restoration, optional GAS Gameplay Effect and use montage/sound.
+- Consumables are server authoritative, reject unavailable/insufficient/full-vitals-no-effect uses without consuming an item, apply cooldown per item type, and consume the exact active runtime stack only after the use path succeeds.
+- Added `Restore Mana` to the Stats component so generic consumables can restore all three framework vitals without custom Blueprint mutation.
+- Starting Inventory entries now expose optional `Quick Access Slot (0 = None)`. An auto-equipped starter assigned to a quick slot also becomes the initial active hotbar slot.
+- Character saves now persist Quick Access slots and active slot after Inventory, allowing load-time runtime-instance repair against the restored inventory. Save version advanced to 3.
+- Added `Docs/QUICK_ACCESS.md` and v2.2 source-regression validation.
+
 ## 2.1.1-alpha — 2026-08-10
 
 - Fixed v2.1 equipment/Woodcutting runtime-definition desynchronization by storing the exact Item Definition soft reference inside each runtime `FARPGInventoryEntry` alongside its stable ItemId.

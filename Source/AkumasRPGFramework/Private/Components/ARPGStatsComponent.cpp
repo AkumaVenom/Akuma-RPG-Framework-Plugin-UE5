@@ -39,6 +39,12 @@ bool UARPGStatsComponent::SpendStamina(float Amount)
     return true;
 }
 
+void UARPGStatsComponent::RestoreMana(float Amount)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || Amount <= 0.f) return;
+    Mana = FMath::Clamp(Mana + Amount, 0.f, MaxMana);
+}
+
 void UARPGStatsComponent::RestoreStamina(float Amount)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || Amount <= 0.f) return;

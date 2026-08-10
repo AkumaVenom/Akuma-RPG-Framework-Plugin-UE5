@@ -1,4 +1,4 @@
-# Equipment & Starting Inventory — v2.1.1-alpha
+# Equipment & Starting Inventory — v2.2.1-alpha
 
 Akuma's RPG Framework v2.1 makes item/equipment authoring designer-facing. The replicated `Runtime Items` array remains read-only because it contains generated instance GUIDs, equipped state and save data. Use `Starting Items` to author default player/NPC loadouts.
 
@@ -20,11 +20,14 @@ Select the inherited **Inventory** component on your `ARPGCharacter` Blueprint. 
 Item = DA_StoneAxe
 Quantity = 1
 Equip On Spawn = true
+Quick Access Slot (0 = None) = 1
 ```
 
 `Grant Starting Items On Begin Play` is enabled by default. `Only When Inventory Is Empty` is also enabled by default, preventing the starter list from being stacked repeatedly onto an existing runtime inventory. The authority converts each Item Definition into normal `FARPGInventoryEntry` instances with fresh GUIDs and uses the normal Equipment component for optional auto-equip.
 
 Existing saved inventories still load through the normal save system and replace runtime state. Starting Items are authoring defaults, not a second inventory format. Automatic starter seeding is deliberately deferred until after the normal Begin Play persistence-load pass, preventing saved characters from briefly receiving/equipping starter gear before their saved inventory is restored.
+
+When `Quick Access Slot` is greater than zero, the framework first creates the normal runtime Inventory entry and then pins that **owned instance** to the inherited Quick Access component. If the same starting item also has `Equip On Spawn`, that hotbar slot becomes the initial active slot. See `Docs/QUICK_ACCESS.md` for switching and consumables.
 
 ## Create `DA_StoneAxe`
 

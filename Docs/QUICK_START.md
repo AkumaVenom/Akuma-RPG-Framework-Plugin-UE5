@@ -8,6 +8,19 @@ Framework definition types (`ARPGClassDefinition`, `ARPGItemDefinition`, `ARPGQu
 
 Do not make a normal Blueprint Class just to hold definition values. Version 1.1 marks the shared definition base `NotBlueprintable` so the editor workflow is harder to misuse while keeping the definition objects readable in Blueprint variables and pickers.
 
+## Quick Access — number keys without manual Equip graphs
+
+The ready `ARPGCharacter` now includes `QuickAccess`. Slots are 1-based, so player input can be wired directly:
+
+```text
+1 Pressed -> Quick Access Pressed(1)
+2 Pressed -> Quick Access Pressed(2)
+D-pad Right -> Quick Access Next
+D-pad Left -> Quick Access Previous
+```
+
+For a starter weapon/tool, set its Inventory **Starting Item -> Quick Access Slot** to `1` (and optionally `Equip On Spawn`). For food/potions, enable **Usable** on the Item Definition and configure vital restoration or an optional Gameplay Effect. See `Docs/QUICK_ACCESS.md`.
+
 ## Combat — player in four input calls
 
 Assign an `ARPGClassDefinition` to the Class Component. Put melee attacks in the Class Definition's `Animation Set -> Melee Attacks` array in combo order, then use:

@@ -1,4 +1,4 @@
-# Feature Matrix — v2.0.2 Woodcutting Combat & Tree Variation
+# Feature Matrix — v2.2.1 Quick Access / Active Item Slots
 
 Legend:
 
@@ -13,8 +13,9 @@ Legend:
 | Automatic action-RPG combat | Implemented | Class-driven melee/ranged/magic basic attacks, ordered montage combos, timed sphere traces/hitscan/projectiles, damage/crit/armor, dodge, block/parry/guard break, critical-hit stagger/knockback, Niagara/Cascade impact FX, exposed combat audio, hit reactions and combat state tags. |
 | Player lock-on targeting | Implemented | `ARPGTargetingComponent` is preinstalled on `ARPGCharacter`: toggle lock, camera-centered hostile acquisition, continuous Z-target camera/control-rotation tracking, continuous player facing/strafe mode, left/right switching, LOS/range validation, animated marker, server target validation and GAS target-data helpers. |
 | Classes | Implemented | Data-driven class definition and class component. |
-| Inventory | Implemented | Stacking, add/remove/transfer, save/replication and server authority. |
-| Equipment | Implemented | Slot validation, level/class requirements, Gameplay Effect application/removal. |
+| Inventory | Implemented | Stacking, add/remove/transfer, exact runtime Item Definition references, save/replication and server authority. |
+| Quick Access / hotbar | Implemented | Persistent 1-based active item slots, strict one-slot-per-runtime-instance identity, owned-runtime binding/rebinding, weapon/tool equip switching, food/potion use, cooldowns, cycling, UMG views, owner-only replication and save state. |
+| Equipment | Implemented | Slot validation, level/class requirements, Gameplay Effect application/removal, held visuals/audio and authoritative quick-switch integration. |
 | Loot/currency | Implemented | Loot tables, item/currency/XP rewards, currency balances. |
 | Quests | Implemented | Prereqs, objectives, chains via prereqs, rewards, repeatable, auto-complete, persistence. |
 | Quest giver NPC | Implemented | `ARPGQuestGiverComponent` plus player-owned RPC interaction route. |
@@ -39,7 +40,7 @@ Legend:
 | Production Internet auth | Foundation | Must be supplied by a trusted backend/platform provider; intentionally not faked by local SaveGame authentication. |
 | Direct IP hosting/join | Implemented | Listen-server open-level flow, configurable port, direct ClientTravel join. |
 | LAN discovery/NAT traversal | Foundation | Direct LAN IP works; service/session discovery and NAT traversal require an online subsystem/provider. |
-| Character saves | Implemented | Character identity/state, vitals, progression, inventory/equipment, quests, skills, Slayer, reputation, currencies, pets, group and mounts. |
+| Character saves | Implemented | Character identity/state, vitals, progression, inventory/equipment, Quick Access slots/active slot, quests, skills, Slayer, reputation, currencies, pets, group and mounts. |
 | World saves | Implemented | Runtime player buildings, ownership, health/upgrades, storage, crafting queues/output and dungeon progress. |
 | Building | Implemented | Snapping, validation, cost consumption, support/collision, health, repair/demolish and faction rules. |
 | Build preview UI/material | Foundation | Placement evaluation API is exposed; project supplies preferred ghost mesh/material UX. |
@@ -49,6 +50,15 @@ Legend:
 | Party/raid groups | Foundation | Replicated group membership/role/subgroup state and chat integration; full matchmaking/social backend remains project-level. |
 | UMG/UI skin | Foundation | All key data/delegates are Blueprint exposed; visual UI assets are intentionally supplied by the game. |
 
+
+## v2.2 Quick Access additions
+
+| System | Status | Notes |
+|---|---|---|
+| Active item slots | Implemented | 1-based persistent hotbar with `Activate Slot`, current slot, next/previous cycling and clean character input wrappers. |
+| Runtime ownership binding | Implemented | Stable ItemId bookmark + exact runtime instance GUID; never grants availability from Data Asset presence. |
+| Consumable use | Implemented | Food/potions can restore framework vitals, apply an optional GAS effect, consume quantities, enforce item-type cooldown and play use montage/audio. |
+| UMG integration | Implemented | Slot-view struct exposes assigned/owned/active state, icon definition, quantity, resolved action and cooldown remaining plus change delegates. |
 
 ## v2.1 usability additions
 

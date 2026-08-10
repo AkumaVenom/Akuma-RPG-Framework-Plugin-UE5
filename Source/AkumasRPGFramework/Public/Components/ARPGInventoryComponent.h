@@ -15,6 +15,8 @@ struct AKUMASRPGFRAMEWORK_API FARPGStartingInventoryItem
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Starting Item") TObjectPtr<UARPGItemDefinition> Item = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Starting Item", meta=(ClampMin="1")) int32 Quantity = 1;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Starting Item", meta=(DisplayName="Equip On Spawn")) bool bEquipOnSpawn = false;
+    // 0 = do not pin. 1..N matches the player's Quick Access slot numbers exactly.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Starting Item", meta=(ClampMin="0", DisplayName="Quick Access Slot (0 = None)")) int32 QuickAccessSlot = 0;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FARPGOnInventoryChanged);
