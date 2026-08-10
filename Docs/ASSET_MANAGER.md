@@ -1,5 +1,12 @@
 # Primary Asset Manager Setup
 
+## v2.1.1 item-definition behavior
+
+Inventory entries created from an `ARPGItemDefinition` now retain a soft reference to that exact asset as well as the stable ItemId. Starting Items, Equipment visuals/audio and Woodcutting therefore do not need to throw away the selected asset and rediscover it just to use an equipped item. Blank Item `DefinitionId` values use the Data Asset name automatically.
+
+Primary Asset Manager registration is still recommended for systems/save records that only have a stable ID and no soft asset path, and for explicit project-wide asset-management/cooking policy. The resolver also checks already-loaded matching definition assets before the Primary Asset Manager path, improving editor/runtime migration of older ID-only data.
+
+
 Akuma's RPG Framework uses `UPrimaryDataAsset` definitions and stable `DefinitionId` values. Save files store IDs, and runtime systems resolve those IDs through Unreal's Asset Manager.
 
 This means the project's Asset Manager must know where your RPG definitions live.

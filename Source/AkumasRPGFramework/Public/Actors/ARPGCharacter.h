@@ -30,6 +30,8 @@ class UARPGGroupComponent;
 class UARPGThreatComponent;
 class UARPGAICombatComponent;
 class UARPGTargetingComponent;
+class UARPGWoodcuttingComponent;
+class AARPGTree;
 
 UCLASS(BlueprintType, Blueprintable)
 class AKUMASRPGFRAMEWORK_API AARPGCharacter : public ACharacter, public IAbilitySystemInterface
@@ -66,6 +68,7 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGThreatComponent> Threat;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGAICombatComponent> AICombat;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGTargetingComponent> Targeting;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGWoodcuttingComponent> Woodcutting;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool BasicAttack(AActor* OptionalTarget = nullptr);
     UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool Dodge(EARPGDodgeDirection Direction = EARPGDodgeDirection::Auto);
@@ -75,6 +78,11 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") bool TargetLeft();
     UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") bool TargetRight();
     UFUNCTION(BlueprintCallable, Category="ARPG|Targeting|Input") void ClearLockOn();
+
+    UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcuttingFromView();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcutting(AARPGTree* Tree);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool ChopTreeOnce(AARPGTree* Tree);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") void StopWoodcutting();
 
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return AbilitySystem; }
     virtual void BeginPlay() override;

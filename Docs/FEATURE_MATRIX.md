@@ -1,4 +1,4 @@
-# Feature Matrix — v1.10 Distance-Streamed AI Populations
+# Feature Matrix — v2.0.2 Woodcutting Combat & Tree Variation
 
 Legend:
 
@@ -19,6 +19,7 @@ Legend:
 | Quests | Implemented | Prereqs, objectives, chains via prereqs, rewards, repeatable, auto-complete, persistence. |
 | Quest giver NPC | Implemented | `ARPGQuestGiverComponent` plus player-owned RPC interaction route. |
 | Generic skills | Implemented | Per-skill XP/level, custom XP curve, unlock metadata and persistence. |
+| Woodcutting / harvestable trees | Implemented | Inherited player Woodcutting component with persistent 1-99 skill XP, level/tool gates, equipped axe power/tier, automatic view targeting/repeated interaction chops, context-sensitive Basic Attack -> single chop with combat-target priority, Blueprintable `ARPGTree` mesh arrays plus replicated min/max size variation, Wood Item/bonus drops, falling trunk/stump/respawn, FX/audio and direct Inventory/Building/Collect-quest integration. |
 | Slayer | Implemented | Master definitions, weighted tasks, skill/combat requirements, kill count, XP, points/streaks, cancellation and persistence. |
 | Factions/reputation | Implemented | NPC/player faction IDs, relationship/reputation checks, attack-on-sight rules, automatic damage retaliation/ally assist fallbacks, and persistence. |
 | Player faction/building ownership | Implemented | Player-built structures inherit character/account/faction identity. |
@@ -47,3 +48,12 @@ Legend:
 | Mounts | Implemented | Unlock, summon/ride, movement capability flags, animation hooks and save state. |
 | Party/raid groups | Foundation | Replicated group membership/role/subgroup state and chat integration; full matchmaking/social backend remains project-level. |
 | UMG/UI skin | Foundation | All key data/delegates are Blueprint exposed; visual UI assets are intentionally supplied by the game. |
+
+
+## v2.1 usability additions
+
+| System | Status | Notes |
+|---|---|---|
+| Starting inventory authoring | Implemented | Editable Item Definition/quantity/Equip On Spawn array; runtime GUID entries remain protected. |
+| Equipment visuals | Implemented | Automatic local held static/skeletal/custom visual actor from replicated equipped state, socket + relative transform. |
+| Equipment presentation audio | Implemented | Equip/unequip/combat swing/gathering swing/gathering hit audio on Item Definitions with combat/Woodcutting integration. |

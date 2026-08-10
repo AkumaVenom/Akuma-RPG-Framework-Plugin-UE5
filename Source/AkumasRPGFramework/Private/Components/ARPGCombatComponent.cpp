@@ -15,6 +15,8 @@
 #include "Components/ARPGStatsComponent.h"
 #include "Components/ARPGThreatComponent.h"
 #include "Components/ARPGTargetingComponent.h"
+#include "Components/ARPGWoodcuttingComponent.h"
+#include "Components/ARPGEquipmentComponent.h"
 #include "Data/ARPGClassDefinition.h"
 #include "Data/ARPGItemDefinition.h"
 #include "GameFramework/Character.h"
@@ -183,6 +185,15 @@ bool UARPGCombatComponent::StartAttackAuthority(AActor* OptionalTarget)
             return true;
         }
         return false;
+    }
+
+    // Context-sensitive gathering: with a valid equipped axe, Basic Attack becomes one Woodcutting chop
+    // when the intended target is an ARPGTree. A real combat/lock-on target retains normal combat priority.
+    if (UARPGWoodcuttingComponent* Woodcutting = GetOwner()->FindComponentByClass<UARPGWoodcuttingComponent>())
+    {
+        bool bHandledAsWoodcutting = false;
+        const bool bWoodcuttingStarted = Woodcutting->TryHandleBasicAttackAsWoodcutting(OptionalTarget, bHandledAsWoodcutting);
+        if (bHandledAsWoodcutting) return bWoodcuttingStarted;
     }
 
     if (OptionalTarget && OptionalTarget != GetOwner())
@@ -898,9 +909,9 @@ bool UARPGCombatComponent::HasRequiredBlockEquipment(const FARPGBlockSettings& B
     if (!Inventory) return false;
     for (const FARPGInventoryEntry& Entry : Inventory->Items)
     {
-        if (!Entry.bEquipped) continue;
-        const UARPGItemDefinition* Item = Cast<UARPGItemDefinition>(UARPGAssetLibrary::ResolveDefinitionById(UARPGItemDefinition::StaticClass(), Entry.ItemId));
-        if (Item && Item->ItemTags.HasTag(BlockSettings.RequiredEquipmentTag)) return true;
+        if (!Entry.InstanceId.IsValid() || Entry.Quantity <= 0 || !Entry.bEquipped || !Entry.EquipmentSlot.IsValid()) continue;
+        const UARPGItemDefinition* Item = Inventory->ResolveItemDefinition(Entry);
+        if (Item && Item->bEquippable && Item->EquipmentSlot == Entry.EquipmentSlot && Item->ItemTags.HasTag(BlockSettings.RequiredEquipmentTag)) return true;
     }
     return false;
 }
@@ -1192,11 +1203,19 @@ void UARPGCombatComponent::PlayCombatCueLocal(EARPGCombatFeedbackCue Cue, const 
     if (!GetWorld() || (GetOwner() && GetOwner()->GetNetMode() == NM_DedicatedServer)) return;
     const FARPGCombatProfile Profile = GetCombatProfile();
 
-    if (USoundBase* Sound = ResolveCombatSound(Cue, Profile.Audio))
+    bool bPlayedEquipmentSwing = false;
+    if (Cue == EARPGCombatFeedbackCue::MeleeSwing)
+        if (UARPGEquipmentComponent* Equipment = GetOwner() ? GetOwner()->FindComponentByClass<UARPGEquipmentComponent>() : nullptr)
+            bPlayedEquipmentSwing = Equipment->PlayEquippedCombatSwingSoundLocal();
+
+    if (!bPlayedEquipmentSwing)
     {
-        const float PitchLow = FMath::Min(Profile.Audio.PitchMin, Profile.Audio.PitchMax);
-        const float PitchHigh = FMath::Max(Profile.Audio.PitchMin, Profile.Audio.PitchMax);
-        UGameplayStatics::PlaySoundAtLocation(this, Sound, Location, FMath::Max(0.f, Profile.Audio.VolumeMultiplier), FMath::FRandRange(PitchLow, PitchHigh), 0.f, nullptr, nullptr, nullptr);
+        if (USoundBase* Sound = ResolveCombatSound(Cue, Profile.Audio))
+        {
+            const float PitchLow = FMath::Min(Profile.Audio.PitchMin, Profile.Audio.PitchMax);
+            const float PitchHigh = FMath::Max(Profile.Audio.PitchMin, Profile.Audio.PitchMax);
+            UGameplayStatics::PlaySoundAtLocation(this, Sound, Location, FMath::Max(0.f, Profile.Audio.VolumeMultiplier), FMath::FRandRange(PitchLow, PitchHigh), 0.f, nullptr, nullptr, nullptr);
+        }
     }
 
     SpawnConfiguredImpactFX(Cue, Location, Direction, Profile.ImpactFX);

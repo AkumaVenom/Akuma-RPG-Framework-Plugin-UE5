@@ -24,6 +24,8 @@
 #include "Components/ARPGThreatComponent.h"
 #include "Components/ARPGAICombatComponent.h"
 #include "Components/ARPGTargetingComponent.h"
+#include "Components/ARPGWoodcuttingComponent.h"
+#include "Gathering/ARPGTree.h"
 #include "Net/UnrealNetwork.h"
 
 AARPGCharacter::AARPGCharacter()
@@ -55,6 +57,7 @@ AARPGCharacter::AARPGCharacter()
     Threat = CreateDefaultSubobject<UARPGThreatComponent>(TEXT("Threat"));
     AICombat = CreateDefaultSubobject<UARPGAICombatComponent>(TEXT("AICombat"));
     Targeting = CreateDefaultSubobject<UARPGTargetingComponent>(TEXT("Targeting"));
+    Woodcutting = CreateDefaultSubobject<UARPGWoodcuttingComponent>(TEXT("Woodcutting"));
 }
 
 void AARPGCharacter::BeginPlay()
@@ -148,4 +151,25 @@ bool AARPGCharacter::TargetRight()
 void AARPGCharacter::ClearLockOn()
 {
     if (Targeting) Targeting->UnlockTarget();
+}
+
+
+bool AARPGCharacter::StartWoodcuttingFromView()
+{
+    return Woodcutting ? Woodcutting->StartWoodcuttingFromView() : false;
+}
+
+bool AARPGCharacter::StartWoodcutting(AARPGTree* Tree)
+{
+    return Woodcutting ? Woodcutting->StartWoodcutting(Tree) : false;
+}
+
+bool AARPGCharacter::ChopTreeOnce(AARPGTree* Tree)
+{
+    return Woodcutting ? Woodcutting->ChopTreeOnce(Tree) : false;
+}
+
+void AARPGCharacter::StopWoodcutting()
+{
+    if (Woodcutting) Woodcutting->StopWoodcutting();
 }

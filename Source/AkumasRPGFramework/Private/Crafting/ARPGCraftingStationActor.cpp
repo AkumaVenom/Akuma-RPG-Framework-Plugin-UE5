@@ -48,7 +48,7 @@ static int32 ARPGCountTaggedItems(const UARPGInventoryComponent* InventoryCompon
     int32 Count = 0;
     for (const FARPGInventoryEntry& Entry : InventoryComponent->Items)
     {
-        const UARPGItemDefinition* Item = Cast<UARPGItemDefinition>(UARPGAssetLibrary::ResolveDefinitionById(UARPGItemDefinition::StaticClass(), Entry.ItemId));
+        const UARPGItemDefinition* Item = InventoryComponent->ResolveItemDefinition(Entry);
         if (Item && Item->ItemTags.HasTag(Tag)) Count += FMath::Max(0, Entry.Quantity);
     }
     return Count;
@@ -74,7 +74,7 @@ bool AARPGCraftingStationActor::ConsumeFuelForCraft(AActor* Crafter, const UARPG
     for (const FARPGInventoryEntry& Entry : FuelInventory->Items)
     {
         if (Remaining <= 0) break;
-        const UARPGItemDefinition* Item = Cast<UARPGItemDefinition>(UARPGAssetLibrary::ResolveDefinitionById(UARPGItemDefinition::StaticClass(), Entry.ItemId));
+        const UARPGItemDefinition* Item = FuelInventory->ResolveItemDefinition(Entry);
         if (!Item || !Item->ItemTags.HasTag(Recipe->FuelTag)) continue;
         const int32 Take = FMath::Min(Remaining, Entry.Quantity);
         Removals.Emplace(Entry.ItemId, Take);

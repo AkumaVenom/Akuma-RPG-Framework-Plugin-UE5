@@ -1,6 +1,6 @@
-# Source Validation — Akuma's RPG Framework v1.10.0-alpha
+# Source Validation — Akuma's RPG Framework v2.0.2-alpha
 
-Package: **Akuma's RPG Framework — 1.10.0-alpha Distance-Streamed AI Population**  
+Package: **Akuma's RPG Framework — 2.0.2-alpha Woodcutting Combat & Tree Variation Polish**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
@@ -9,6 +9,48 @@ This generation environment does not contain Epic's UE 5.8.1 build toolchain, so
 
 All previous real-build fixes through v1.4.1 are retained, including the explicit `Navigation/PathFollowingComponent.h` dependency used by the AI spline component.
 
+
+
+
+## v2.1 inventory/equipment usability checks
+
+The static validator now also checks that:
+
+- `Runtime Items` remains read-only editor state while `Starting Items` exposes Item Definition, quantity and Equip On Spawn authoring;
+- starting items are converted through the normal authority `Add Item Definition` path and optional auto-equip routes through the Equipment component;
+- `ARPGEquipmentVisualActor` exists with static/skeletal mesh support, no collision and no replication by default;
+- Item Definitions expose held mesh/custom visual class, socket/relative transform and equipment/tool audio fields;
+- Equipment reacts to replicated Inventory changes, creates/attaches/destroys local visuals, and multicasts equip/unequip presentation;
+- ordinary melee can prefer equipped-item swing audio while retaining combat-profile fallback;
+- Woodcutting uses item gathering swing audio and tree impact can use the equipped tool's gathering-hit audio.
+
+Recommended PIE test: put `DA_StoneAxe` in the player's Starting Items with Equip On Spawn, assign `SM_Stoneaxe`, a valid hand socket and gathering sounds, then confirm host/client both see the axe, Basic Attack chops a tree, Interact still auto-chops, and unequip removes the visual.
+
+## v2.0 Woodcutting / harvestable-tree checks
+
+The static validator additionally checks that:
+
+- `ARPGCharacter` creates the Woodcutting component automatically;
+- Item Definitions expose reusable Gathering Tool Tags, Gathering Power and Gathering Tool Tier;
+- the Woodcutting component has automatic view targeting, server start/stop RPCs, repeated swing timing, level/XP/progress pure queries and equipped-tool resolution;
+- `ARPGTree` exposes Tree Mesh Variations, direct Wood Item rewards, Required Woodcutting Level, optional tool tag/tier gates, fall/stump/respawn settings and Blueprint tree calls/events;
+- tree fall is transform-driven and does not teleport the actor; Actor Tick starts disabled and is used only while a trunk is actively falling;
+- server chop/fell paths award Woodcutting XP, preflight definition-aware Inventory capacity before adding the selected Item Definition, and route successful item acquisition into normal Collect quest progress;
+- tree mesh/state/health/fall direction are replicated and chop/fell cosmetic cues use Niagara with Cascade fallback;
+- the explicit UE5.8 Niagara/Cascade pooling enum headers remain present in the new tree feedback translation unit.
+
+### v2.0 recommended runtime cases
+
+1. Create `DA_AshLogs`, create `BP_AshTree : ARPGTree`, add 2-3 tree meshes to Tree Mesh Variations, assign Wood Item and place several trees. Confirm different instances can select different meshes while all clients agree on each selection.
+2. Bind player input to `Start Woodcutting From View`; confirm one press begins repeated chopping and leaving range automatically stops it.
+3. Fell a tree; confirm per-chop/fell Woodcutting XP is awarded, the selected log item enters Inventory, and the trunk visibly falls away from the player before the stump-only state.
+4. Put the log Item Definition into a Build Piece Build Cost and confirm chopped logs can immediately pay that cost.
+5. Add a Collect quest objective for the log DefinitionId and confirm successful tree rewards progress it.
+6. Create/equip two axe Item Definitions with `Item.Tool.Axe`, different Gathering Tool Tier/Power values, require the tag on the tree, and confirm the best valid equipped tool is used and low-tier tools are rejected when Minimum Tool Tier is raised.
+7. Raise Required Woodcutting Level above the player level and confirm the server rejects chopping with the exposed failure result; add XP until the level gate is met and confirm it becomes harvestable.
+8. Observe a felled tree through its respawn timer; confirm the stump remains, health resets, and the tree can optionally reroll its visual variation on respawn.
+9. Fill the player Inventory so the complete configured wood reward cannot fit; confirm no partial reward is silently added and `On Tree Reward Granted` reports failure.
+10. In listen-server + client PIE, chop from the client and confirm damage/rewards are server authoritative while fall/FX/audio are visible on both peers.
 
 
 ## v1.10 distance-population checks
@@ -79,6 +121,23 @@ The validator verifies that:
 - v1.3 automatic NPC ragdoll + death montage fallback remains intact;
 - v1.2 target marker compile regression coverage remains intact.
 
+## v2.0.2 Woodcutting polish checks
+
+The validator now also verifies that:
+
+- normal `ARPGCombatComponent` Basic Attack calls the Woodcutting context redirect before starting an ordinary attack;
+- auto-chop from Basic Attack is enabled by default and requires an equipped axe/Woodcutting tool by default;
+- real combat/lock-on targets retain priority because explicit non-tree targets are not redirected;
+- Basic Attack chops are single-swing and rate-limited by the authored Woodcutting swing interval;
+- chop animation can fall back to the normal melee combat montage when no dedicated chop montage is assigned;
+- `ARPGTree` exposes minimum/maximum mesh scale, replicated selected scale and Blueprint scale APIs;
+- the authority randomizes the tree scale and both trunk/fall hierarchy and stump receive the same multiplier;
+- selected tree scale is included in lifetime replication.
+
+## v2.0.1 UE5.8.1 compile-regression checks
+
+The validator also rejects the exact `ARPGTree::GetSelectedTreeMesh()` mixed `TObjectPtr<UStaticMesh>` / raw `UStaticMesh*` conditional expression that produced MSVC C2445 in the user's real UE5.8.1 build. It additionally rejects a direct `NetUpdateFrequency =` write in `ARPGDayNightCycle`, keeping the code on UE5.8's setter API.
+
 ## Expected static result
 
 Run:
@@ -87,11 +146,11 @@ Run:
 python Tools/validate_source.py
 ```
 
-The machine-readable result is emitted separately as `AkumasRPGFramework_validation_v1.10.0.json` during packaging.
+The machine-readable result is emitted separately as `AkumasRPGFramework_validation_v2.1.1.json` during packaging.
 
 ## Recommended UE 5.8.1 test pass
 
-1. Replace the complete previous plugin folder with v1.10.0 and clear project/plugin `Intermediate` plus old plugin `Binaries`.
+1. Replace the complete previous plugin folder with v2.1.1 and clear project/plugin `Intermediate` plus old plugin `Binaries`.
 2. Build Development Editor / Win64.
 3. Place one `ARPG Day Night Cycle` and test Host System Clock, Fixed Time and accelerated Simulated Clock before the retained combat/AI regression pass.
 4. In a listen-server + client PIE session, verify both peers report the host world time and the client lighting transitions smoothly between clock syncs.
@@ -104,6 +163,26 @@ The machine-readable result is emitted separately as `AkumasRPGFramework_validat
 11. Set `Fallback: Attack Players On Sight = true` with missing/neutral faction data; confirm proactive faction-free monster behavior works.
 12. Re-test free roam/spline resumption after combat, ragdoll death, lock-on camera, hit FX/audio and stagger/knockback.
 
+### v2.1.1 Equipment / inventory / Woodcutting regression cases
+
+1. Leave `Inventory > Starting Items` empty and use a fresh character/save. `Runtime Items` must remain empty; aiming at a tree and pressing Basic Attack must **not** be treated as an axe chop.
+2. Create `DA_StoneAxe` with `DefinitionId` left blank, `Equippable=true`, a valid Equipment Slot, `Item.Tool.Axe`, Static Mesh and gathering sounds. Add it to Starting Items with Equip On Spawn. The runtime ItemId should fall back to `DA_StoneAxe`, and the generated entry must have a valid instance GUID and exact Item Definition soft reference.
+3. Confirm the runtime axe entry is actually equipped and `Get Best Equipped Woodcutting Tool Instance Id` returns that same GUID. Merely opening/creating another axe Data Asset must not change this result.
+4. Confirm the held visual appears on the authored socket. Enter a nonexistent socket name and verify the component falls back to a valid configured/common hand socket when available and logs a warning instead of silently behaving as if visual setup succeeded.
+5. With the valid equipped axe, Basic Attack at an `ARPGTree` must reduce replicated `Current Chop Health` once per allowed swing interval. Unequip/remove the axe and confirm Basic Attack no longer redirects into Woodcutting.
+6. Assign Gathering Swing and Gathering Hit sounds on the axe. Confirm the swing cue plays on chop start and the hit cue plays at the successful tree impact; the exact authority-selected tool is used for presentation.
+7. Save/load the equipped axe. Confirm the soft Item Definition path survives the new save. For an older ID-only save, configure the matching item in Starting Items and confirm the loaded runtime entry is backfilled without granting a duplicate.
+8. Confirm a valid saved equipped axe remains equipped even when Starting Items is empty; saved runtime inventory is authoritative and should not be deleted merely because the default loadout changed.
+
+### v2.0.2 Woodcutting runtime cases
+
+1. Equip an Item Definition tagged `Item.Tool.Axe`, stand in front of an `ARPGTree`, clear lock-on/combat target, and press the existing `Basic Attack`: one chop should occur without wiring a new attack input.
+2. Press Basic Attack repeatedly faster than `Swing Interval Seconds`; the tree must not harvest faster than the configured cadence.
+3. Lock onto a hostile NPC while holding the axe with a tree also in view; Basic Attack must attack the NPC, not steal the input for Woodcutting.
+4. Use `Start Woodcutting From View`; automatic repeated chopping must still work independently of Basic Attack integration.
+5. Place several copies of one tree Blueprint with `Minimum Mesh Scale = 0.90` and `Maximum Mesh Scale = 1.10`; runtime instances should receive different sizes while all multiplayer peers agree on each tree's size.
+6. Fell a scaled tree and confirm the trunk and stump retain matching scale through the fall/stump transition and optional respawn reroll.
+
 ### v1.8 runtime cases
 
 1. Passive neutral chicken attacks only after being hit, kills the player, then immediately clears that temporary hostility; after respawn it ignores the player until attacked again.
@@ -114,7 +193,7 @@ The machine-readable result is emitted separately as `AkumasRPGFramework_validat
 
 ## Retained compile fixes
 
-The v1.10 tree retains prior fixes discovered through real UE 5.8.1 Development Editor builds: GameplayTags/GameplayTasks descriptor correction, AttributeSet replication fix, battle-pet cooldown fix, CharacterMovement/PlayerState includes, mount Controller shadow naming, targeting `TSubclassOf` ambiguity fix, and AI spline Path Following include fix.
+The v2.0 tree retains prior fixes discovered through real UE 5.8.1 Development Editor builds: GameplayTags/GameplayTasks descriptor correction, AttributeSet replication fix, battle-pet cooldown fix, CharacterMovement/PlayerState includes, mount Controller shadow naming, targeting `TSubclassOf` ambiguity fix, and AI spline Path Following include fix.
 
 ## v1.10 detailed distance-population runtime cases
 

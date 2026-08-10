@@ -1,3 +1,69 @@
+# Changelog
+
+## 2.1.1-alpha — 2026-08-10
+
+- Fixed v2.1 equipment/Woodcutting runtime-definition desynchronization by storing the exact Item Definition soft reference inside each runtime `FARPGInventoryEntry` alongside its stable ItemId.
+- `Add Item Definition`, Starting Items, tree rewards and future saves now preserve the exact authored Data Asset instead of requiring Equipment/Woodcutting to rediscover it later through Asset Manager.
+- Older ID-only inventory saves remain supported: runtime entries backfill from Starting Items and the existing stable-ID resolver when possible.
+- Item `DefinitionId` is now optional for inventory authoring; when blank, the Data Asset name (for example `DA_StoneAxe`) becomes the stable runtime ItemId automatically.
+- Tightened equipped-tool validation: an axe only counts when a real runtime entry has a valid instance GUID, positive quantity, `bEquipped=true`, a valid slot, and that slot matches the resolved equippable Item Definition. Merely having an axe Data Asset in the project can never satisfy Woodcutting.
+- Equipment effects, held visuals, combat swing audio and Woodcutting now resolve from the exact runtime inventory entry first.
+- Tagged crafting/fuel checks now resolve Item Definitions from the runtime entry as well, keeping newly-authored project items consistent outside Equipment/Woodcutting.
+- Equip/unequip presentation RPCs now carry the exact Item Definition asset instead of only an ItemId, removing another late-resolution failure path.
+- Woodcutting swing and tree-hit presentation now receive the exact equipped tool selected by authority, so gathering swing/hit audio no longer depends on client-side definition rediscovery timing.
+- Equipment visuals now auto-fallback through common right-hand socket/bone names when the configured socket is missing, with a runtime warning instead of silently placing the weapon at an unusable location.
+- Added Blueprint inventory diagnostics for resolving an item definition by instance and checking runtime equipped state.
+- Added v2.1.1 regression validation covering exact runtime item references, strict equipped-tool gates, exact-tool audio presentation and descriptor/version integrity.
+
+## 2.1.0-alpha — 2026-08-10
+
+- Added editable `Starting Items` to `ARPGInventoryComponent`, using Item Definition asset pickers, quantity and optional Equip On Spawn; retained `Runtime Items` as protected replicated/save state.
+- Added authority `Apply Starting Items` and default-on begin-play seeding with empty-inventory protection; automatic seeding is deferred past the persistence auto-load pass so existing saves take precedence cleanly.
+- Added native Blueprintable `ARPGEquipmentVisualActor` with static/skeletal mesh support and no collision/tick/replication by default.
+- Item Definitions now expose Equipped Visual Actor Class, Equipped Static Mesh, Equipped Skeletal Mesh and Equipped Relative Transform in addition to the existing attach socket.
+- Equipment automatically creates/destroys held visuals from replicated equipped inventory state and exposes refresh/query/visual-change Blueprint hooks.
+- Existing Equip/Unequip Montage fields are now consumed by the runtime Equipment component.
+- Added per-item Equip, Unequip, Combat Swing, Gathering Swing and Gathering Hit sounds with volume/pitch tuning.
+- Ordinary melee prefers an equipped item's Combat Swing Sound when configured; class/profile melee audio remains the fallback.
+- Woodcutting automatically uses Gathering Swing Sound (Combat Swing fallback), and successful tree chops can play the equipped axe/tool Gathering Hit Sound alongside tree feedback.
+- Equipment replacement in the same slot now presents the displaced item's unequip cue before the new item's equip cue.
+- Added `Docs/EQUIPMENT_INVENTORY.md` and v2.1 source-regression validation.
+
+## 2.0.2-alpha — 2026-08-10
+
+- Added automatic Basic Attack -> Woodcutting integration: when no real combat target is supplied, an equipped axe and an `ARPGTree` in the Woodcutting view trace redirect the normal Basic Attack input into one authoritative chop.
+- Real combat/lock-on targets keep priority, so holding an axe does not steal attacks away from enemies.
+- The separate `Start Woodcutting From View` interaction remains unchanged and continues to support automatic repeated chopping.
+- Basic-attack chopping requires an equipped Woodcutting tool by default, respects each tree's level/tool-tier gates, and respects the normal Woodcutting swing interval so input spam cannot harvest faster than the authored cadence.
+- Added `Has Equipped Woodcutting Tool` and `Try Chop Tree With Basic Attack` Blueprint helpers.
+- If no dedicated chop montage is assigned, Woodcutting can now fall back to the character's normal melee combat montage automatically.
+- Added replicated per-instance tree size variation with exposed `Minimum Mesh Scale` / `Maximum Mesh Scale`, randomize/reroll toggles and runtime selected scale.
+- Tree scale multiplies the existing authored visual scale and applies consistently to both the falling trunk and stump.
+- Added `Get Selected Tree Mesh Scale`, `Select Random Tree Mesh Scale` and `Set Tree Mesh Scale` Blueprint APIs.
+- Retained the v2.0.1 UE5.8.1 `TObjectPtr` compile fix and Day/Night network-frequency deprecation fix.
+
+## 2.0.1-alpha — 2026-08-10
+
+- Fixed the real UE5.8.1 `ARPGTree.cpp` C2445 compile error in `GetSelectedTreeMesh()` caused by a conditional expression mixing `UStaticMesh*` with `TObjectPtr<UStaticMesh>`.
+- Replaced the mixed ternary with an explicit validity branch returning `TreeMeshes[SelectedTreeMeshIndex].Get()` or the TreeMesh component's raw static-mesh pointer fallback.
+- Added validator regression coverage that rejects the exact mixed `TObjectPtr`/raw-pointer tree-mesh ternary pattern.
+- Replaced the deprecated direct `NetUpdateFrequency` member write in `ARPGDayNightCycle` with `SetNetUpdateFrequency(2.f)` as requested by the UE5.8.1 compiler warning.
+- No Woodcutting, tree-fall, reward, skill, AI, day/night, combat, targeting, save, or networking behavior was removed.
+
+## 2.0.0-alpha — 2026-08-10
+
+- Added inherited `ARPGWoodcuttingComponent` to the ready player character.
+- Added automatic `Start Woodcutting From View` targeting plus direct Start/Stop/Chop Once APIs.
+- Added persistent Woodcutting progression through the existing Skill Component, with level/XP/progress/unlock pure nodes and optional Skill Definition curve/unlocks.
+- Added gathering metadata to Item Definitions: tool tags, gathering power and gathering tool tier.
+- Added native Blueprintable `ARPGTree` with tree-mesh variation arrays, replicated variation selection, stump support, chop health/resistance, required Woodcutting level and optional axe/tool-tier gates.
+- Added server-authoritative repeated chop timing with exposed swing interval and impact delay plus optional chop montage.
+- Added direct Wood Item picker, min/max wood rewards, bonus-drop array, inventory-capacity preflight and automatic item-looted quest routing.
+- Added smooth replicated tree fall away from the harvester, fallen-trunk hold, stump state and timed tree respawn.
+- Added Niagara/Cascade chop/fell feedback and exposed sounds.
+- Added tree Blueprint calls/events for custom harvesting extensions.
+- Added Woodcutting gameplay tags and source-regression validation.
+
 ## 1.10.0-alpha — 2026-08-10
 
 - Added first-class distance-based AI population streaming directly to `ARPGAISpawner`, enabled by default for performance.
@@ -31,7 +97,6 @@
 - Added smooth sun/moon rotation and exposed day/night intensity, color, skylight and fog tuning.
 - Uses Sky Light Real Time Capture for dynamic environment lighting rather than repeatedly calling costly manual sky recaptures.
 
-# Changelog
 
 ## 1.8.0-alpha — 2026-08-10
 

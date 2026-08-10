@@ -6,6 +6,7 @@
 #include "ARPGTypes.generated.h"
 
 class UAnimMontage;
+class UARPGItemDefinition;
 class AActor;
 
 UENUM(BlueprintType)
@@ -99,6 +100,10 @@ struct AKUMASRPGFRAMEWORK_API FARPGInventoryEntry
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid InstanceId;
+    // Exact asset reference for the runtime item instance. Keeping this alongside the stable ItemId avoids
+    // re-resolving newly-authored project items through Asset Manager just to equip/use them.
+    // The soft reference is save/replication friendly and remains backward-compatible with older ID-only saves.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TSoftObjectPtr<UARPGItemDefinition> ItemDefinition;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FName ItemId = NAME_None;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) int32 Quantity = 1;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) float Durability = 100.f;

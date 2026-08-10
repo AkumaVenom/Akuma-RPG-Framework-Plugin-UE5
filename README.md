@@ -7,6 +7,35 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 2.1.1-alpha equipment + Woodcutting runtime fix
+
+Runtime inventory entries now retain the exact Item Definition soft reference that created them. Equipment visuals/audio and Woodcutting consume validated equipped runtime instances instead of treating a definition lookup as equipment state. Item Definition assets can also use their asset name automatically when `DefinitionId` is left blank.
+
+This release closes the editor-authoring gap around items and equipment. `Inventory -> Runtime Items` remains intentionally read-only because those entries contain generated instance GUIDs, equipped state and save data; designers now get an editable `Inventory -> Starting Items` array that accepts `ARPGItemDefinition` assets directly, supports quantities, and can auto-equip selected starting gear. Automatic seeding is delayed until after the normal persistence auto-load pass so saved characters keep their stored inventory without a transient starter-loadout flash.
+
+Equipped items can now own presentation directly from the Item Definition: static/skeletal held mesh, optional custom `ARPGEquipmentVisualActor` class, attach socket, relative transform, equip/unequip montage and equip/unequip/combat/gathering audio. Equipment visuals are rebuilt locally from replicated inventory state, keeping equipment authority on the server without replicating an extra cosmetic weapon actor. Woodcutting automatically consumes the equipped tool's gathering swing/hit sounds, and ordinary melee can prefer the equipped weapon's swing sound before falling back to the Class/Combat Profile sound.
+
+See `Docs/EQUIPMENT_INVENTORY.md` and `Docs/WOODCUTTING.md`.
+
+## 2.0.2-alpha Woodcutting combat + tree-variation polish
+
+This polish release keeps the full v2.0 Woodcutting system and makes it feel much more natural in ordinary action-RPG play. With **Basic Attack Auto Chops Trees** enabled (default), the normal Basic Attack input automatically becomes one Woodcutting swing when the character has an equipped axe and is aiming at an `ARPGTree`. A valid combat/lock-on target keeps priority, while the existing `Start Woodcutting From View` interaction remains available for automatic repeated chopping.
+
+`ARPGTree` also now owns replicated per-instance size variation. Every derived tree Blueprint can expose **Minimum Mesh Scale** and **Maximum Mesh Scale** (defaults 0.90-1.10), and the authority chooses one uniform size for each tree so nearby variants do not all look cloned even when their source meshes are similar. The same selected scale is applied to the falling trunk and stump and can optionally reroll when the tree respawns.
+
+The retained v2.0 Woodcutting feature set includes:
+
+- inherited `ARPGWoodcuttingComponent` with persistent 1-99 progression, XP/unlocks and level-based chop power;
+- equipped gathering-tool tags, tier and power for axe progression;
+- `ARPGTree` mesh arrays plus replicated mesh index **and replicated mesh scale**;
+- direct Wood Item / bonus-drop rewards into the normal Inventory for Building/Crafting/Collect quests;
+- server-authoritative chop validation, falling trunk, stump and timed respawn;
+- Niagara/Cascade/audio feedback and dedicated-or-combat-montage chopping animation;
+- Blueprint APIs/events for custom tree behavior;
+- the v2.0.1 UE5.8.1 compile corrections remain intact.
+
+See `Docs/WOODCUTTING.md`.
+
 ## 1.10.0-alpha distance-streamed AI populations
 
 `ARPGAISpawner` now treats NPC population as a streamed gameplay resource instead of leaving every spawned AI alive forever:
@@ -302,6 +331,7 @@ The package contains functional foundations for all major requested areas, but "
 ## Documentation
 
 - `Docs/QUICK_START.md` — fastest editor setup.
+- `Docs/WOODCUTTING.md` — Woodcutting progression, axes/tools, harvestable tree Blueprints, falling trunks, drops and building-resource integration.
 - `Docs/COMBAT.md` — automatic player/NPC combat, combos, dodge, block/parry and ranged/magic setup.
 - `Docs/AI_SPLINE.md` — automatic NavMesh spline patrol/travel, route looping, synchronized group direction, route points, spawner assignment and combat rejoin.
 - `Docs/AI_SPAWNER_MOVEMENT.md` — spawn groups versus cohesion, movement modes, independent/group free roam and spawner-centered wandering.

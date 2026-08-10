@@ -20,7 +20,7 @@ AARPGDayNightCycle::AARPGDayNightCycle()
 
     bReplicates = true;
     bAlwaysRelevant = true;
-    NetUpdateFrequency = 2.f;
+    SetNetUpdateFrequency(2.f);
 
     SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     SetRootComponent(SceneRoot);

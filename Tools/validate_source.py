@@ -198,6 +198,14 @@ if ai_combat_cpp.exists():
     if "MyCombat->bIsStaggered" not in ai_combat_text or "AI->StopMovement()" not in ai_combat_text:
         issues.append("AI combat must stop movement while staggered so knockback is not immediately overridden")
 
+day_night_cpp_v201 = root / "Private" / "World" / "ARPGDayNightCycle.cpp"
+if day_night_cpp_v201.exists():
+    day_night_text_v201 = day_night_cpp_v201.read_text(errors="replace")
+    if "NetUpdateFrequency =" in day_night_text_v201:
+        issues.append("v2.0.1 Day/Night must use SetNetUpdateFrequency() instead of deprecated public NetUpdateFrequency access")
+    if "SetNetUpdateFrequency(2.f)" not in day_night_text_v201:
+        issues.append("v2.0.1 Day/Night must retain the 2 Hz network update frequency through SetNetUpdateFrequency()")
+
 build_cs = root / "AkumasRPGFramework.Build.cs"
 if build_cs.exists() and '"Niagara"' not in build_cs.read_text(errors="replace"):
     issues.append("AkumasRPGFramework.Build.cs must depend on Niagara for combat feedback")
@@ -390,12 +398,380 @@ if spawner_header.exists() and spawner_cpp.exists():
 else:
     issues.append("v1.10 requires ARPGAISpawner source/header")
 
+
+# v2.0 Woodcutting / harvestable-tree requirements.
+woodcut_header = root / "Public" / "Components" / "ARPGWoodcuttingComponent.h"
+woodcut_cpp = root / "Private" / "Components" / "ARPGWoodcuttingComponent.cpp"
+tree_header = root / "Public" / "Gathering" / "ARPGTree.h"
+tree_cpp = root / "Private" / "Gathering" / "ARPGTree.cpp"
+item_header = root / "Public" / "Data" / "ARPGItemDefinition.h"
+character_header = root / "Public" / "Actors" / "ARPGCharacter.h"
+character_cpp = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+
+if not woodcut_header.exists() or not woodcut_cpp.exists():
+    issues.append("v2.0 requires the first-class ARPGWoodcuttingComponent")
+else:
+    wh = woodcut_header.read_text(errors="replace")
+    wc = woodcut_cpp.read_text(errors="replace")
+    for required in (
+        'SkillId = TEXT("Woodcutting")',
+        "StartWoodcuttingFromView",
+        "FindWoodcuttingTreeInView",
+        "ServerStartWoodcutting",
+        "ServerStopWoodcutting",
+        "GetWoodcuttingLevel() const",
+        "GetWoodcuttingXPForNextLevel() const",
+        "GetWoodcuttingLevelProgress() const",
+        "HasValidToolForTree",
+        "HasEquippedWoodcuttingTool",
+        "TryChopTreeWithBasicAttack",
+        "TryHandleBasicAttackAsWoodcutting",
+        "bAutoChopTreesWithBasicAttack = true",
+        "bBasicAttackRequiresEquippedAxe = true",
+        "bUseCombatMeleeMontageAsChopFallback = true",
+        "CalculateChopPower",
+        "AwardWoodcuttingXP",
+    ):
+        if required not in wh:
+            issues.append(f"v2.0 Woodcutting header missing: {required}")
+    for required in (
+        "SweepSingleByChannel",
+        "AddSkillXPFromDefinition",
+        "AddSkillXP(SkillId",
+        "GatheringToolTags",
+        "GatheringToolTier",
+        "GatheringPower",
+        "MulticastPlayChopMontage",
+        "ResolveBasicAttackTree",
+        "BeginWoodcuttingAuthority(Tree, true)",
+        "LastBasicAttackChopAt",
+        "PickRandomAttackMontage(false, false)",
+        "SetTimer(SwingTimer",
+        "SetTimer(ImpactTimer",
+    ):
+        if required not in wc:
+            issues.append(f"v2.0 Woodcutting runtime missing: {required}")
+
+combat_cpp_v202 = root / "Private" / "Components" / "ARPGCombatComponent.cpp"
+if not combat_cpp_v202.exists():
+    issues.append("v2.0.2 Basic Attack Woodcutting integration requires ARPGCombatComponent source")
+else:
+    combat_text_v202 = combat_cpp_v202.read_text(errors="replace")
+    for required in (
+        '#include "Components/ARPGWoodcuttingComponent.h"',
+        "TryHandleBasicAttackAsWoodcutting",
+        "bHandledAsWoodcutting",
+    ):
+        if required not in combat_text_v202:
+            issues.append(f"v2.0.2 context-sensitive Basic Attack integration missing: {required}")
+
+if not tree_header.exists() or not tree_cpp.exists():
+    issues.append("v2.0 requires the Blueprintable ARPGTree harvestable actor")
+else:
+    th = tree_header.read_text(errors="replace")
+    tc = tree_cpp.read_text(errors="replace")
+    for required in (
+        "Tree Mesh Variations",
+        "Wood Item",
+        "RequiredWoodcuttingLevel",
+        "bRequireWoodcuttingTool",
+        "MinimumToolTier",
+        "XPPerSuccessfulChop",
+        "XPOnFell",
+        "FallDuration",
+        "FallenTreeVisibleSeconds",
+        "RespawnSeconds",
+        "BonusDrops",
+        "ApplyChop",
+        "FellTree",
+        "ForceRespawn",
+        "SelectRandomTreeMesh",
+        "bRandomizeTreeMeshScale = true",
+        "MinimumMeshScale = 0.90f",
+        "MaximumMeshScale = 1.10f",
+        "SelectedTreeMeshScale",
+        "GetSelectedTreeMeshScale",
+        "SelectRandomTreeMeshScale",
+        "SetTreeMeshScale",
+        "OnTreeChopped",
+        "OnTreeFelled",
+        "OnTreeRewardGranted",
+    ):
+        if required not in th:
+            issues.append(f"v2.0 Tree header missing: {required}")
+    for required in (
+        "PrimaryActorTick.bStartWithTickEnabled = false",
+        "AwardWoodcuttingXP",
+        "AddItemDefinition",
+        "ReportItemLooted",
+        "CanAddItemDefinition",
+        "MulticastBeginTreeFall",
+        "FQuat(Axis",
+        "TreeState = EARPGTreeState::Stump",
+        "DOREPLIFETIME(AARPGTree, SelectedTreeMeshIndex)",
+        "DOREPLIFETIME(AARPGTree, SelectedTreeMeshScale)",
+        "FMath::FRandRange(MinScale, MaxScale)",
+        "ApplySelectedTreeMeshScale",
+        "SetRelativeScale3D(BaseFallPivotScale * Scale)",
+        "SetRelativeScale3D(BaseStumpMeshScale * Scale)",
+        "DOREPLIFETIME(AARPGTree, TreeState)",
+        "SpawnSystemAtLocation",
+        "SpawnEmitterAtLocation",
+    ):
+        if required not in tc:
+            issues.append(f"v2.0 Tree runtime missing: {required}")
+    if "SetActorLocation(" in tc:
+        issues.append("v2.0 tree fall must rotate the trunk around FallPivot, not teleport the tree")
+    ambiguous_tree_mesh_ternary = "TreeMeshes.IsValidIndex(SelectedTreeMeshIndex) ? TreeMeshes[SelectedTreeMeshIndex].Get()"
+    if ambiguous_tree_mesh_ternary in tc:
+        issues.append("v2.0.1 ARPGTree GetSelectedTreeMesh must not mix TObjectPtr<UStaticMesh> and UStaticMesh* in one ternary")
+    if "if (TreeMeshes.IsValidIndex(SelectedTreeMeshIndex))" not in tc or "return TreeMeshes[SelectedTreeMeshIndex].Get();" not in tc:
+        issues.append("v2.0.1 ARPGTree GetSelectedTreeMesh must use an explicit raw-pointer branch for UE5.8.1/MSVC")
+    for required_include in ('#include "NiagaraComponentPoolMethodEnum.h"', '#include "Particles/WorldPSCPool.h"'):
+        if required_include not in tc:
+            issues.append(f"v2.0 Tree feedback requires explicit UE pooling enum include: {required_include}")
+
+inventory_header_v2 = root / "Public" / "Components" / "ARPGInventoryComponent.h"
+inventory_cpp_v2 = root / "Private" / "Components" / "ARPGInventoryComponent.cpp"
+if not inventory_header_v2.exists() or not inventory_cpp_v2.exists():
+    issues.append("v2.0 requires inventory integration for Woodcutting rewards")
+else:
+    if "CanAddItemDefinition" not in inventory_header_v2.read_text(errors="replace") or "CanAddItemDefinition" not in inventory_cpp_v2.read_text(errors="replace"):
+        issues.append("v2.0 Woodcutting rewards require definition-aware inventory capacity preflight")
+
+if item_header.exists():
+    ih = item_header.read_text(errors="replace")
+    for required in ("GatheringToolTags", "GatheringPower", "GatheringToolTier"):
+        if required not in ih:
+            issues.append(f"v2.0 Item Definition gathering metadata missing: {required}")
+else:
+    issues.append("v2.0 requires ARPGItemDefinition")
+
+if character_header.exists() and character_cpp.exists():
+    ch = character_header.read_text(errors="replace")
+    cc = character_cpp.read_text(errors="replace")
+    if "TObjectPtr<UARPGWoodcuttingComponent> Woodcutting" not in ch:
+        issues.append("v2.0 ARPGCharacter must expose inherited Woodcutting component")
+    if "CreateDefaultSubobject<UARPGWoodcuttingComponent>" not in cc:
+        issues.append("v2.0 ARPGCharacter must create Woodcutting automatically")
+else:
+    issues.append("v2.0 requires ARPGCharacter source/header")
+
+
+# v2.1 designer inventory + equipment presentation polish.
+equipment_header_v21 = root / "Public" / "Components" / "ARPGEquipmentComponent.h"
+equipment_cpp_v21 = root / "Private" / "Components" / "ARPGEquipmentComponent.cpp"
+equipment_visual_header_v21 = root / "Public" / "Equipment" / "ARPGEquipmentVisualActor.h"
+equipment_visual_cpp_v21 = root / "Private" / "Equipment" / "ARPGEquipmentVisualActor.cpp"
+
+if inventory_header_v2.exists() and inventory_cpp_v2.exists():
+    ih21 = inventory_header_v2.read_text(errors="replace")
+    ic21 = inventory_cpp_v2.read_text(errors="replace")
+    for required in (
+        "FARPGStartingInventoryItem",
+        "Starting Items",
+        "bEquipOnSpawn",
+        "bGrantStartingItemsOnBeginPlay = true",
+        "bOnlyGrantStartingItemsWhenEmpty = true",
+        "ApplyStartingItems(bool bForce=false)",
+        "Runtime Items",
+    ):
+        if required not in ih21:
+            issues.append(f"v2.1 designer starting inventory missing: {required}")
+    for required in (
+        "ApplyStartingItems(false)",
+        "AddItemDefinition(Starting.Item",
+        "Equipment->EquipItem",
+        "bStartingItemsApplied = true",
+    ):
+        if required not in ic21:
+            issues.append(f"v2.1 starting inventory runtime missing: {required}")
+    if 'UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Items' in ih21:
+        issues.append("v2.1 runtime Items array must remain read-only; designers should author Starting Items instead")
+
+if not equipment_visual_header_v21.exists() or not equipment_visual_cpp_v21.exists():
+    issues.append("v2.1 requires the automatic ARPGEquipmentVisualActor")
+else:
+    evh = equipment_visual_header_v21.read_text(errors="replace")
+    evc = equipment_visual_cpp_v21.read_text(errors="replace")
+    for required in ("AARPGEquipmentVisualActor", "UStaticMeshComponent", "USkeletalMeshComponent", "ConfigureFromItem"):
+        if required not in evh:
+            issues.append(f"v2.1 equipment visual actor header missing: {required}")
+    for required in ("bReplicates = false", "SetCollisionEnabled(ECollisionEnabled::NoCollision)", "EquippedStaticMesh", "EquippedSkeletalMesh", "LoadSynchronous"):
+        if required not in evc:
+            issues.append(f"v2.1 equipment visual actor runtime missing: {required}")
+
+if not equipment_header_v21.exists() or not equipment_cpp_v21.exists():
+    issues.append("v2.1 requires polished Equipment Component presentation")
+else:
+    eh21 = equipment_header_v21.read_text(errors="replace")
+    ec21 = equipment_cpp_v21.read_text(errors="replace")
+    for required in (
+        "bAutoCreateEquipmentVisuals = true",
+        "RefreshEquipmentVisuals",
+        "GetEquipmentVisual",
+        "OnEquipmentVisualChanged",
+        "MulticastPlayEquipmentPresentation",
+        "PlayEquippedCombatSwingSoundLocal",
+    ):
+        if required not in eh21:
+            issues.append(f"v2.1 Equipment header missing: {required}")
+    for required in (
+        "Inventory->OnInventoryChanged.AddDynamic",
+        "RefreshEquipmentVisuals();",
+        "SpawnActor<AARPGEquipmentVisualActor>",
+        "AttachToComponent",
+        "EquippedRelativeTransform",
+        "SetReplicates(false)",
+        "EquipSound",
+        "UnequipSound",
+        "EquipMontage",
+        "UnequipMontage",
+    ):
+        if required not in ec21:
+            issues.append(f"v2.1 Equipment runtime missing: {required}")
+
+if item_header.exists():
+    ih21_item = item_header.read_text(errors="replace")
+    for required in (
+        "EquippedVisualActorClass",
+        "EquippedStaticMesh",
+        "EquippedSkeletalMesh",
+        "EquippedRelativeTransform",
+        "EquipSound",
+        "UnequipSound",
+        "CombatSwingSound",
+        "GatheringSwingSound",
+        "GatheringHitSound",
+        "EquipmentAudioVolume",
+    ):
+        if required not in ih21_item:
+            issues.append(f"v2.1 Item Definition equipment presentation missing: {required}")
+
+if woodcut_cpp.exists():
+    wc21 = woodcut_cpp.read_text(errors="replace")
+    for required in ("GatheringSwingSound", "CombatSwingSound", "EquipmentAudioVolume"):
+        if required not in wc21:
+            issues.append(f"v2.1 Woodcutting tool-swing audio missing: {required}")
+if tree_cpp.exists():
+    tc21 = tree_cpp.read_text(errors="replace")
+    for required in ("MulticastPlayChopFeedback(Harvester", "GatheringHitSound", "GetBestEquippedWoodcuttingTool"):
+        if required not in tc21:
+            issues.append(f"v2.1 tree/tool impact audio missing: {required}")
+if combat_cpp_v202.exists():
+    combat21 = combat_cpp_v202.read_text(errors="replace")
+    if "PlayEquippedCombatSwingSoundLocal" not in combat21:
+        issues.append("v2.1 combat must prefer equipped-item swing audio when supplied")
+
+
+# v2.1.1 runtime inventory/equipment/Woodcutting consistency fixes.
+asset_library_v211 = root / "Private" / "Utilities" / "ARPGAssetLibrary.cpp"
+if asset_library_v211.exists():
+    al211 = asset_library_v211.read_text(errors="replace")
+    for required in ("TObjectIterator<UARPGDefinitionBase>", "Candidate->DefinitionId.IsNone() ? Candidate->GetFName()"):
+        if required not in al211:
+            issues.append(f"v2.1.1 loaded-definition fallback missing: {required}")
+
+arpgt_types_v211 = root / "Public" / "ARPGTypes.h"
+if arpgt_types_v211.exists():
+    types211 = arpgt_types_v211.read_text(errors="replace")
+    if "TSoftObjectPtr<UARPGItemDefinition> ItemDefinition" not in types211:
+        issues.append("v2.1.1 runtime inventory entries must retain the exact Item Definition soft reference")
+else:
+    issues.append("v2.1.1 requires ARPGTypes.h")
+
+if inventory_header_v2.exists() and inventory_cpp_v2.exists():
+    ih211 = inventory_header_v2.read_text(errors="replace")
+    ic211 = inventory_cpp_v2.read_text(errors="replace")
+    for required in (
+        "ResolveItemDefinition(const FARPGInventoryEntry& Entry) const",
+        "GetItemDefinitionForInstance",
+        "IsItemInstanceEquipped",
+    ):
+        if required not in ih211:
+            issues.append(f"v2.1.1 Inventory API missing: {required}")
+    for required in (
+        "Entry.ItemDefinition.LoadSynchronous()",
+        "Starting.Item->GetFName()",
+        "StableId = Item->DefinitionId.IsNone() ? Item->GetFName()",
+        "Entry.ItemDefinition = ExplicitDefinition",
+        "BackfillDefinitionReference",
+        "Slot != Definition->EquipmentSlot",
+        "OccupiedEquipmentSlots",
+    ):
+        if required not in ic211:
+            issues.append(f"v2.1.1 exact runtime Item Definition path missing: {required}")
+    if "if (!Item || Item->DefinitionId.IsNone()" in ic211:
+        issues.append("v2.1.1 inventory must allow Item Definition asset-name fallback when DefinitionId is blank")
+
+if equipment_header_v21.exists() and equipment_cpp_v21.exists():
+    eh211 = equipment_header_v21.read_text(errors="replace")
+    ec211 = equipment_cpp_v21.read_text(errors="replace")
+    for required in (
+        "IsValidEquippedEntry",
+        "FallbackHandSockets",
+        "bAutoFindFallbackHandSocket = true",
+        "MulticastPlayEquipmentPresentation(UARPGItemDefinition* Definition",
+    ):
+        if required not in eh211:
+            issues.append(f"v2.1.1 Equipment header missing: {required}")
+    for required in (
+        "Inventory->ResolveItemDefinition(Entry)",
+        "Entry.InstanceId.IsValid()",
+        "Entry.Quantity <= 0",
+        "Entry.EquipmentSlot == Definition->EquipmentSlot",
+        "ResolveAttachSocket",
+        "DoesSocketExist",
+        "MulticastPlayEquipmentPresentation(Definition, true)",
+    ):
+        if required not in ec211:
+            issues.append(f"v2.1.1 Equipment runtime missing: {required}")
+    if "MulticastPlayEquipmentPresentation(FName ItemId" in eh211 or "MulticastPlayEquipmentPresentation_Implementation(FName ItemId" in ec211:
+        issues.append("v2.1.1 equipment presentation must use the exact Item Definition instead of re-resolving ItemId")
+
+if woodcut_cpp.exists():
+    wc211 = woodcut_cpp.read_text(errors="replace")
+    for required in (
+        "Inventory->ResolveItemDefinition(Entry)",
+        "Entry.InstanceId.IsValid()",
+        "Entry.Quantity <= 0",
+        "Entry.EquipmentSlot.IsValid()",
+        "Def->bEquippable",
+        "Entry.EquipmentSlot != Def->EquipmentSlot",
+        "GetBestEquippedWoodcuttingToolInstanceId",
+        "MulticastPlayChopMontage(CurrentTree, FindBestToolForTree(CurrentTree))",
+    ):
+        if required not in wc211:
+            issues.append(f"v2.1.1 strict equipped Woodcutting tool path missing: {required}")
+
+if tree_cpp.exists():
+    tc211 = tree_cpp.read_text(errors="replace")
+    for required in (
+        "EquippedTool = Woodcutting->GetBestEquippedWoodcuttingTool()",
+        "MulticastPlayChopFeedback(Harvester, ImpactLocation, EquippedTool)",
+        "EquippedTool->GatheringHitSound",
+    ):
+        if required not in tc211:
+            issues.append(f"v2.1.1 exact equipped-tool hit presentation missing: {required}")
+
+crafting_cpp_v211 = root / "Private" / "Crafting" / "ARPGCraftingStationActor.cpp"
+if crafting_cpp_v211.exists():
+    crafting211 = crafting_cpp_v211.read_text(errors="replace")
+    for required in (
+        "InventoryComponent->ResolveItemDefinition(Entry)",
+        "FuelInventory->ResolveItemDefinition(Entry)",
+    ):
+        if required not in crafting211:
+            issues.append(f"v2.1.1 crafting must consume exact runtime Item Definitions: {required}")
+
 storage_header = root / "Public" / "Crafting" / "ARPGStorageActor.h"
 if storage_header.exists() and "TObjectPtr<UARPGFactionOwnershipComponent> Ownership" in storage_header.read_text():
     issues.append("Storage actor duplicates base building Ownership component")
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
+    if descriptor.get("Version") != 2101 or descriptor.get("VersionName") != "2.1.1-alpha":
+        issues.append("package descriptor must identify v2.1.1-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:

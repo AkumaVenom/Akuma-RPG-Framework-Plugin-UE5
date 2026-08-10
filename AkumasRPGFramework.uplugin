@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 1100,
-  "VersionName": "1.10.0-alpha",
+  "Version": 2101,
+  "VersionName": "2.1.1-alpha",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with distance-streamed AI spawners, host-PC-time synchronized day/night world lighting and pure time queries, coordinated group combat, automatic retaliation/assist, polished Z-target camera lock, combat FX/audio/stagger, automatic melee/ranged/magic combat, dodge/block/parry, NPC ragdoll, NavMesh spline/free-roam AI, GAS abilities, factions, quests, inventory, skills, bosses/dungeons, building/crafting, mounts, saves and networking.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with runtime-entry-backed item definitions, strict equipped-item validation, automatic equipment visuals/audio, designer-friendly starting inventories, polished Woodcutting/harvestable falling trees, context-sensitive axe Basic Attacks, replicated tree variation, distance-streamed AI, host-synchronized day/night, coordinated combat, Z-targeting, GAS, factions, quests, building/crafting, mounts, saves and networking.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,

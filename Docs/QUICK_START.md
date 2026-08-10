@@ -100,6 +100,23 @@ Create `ARPGItemDefinition` assets, configure stack limits/value/tags, and optio
 
 Use `ARPGInventoryComponent` for authoritative inventory state and `ARPGEquipmentComponent` for validated equip/unequip requests.
 
+## 5A. Woodcutting — create a tree in minutes
+
+The ready `ARPGCharacter` already contains `ARPGWoodcuttingComponent`.
+
+1. Create an `ARPGItemDefinition` for the logs, for example `AshLogs`.
+2. Create a Blueprint child of `ARPGTree`.
+3. In `Tree Mesh Variations`, add one or more tree Static Mesh assets.
+4. Set `Minimum Mesh Scale` / `Maximum Mesh Scale` if you want each placed tree to receive a replicated random size (0.90-1.10 by default).
+5. Assign an optional Stump Mesh.
+6. Set `Wood Item` to the log Item Definition and choose Min/Max Wood Quantity.
+7. Tune Required Woodcutting Level, health/resistance, fall and respawn settings.
+8. Place the tree. The existing `Start Woodcutting From View` input gives automatic repeated chopping.
+
+For axe progression, put `Item.Tool.Axe` in an equipped Item Definition's `Gathering Tool Tags`, then set its `Gathering Power` and `Gathering Tool Tier`. Trees can optionally require that tool tag and a minimum tier. **Basic Attack Auto Chops Trees** is enabled by default on the Woodcutting component: with an axe equipped and no real combat/lock-on target, your existing `Basic Attack` input automatically performs one chop on the tree in view.
+
+The same Wood Item can be put directly into a Build Piece Definition's `Build Cost`, so chopped logs immediately work as building resources. See `Docs/WOODCUTTING.md`.
+
 ## 6. Quests
 
 Create an `ARPGQuestDefinition` with objectives and rewards. Add `ARPGQuestGiverComponent` to an NPC and place the quest asset in its `Quests` array.
@@ -282,3 +299,9 @@ For `ARPGAISpawner`, choose `Movement Mode`:
 - **No Automatic Travel**: leaves idle travel to your own logic.
 
 `Stay Together` is now independent from spawn grouping. Turn it OFF to keep the group count/respawn semantics while allowing all members to roam independently. Turn it ON for group-leader cohesion recovery. Spline groups also synchronize route direction by default so they do not split and run both ways at an endpoint. See `Docs/AI_SPAWNER_MOVEMENT.md`.
+
+## v2.1 starting items + visible equipment
+
+On an `ARPGCharacter` Blueprint select the inherited **Inventory** component. Do not edit `Runtime Items`; it is deliberately read-only replicated/save state. Add Item Definition assets under **Starting Items** instead. `Quantity` and `Equip On Spawn` are exposed per entry.
+
+For a visible axe, configure `DA_StoneAxe` with `Equippable`, a valid Equipment Slot, `Item.Tool.Axe`, `Equipped Static Mesh = SM_Stoneaxe`, the character's hand/weapon `Attach Socket`, and optional relative transform/audio. The Equipment component creates the held visual automatically.
