@@ -160,3 +160,8 @@ Defender Combat Profile > Defence > Stagger
 On a successful stagger, AI path following is stopped immediately before the launch is applied, and character movement velocity is cleared so NavMesh steering/current velocity cannot visually swallow the knockback.
 
 Automatic melee AI now performs one attack commitment at a time. It does not feed repeated calls into the player's combo-buffer logic while `bIsAttacking` is true. After the attack finishes, the existing `AI Combat > Group Combat > Attack Slot Cooldown After Attack` value provides additional breathing room even for a solo NPC. Typical wildlife values are around `0.8-1.25` seconds; heavier enemies can use longer pauses.
+
+
+## AI dodge authoring (2.4.2+)
+
+For NPCs, the primary dodge probability is authored on the Combat component under **Dodge -> AI Dodge Chance** (`0.0` never, `1.0` whenever a valid automatic defence reaction can dodge). `Dodge Cancels Stagger` lets a valid dodge immediately leave stagger, clear its timer/knockback velocity, and transition into dodge presentation/movement. The older AICombat `DodgeChance` remains only as a compatibility fallback for projects that already authored it.

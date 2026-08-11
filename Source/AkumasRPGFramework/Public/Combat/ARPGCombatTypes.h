@@ -149,6 +149,8 @@ struct AKUMASRPGFRAMEWORK_API FARPGDodgeSettings
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge") bool bEnabled = true;
+    /** Automatic AI defence chance for this combat profile. 0 = never dodge, 1 = always choose dodge when a valid reaction opportunity exists. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge", meta=(DisplayName="AI Dodge Chance", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0")) float AIDodgeChance = 0.35f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge") TSoftObjectPtr<UAnimMontage> ForwardMontage;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge") TSoftObjectPtr<UAnimMontage> BackwardMontage;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge") TSoftObjectPtr<UAnimMontage> LeftMontage;
@@ -161,6 +163,8 @@ struct AKUMASRPGFRAMEWORK_API FARPGDodgeSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge", meta=(ClampMin="0.0")) float InvulnerabilityEnd = 0.40f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge") bool bUseRootMotionOnly = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge") bool bDodgeCancelsAttacks = true;
+    /** When enabled, beginning a dodge immediately clears an active stagger state/timer and replaces the stagger reaction with the dodge. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dodge", meta=(DisplayName="Dodge Cancels Stagger")) bool bDodgeCancelsStagger = true;
 };
 
 USTRUCT(BlueprintType)

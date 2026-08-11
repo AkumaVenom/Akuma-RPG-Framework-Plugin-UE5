@@ -737,7 +737,12 @@ void UARPGAICombatComponent::UpdateDefenceAgainstTarget(UARPGCombatComponent* My
     if (ObservedEnemyAttackSerial != EnemyCombat->AttackSerial)
     {
         ObservedEnemyAttackSerial = EnemyCombat->AttackSerial;
-        ReactionDueAt = Now + FMath::FRandRange(FMath::Min(ReactionTimeMin, ReactionTimeMax), FMath::Max(ReactionTimeMin, ReactionTimeMax));
+        const float RequestedReactionDelay = FMath::FRandRange(FMath::Min(ReactionTimeMin, ReactionTimeMax), FMath::Max(ReactionTimeMin, ReactionTimeMax));
+        const float ImpactRemaining = FMath::Max(0.f, EnemyCombat->GetAttackImpactSecondsRemaining());
+        // Defence is evaluated on a timer rather than every frame. Clamp the reaction due time far enough
+        // before impact that at least one normal Think tick can observe it on quick melee attacks.
+        const float LatestUsefulReactionDelay = FMath::Max(0.f, ImpactRemaining - FMath::Max(0.02f, ThinkInterval));
+        ReactionDueAt = Now + FMath::Min(RequestedReactionDelay, LatestUsefulReactionDelay);
     }
     if (ReactedEnemyAttackSerial == EnemyCombat->AttackSerial || ReactionDueAt < 0.f || Now < ReactionDueAt) return;
 
@@ -750,9 +755,22 @@ void UARPGAICombatComponent::UpdateDefenceAgainstTarget(UARPGCombatComponent* My
     const float DodgeRoll = bCanDodgeNow ? FMath::FRand() : 1.f;
     const float BlockRoll = bCanBlockNow ? FMath::FRand() : 1.f;
 
-    if (bCanDodgeNow && DodgeRoll <= FMath::Clamp(DodgeChance, 0.f, 1.f))
+    const FARPGDodgeSettings DodgeSettings = MyCombat->GetCombatProfile().Dodge;
+    float EffectiveDodgeChance = FMath::Clamp(DodgeSettings.AIDodgeChance, 0.f, 1.f);
+    // Backward compatibility: projects that already customized the pre-2.4.2 AICombat DodgeChance
+    // keep that value until the new Combat->Dodge->AI Dodge Chance is explicitly changed from default.
+    if (FMath::IsNearlyEqual(DodgeSettings.AIDodgeChance, 0.35f) && !FMath::IsNearlyEqual(DodgeChance, 0.35f))
+        EffectiveDodgeChance = FMath::Clamp(DodgeChance, 0.f, 1.f);
+
+    if (bCanDodgeNow && DodgeRoll <= EffectiveDodgeChance)
     {
         const EARPGDodgeDirection Direction = FMath::RandBool() ? EARPGDodgeDirection::Left : EARPGDodgeDirection::Right;
+
+        // Clear this component's cached MoveTo bookkeeping before the Combat component performs the
+        // dodge. PerformDodgeAuthority aborts the live AI path before applying movement; this reset
+        // guarantees pursuit can be issued again cleanly when the dodge finishes.
+        ResetActiveMoveState();
+
         MyCombat->PerformDodge(Direction);
     }
     else if (bCanBlockNow && BlockRoll <= FMath::Clamp(BlockChance, 0.f, 1.f))
@@ -851,7 +869,14 @@ void UARPGAICombatComponent::Think()
         ResetActiveMoveState();
         return;
     }
-    if (MyCombat->bIsDodging || MyCombat->bGuardBroken) return;
+    if (MyCombat->bIsDodging)
+    {
+        // Do not issue chase/orbit requests during the dodge. Keep only our cached path state clear;
+        // the actual path was aborted before the launch so we do not zero the fresh dodge velocity.
+        ResetActiveMoveState();
+        return;
+    }
+    if (MyCombat->bGuardBroken) return;
 
     // AI must never repeatedly call PerformBasicAttack while an attack is already active. The combat
     // component treats calls inside the combo queue window as buffered combo input, so the old AI loop

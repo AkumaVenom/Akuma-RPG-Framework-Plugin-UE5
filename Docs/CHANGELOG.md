@@ -1,3 +1,23 @@
+# 2.4.2-alpha — AI dodge authoring + stagger escape
+
+- Added `AI Dodge Chance` directly to `Combat -> Dodge`, so NPC dodge probability is visible alongside Direction Montages, Duration, Distance and invulnerability settings instead of being hidden on the separate AICombat component.
+- Retained the existing AICombat `DodgeChance` property unchanged for serialized/Blueprint compatibility; customized legacy values remain a fallback while the new profile chance is left at its default.
+- Added `Dodge Cancels Stagger` (enabled by default). A valid dodge may now start while staggered, atomically clears the stagger timer/tag/state, broadcasts stagger-end, clears residual stagger knockback velocity, then begins the dodge.
+- Automatic AI defence can therefore dodge out of stagger when a new incoming attack creates a valid reaction opportunity.
+- Improved reaction scheduling for fast attacks so `ThinkInterval` cannot make an otherwise valid dodge window disappear between AI defence ticks.
+- Preserved v2.4.1 navigation-abort and code-driven lateral displacement behavior.
+- Public reflected changes are intentionally limited to the Dodge settings struct; no Quick Access, Inventory, Equipment, Spawner, Character or Day/Night API was changed.
+
+# 2.4.1-alpha — AI dodge movement reliability
+
+- Fixed automatic NPC dodges being selected and animated while active AI path following could immediately fight the dodge displacement, making left/right evasion appear stationary.
+- `PerformDodgeAuthority` now aborts an AI controller's active path before dodge presentation/movement begins.
+- Code-driven dodges clear current CharacterMovement velocity and apply a clean lateral launch derived from the existing authored `Distance / Duration` settings.
+- `ARPGAICombatComponent` resets cached combat MoveTo state when committing/holding a dodge, preventing stale path state from blocking pursuit after the dodge finishes.
+- Root-motion-only dodge behavior remains opt-in and unchanged; navigation is still suspended so root motion can move the NPC without path-following interference.
+- No Blueprint-facing public header/schema changes versus v2.4.0-alpha.
+- Added `Tools/test_ai_dodge_movement_model.py` regression coverage.
+
 # 2.4.0-alpha — Day/night AI population swapping
 
 - Added opt-in `Enable Midnight Population Swap` to `ARPGAISpawner`; disabled spawners retain the pre-2.4 preserved population lifecycle unchanged.

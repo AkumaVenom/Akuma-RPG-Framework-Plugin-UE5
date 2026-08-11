@@ -101,6 +101,8 @@ The Class Definition's `Combat Profile -> Dodge` section exposes:
 
 `Dodge(Auto)` picks a direction from current character movement. With no movement it defaults to a backward dodge. You can call a specific direction directly if your input system prefers it.
 
+Automatic NPC defence chooses left/right dodge directions. Before an AI dodge begins the framework aborts active path following and clears stale combat MoveTo bookkeeping, so navigation cannot cancel the visible displacement. With `Use Root Motion Only = false`, the framework drives the dodge using the authored `Distance / Duration`; with it enabled, the assigned montage must contain usable root motion and the framework intentionally does not add a launch.
+
 ## Shield block, perfect block and parry
 
 The `Combat Profile -> Block` section exposes:

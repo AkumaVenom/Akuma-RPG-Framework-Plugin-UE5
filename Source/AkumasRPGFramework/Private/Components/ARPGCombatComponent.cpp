@@ -139,9 +139,10 @@ bool UARPGCombatComponent::CanPerformBasicAttack() const
 
 bool UARPGCombatComponent::CanDodge() const
 {
-    if (!GetOwner() || LifeState != EARPGLifeState::Alive || bIsDodging || bGuardBroken || bIsStaggered) return false;
+    if (!GetOwner() || LifeState != EARPGLifeState::Alive || bIsDodging || bGuardBroken) return false;
     const FARPGDodgeSettings Dodge = GetCombatProfile().Dodge;
     if (!Dodge.bEnabled) return false;
+    if (bIsStaggered && !Dodge.bDodgeCancelsStagger) return false;
     if (bIsAttacking && !Dodge.bDodgeCancelsAttacks) return false;
     const UWorld* World = GetWorld();
     if (World && World->GetTimeSeconds() - LastDodgeAt < Dodge.Cooldown) return false;
@@ -655,6 +656,22 @@ bool UARPGCombatComponent::PerformDodgeAuthority(EARPGDodgeDirection Direction)
     UARPGStatsComponent* Stats = GetOwner()->FindComponentByClass<UARPGStatsComponent>();
     if (Stats && Dodge.StaminaCost > 0.f && !Stats->SpendStamina(Dodge.StaminaCost)) return false;
 
+    // A dodge can intentionally break an active stagger. Clear the authoritative state and timer
+    // before playing/applying dodge movement so the old stagger cannot reassert itself a frame later.
+    if (bIsStaggered && Dodge.bDodgeCancelsStagger)
+    {
+        if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(StaggerTimer);
+        bIsStaggered = false;
+        SetLooseCombatTag(TEXT("Combat.State.Staggered"), false);
+        OnStaggerStateChanged.Broadcast(false);
+
+        // Stagger knockback may still be carrying velocity. A dodge is a new authored movement state,
+        // so discard that old impulse before root motion or code-driven dodge displacement begins.
+        if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+            if (UCharacterMovementComponent* Move = Character->GetCharacterMovement())
+                Move->StopMovementImmediately();
+    }
+
     if (bIsBlocking) StopBlockingAuthority(false);
     if (bIsAttacking && Dodge.bDodgeCancelsAttacks)
     {
@@ -675,10 +692,29 @@ bool UARPGCombatComponent::PerformDodgeAuthority(EARPGDodgeDirection Direction)
     DodgeStartedAt = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
     LastDodgeAt = DodgeStartedAt;
 
+    // AI path following can continuously feed requested movement into CharacterMovement. If a dodge
+    // begins while a MoveTo is active, that requested movement can immediately fight the lateral
+    // launch and make the NPC appear to play a dodge without actually changing location. Abort the
+    // path before either root motion or code-driven dodge movement begins. Player-controlled pawns
+    // are unaffected by this branch.
+    if (APawn* Pawn = Cast<APawn>(GetOwner()))
+        if (AAIController* AI = Cast<AAIController>(Pawn->GetController()))
+            AI->StopMovement();
+
     if (UAnimMontage* Montage = ResolveDodgeMontage(ResolvedDirection, Dodge)) MulticastPlayMontage(Montage, 1.f);
     if (!Dodge.bUseRootMotionOnly)
+    {
         if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
-            Character->LaunchCharacter(WorldDirection * (Dodge.Distance / FMath::Max(0.05f, Dodge.Duration)), true, false);
+        {
+            if (UCharacterMovementComponent* Move = Character->GetCharacterMovement())
+                Move->StopMovementImmediately();
+
+            const float DodgeSpeed = FMath::Max(0.f, Dodge.Distance) / FMath::Max(0.05f, Dodge.Duration);
+            const FVector DodgeVelocity = WorldDirection.GetSafeNormal2D() * DodgeSpeed;
+            if (!DodgeVelocity.IsNearlyZero())
+                Character->LaunchCharacter(DodgeVelocity, true, false);
+        }
+    }
 
     OnDodgeStarted.Broadcast(ResolvedDirection);
     MulticastPlayCombatCue(EARPGCombatFeedbackCue::Dodge, GetOwner()->GetActorLocation(), WorldDirection);

@@ -7,6 +7,21 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 2.4.2-alpha AI dodge authoring + stagger escape
+
+- Added **AI Dodge Chance** directly to `Combat -> Dodge`, matching the editor location where dodge montages, Duration, Distance, invulnerability and root-motion settings are authored.
+- Added **Dodge Cancels Stagger** (enabled by default). A successful dodge can now break an active stagger cleanly, clear its timer/state and residual knockback velocity, then take over movement/animation as the new defensive state.
+- Fast incoming attacks now receive a usable automatic-defence reaction window even with the AI combat Think timer, reducing cases where a valid dodge opportunity was skipped between ticks.
+- The pre-2.4.2 AICombat `DodgeChance` field is retained unchanged for serialized compatibility; the new Combat-profile field is the primary control.
+- v2.4.1 navigation-abort and lateral dodge displacement fixes remain intact.
+
+## 2.4.1-alpha AI dodge movement reliability
+
+- Fixed NPC dodge decisions playing/entering dodge state without reliable visible lateral displacement while an AI `MoveTo` was active.
+- AI navigation is aborted before dodge motion begins, CharacterMovement velocity is cleared before the configured launch is applied, and combat MoveTo bookkeeping is reset so pursuit resumes cleanly after the dodge.
+- Root-motion-only dodge authoring is preserved: when `Use Root Motion Only` is enabled the framework does not inject code-driven displacement, but AI path following is still suspended so montage root motion is not fought by navigation.
+- No Blueprint-facing public header/schema changes versus v2.4.0-alpha.
+
 ## 2.4.0-alpha day/night AI population swapping
 
 `ARPGAISpawner` can now optionally swap its runtime population at **true midnight (00:00)** and restore the normal/daylight population when the authoritative `ARPGDayNightCycle` reaches its configured **Day Start Hour**. The existing `Spawn Table` remains the daylight/default table, while a new weighted `Midnight Spawn Table` accepts night-only enemies such as undead, nocturnal wildlife or event creatures.
