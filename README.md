@@ -6,6 +6,29 @@ The design goal is simple: create content with Data Assets, assign components/de
 
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
+## 2.7.2-alpha spawned AI navigation readiness
+
+v2.7.1 hardens Free Roam startup for spawned NPCs. Spawner-owned Free Roam/Spline pawns explicitly ensure their default AI controller exists before movement configuration. Wanderer no longer assumes its first synchronous `MoveToLocation` succeeded: it checks Unreal's path-following request result, performs short server-only retries while AI possession/NavMesh/path following are still becoming ready, and only marks Free Roam established after a real navigation request is accepted. Social AI waits for that locomotion handshake before reserving a Free-Roam NPC, preventing the misleading state where a pawn can rotate/focus on another actor but never translate. No reflected Blueprint API changed.
+
+## 2.7.0-alpha dynamic Day/Night street lights
+
+`AARPGDynamicStreetLight` is a new Blueprint-derivable lamp/world-light actor that reads the existing `ARPGDayNightCycle`. It exposes an inherited movable Point Light plus Niagara and Cascade components, can auto-discover or explicitly bind a cycle, applies the correct state immediately at startup, and then reacts to Day/Night events without a permanent Tick. By default lamps are on during Night + Dawn and off during Day + Dusk; each phase is independently configurable. Niagara can be preferred with automatic Cascade fallback, or both/one/none can be selected. Blueprint-added light components can optionally follow the same state, and an overridable state-change event supports emissive/audio/custom presentation. See `Docs/DYNAMIC_STREET_LIGHTS.md`.
+
+
+## 2.6.1-alpha Free-Roam / social handoff reliability
+
+v2.6.1 hardens the movement ownership boundary between **Spawner Free Roam**, **ambient social interactions**, **group cohesion recovery**, **Spline routes**, and combat. Temporary systems no longer disable the Wanderer itself. Instead they acquire/release independent native pause reasons, so one system cannot accidentally restore or permanently disable another system's movement state.
+
+Spawned Free-Roam NPCs use the Wanderer startup path when the spawner enables roaming; v2.7.1 further hardens this with navigation-readiness retries and accepted-request verification. Social AI also waits through an initial opportunity grace window before its first ambient pairing, giving newly spawned actors time to receive their movement configuration and disperse naturally. Group-cohesion recovery continues issuing its leader recovery request until the configured recovery radius is actually reached, and social interactions do not compete with that recovery ownership.
+
+This patch does not add or rename reflected Blueprint fields/functions. Existing `Free Roam`, `Stay Together`, social, faction, combat and spline authoring remains intact.
+
+## 2.6.0-alpha ambient NPC social interactions
+
+`AARPGAICharacter` now includes an optional inherited **AISocial** component. It is disabled by default. When enabled, compatible nearby NPCs can naturally pause, approach, face one another and perform randomized ambient exchanges before resuming their previous Wanderer or Spline movement. Social pairing respects same/friendly/neutral/factionless authoring and **always rejects hostile relationships**, supports optional GameplayTag archetype matching, and requires a shared Interaction Id while allowing each NPC/skeleton to use its own local montage/audio/text content.
+
+The system is server-authoritative, timer/overlap based rather than permanently ticking, uses opportunity and partner cooldowns to prevent crowd spam, and immediately yields to combat target acquisition, incoming damage, defensive/combat states or death. Blueprint events expose interaction start/end and spoken lines for speech bubbles/subtitles or project-specific presentation. See `Docs/AI_SOCIAL_INTERACTIONS.md`.
+
 
 ## 2.5.4-alpha packaged-build compile fix
 
@@ -446,4 +469,5 @@ The package contains functional foundations for all major requested areas, but "
 - `Docs/BUILDING_CRAFTING.md` — building, faction ownership, storage and furnaces.
 - `Docs/NETWORK_AND_AUTH.md` — login, saves and direct-IP networking boundaries.
 - `Docs/VALIDATION.md` — validation performed on this source package.
+
 

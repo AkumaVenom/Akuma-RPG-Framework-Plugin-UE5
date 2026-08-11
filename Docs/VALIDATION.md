@@ -1,3 +1,41 @@
+## v2.7.1 spawned Free-Roam navigation readiness
+
+Static/model validation additionally checks that:
+
+- Wanderer uses the concrete UE path-following request result and includes `Navigation/PathFollowingComponent.h`;
+- initial/failed Free-Roam navigation requests schedule short retries rather than relying on the normal long ambient Think interval;
+- only `RequestSuccessful` establishes the Free-Roam startup handshake;
+- disabling or temporarily pausing Wanderer cancels pending startup retries;
+- social AI rejects an enabled Free-Roam participant until locomotion has successfully established once;
+- no reflected Blueprint API was added for the native-only readiness state.
+
+These checks are not a UE 5.8.1 compile or runtime test. Repeated PIE starts with spawner-created NPCs remain the acceptance test for the intermittent startup symptom.
+
+
+## v2.6.1 Free-Roam / social startup reliability
+
+Static/model validation additionally checks that:
+
+- Wanderer temporary movement ownership is tracked independently from the persistent `bEnabled` authoring/spawner state;
+- social interaction uses its own movement-pause reason and releases only that reason;
+- social candidate selection rejects NPCs already owned by another temporary Wanderer recovery state;
+- spawner group cohesion uses its own pause reason and reissues leader recovery through the full hysteresis band until `RecoveryRadius` is reached;
+- cohesion does not issue competing `MoveTo` requests while an NPC is socially engaged;
+- enabling Free Roam requests an immediate first destination while the normal recurring Think timer remains timer-driven;
+- Wanderer Think yields to an active spline route;
+- the first automatic social opportunity is delayed through the existing Opportunity Retry range so spawned NPCs can initialize and disperse first.
+
+Repository checks do not replace a real UE 5.8.1 Development Editor build/package and PIE observation of spawned NPC movement.
+
+## v2.6 ambient NPC social interaction checks
+
+- `AARPGAICharacter` owns a disabled-by-default `AISocial` component.
+- Social scanning is timer/overlap based and capped; there is no permanent social Tick.
+- Pair matching requires a common interaction id and symmetric tag/faction acceptance; hostility in either direction is rejected.
+- Pair reservation, approach/interact/end state and combat interruption are server-authoritative.
+- Wanderer/spline ambient movement is paused/restored around social encounters.
+- `Tools/test_ai_social_interaction_model.py` covers same/friendly/neutral/hostile relationships, tag gates, common interaction ids, pair state progression and interruption cleanup.
+
 
 ## v2.5.4 packaged-build compatibility
 
@@ -252,3 +290,30 @@ python Tools/test_day_night_spawner_model.py
 ```
 
 The model verifies legacy-disabled preservation, midnight daylight→midnight replacement, morning restoration, distance-unloaded phase switching without background spawning, and clock-jump robustness.
+
+
+## v2.7 dynamic street-light regression model
+
+Run:
+
+```bash
+python Tools/test_dynamic_street_light_model.py
+```
+
+The model verifies the default Night/Dawn-on and Day/Dusk-off schedule, Niagara-preferred Cascade fallback semantics, required Blueprint-facing components/APIs, no permanent actor Tick, Day/Night event bindings, low-frequency missing-cycle retry and use of the existing Niagara module dependency.
+
+Recommended UE 5.8.1 runtime check: derive a Blueprint from `ARPGDynamicStreetLight`, attach the street-lamp mesh, position `LampLight`/FX, place an `ARPGDayNightCycle`, then use Fixed Time or accelerated Simulated Clock to cross Dusk -> Night -> Dawn -> Day. Confirm the light and chosen FX activate/deactivate once per transition and that starting PIE directly at a night or day time initializes correctly without waiting for a phase edge.
+
+## v2.7.2 spawned-AI collision / locomotion checks
+
+Static/model validation additionally checks that:
+
+- `ARPGAISpawner` no longer uses `AdjustIfPossibleButAlwaysSpawn` for AI population creation;
+- spawned AI use `AdjustIfPossibleButDontSpawnIfColliding` with bounded retries and point-spawner fallback spread;
+- a failed safe spawn is skipped rather than deliberately creating an encroaching pawn;
+- Wanderer does not mark Free Roam established merely because `MoveToLocation` returned `RequestSuccessful`;
+- real 2D actor translation is required before Free Roam becomes established/socially eligible;
+- an accepted-but-stationary path is aborted and retried through the normal navigation recovery path;
+- no reflected Blueprint API was added for the native-only locomotion proof state.
+
+These checks do not replace repeated PIE/runtime observation or a UE 5.8.1 compile/package test.

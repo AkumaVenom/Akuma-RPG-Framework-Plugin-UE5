@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 2540,
-  "VersionName": "2.5.4-alpha",
+  "Version": 2720,
+  "VersionName": "2.7.2-alpha",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with opt-in classic JRPG stats and attribute progression, WoW-style player-relative NPC level/stat scaling that preserves each creature's authored archetype, explicit player/NPC base-level authoring and PIE level override controls, corrected always-editable NPC scaling opt-in, reliable AI dodge/stagger handoff, day/night population swapping, Quick Access, inventory/equipment, Woodcutting, distance-streamed AI, coordinated combat, Z-targeting, GAS, factions, quests, building/crafting, mounts, saves and networking.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with collision-safe spawned AI plus translation-proven Free-Roam recovery, dynamic Day/Night-driven street lights, ambient NPC social interactions, classic JRPG stats/attribute progression, player-relative NPC scaling, Quick Access, inventory/equipment, distance-streamed AI, coordinated combat, factions, saves and networking.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,

@@ -2,6 +2,7 @@
 #include "AIController.h"
 #include "Components/ARPGAICombatComponent.h"
 #include "Components/ARPGAISplineComponent.h"
+#include "Components/ARPGAISocialComponent.h"
 #include "Components/ARPGCombatComponent.h"
 #include "Components/ARPGWandererComponent.h"
 
@@ -11,8 +12,10 @@ AARPGAICharacter::AARPGAICharacter()
     AIControllerClass = AAIController::StaticClass();
     AISplineMovement = CreateDefaultSubobject<UARPGAISplineComponent>(TEXT("AISplineMovement"));
     AIWanderer = CreateDefaultSubobject<UARPGWandererComponent>(TEXT("AIWanderer"));
+    AISocial = CreateDefaultSubobject<UARPGAISocialComponent>(TEXT("AISocial"));
     AIWanderer->bEnabled = false; // Spawner/free-roam mode enables it only when requested.
     AIWanderer->bStayNearHome = true;
+    AISocial->bEnableSocialInteractions = false; // Explicit opt-in preserves every existing NPC archetype.
     if (AICombat) AICombat->bEnabled = true;
     if (Combat)
     {

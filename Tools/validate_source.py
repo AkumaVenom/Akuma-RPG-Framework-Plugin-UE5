@@ -154,9 +154,21 @@ if spawner_cpp.exists():
 wanderer_cpp = root / "Private" / "Components" / "ARPGWandererComponent.cpp"
 if wanderer_cpp.exists():
     wanderer_text = wanderer_cpp.read_text(errors="replace")
-    for required in ("GetRandomReachablePointInRadius", "CurrentTarget", "ForceReturnHome", "EnsureThinkTimer"):
+    for required in ("GetRandomReachablePointInRadius", "CurrentTarget", "ForceReturnHome", "EnsureThinkTimer", "ScheduleMovementRetry", "RequestSuccessful", "VerifyNavigationMovement", "ARPGWanderMovementProofDistance"):
         if required not in wanderer_text:
             issues.append(f"Wanderer/free-roam missing required runtime path: {required}")
+    if "EPathFollowingRequestResult::" in wanderer_text and '#include "Navigation/PathFollowingComponent.h"' not in wanderer_text:
+        issues.append("Wanderer uses EPathFollowingRequestResult enumerators without Navigation/PathFollowingComponent.h")
+    if "bHasEstablishedFreeRoam = true" not in wanderer_text or "Travelled2D >= ARPGWanderMovementProofDistance" not in wanderer_text:
+        issues.append("v2.7.2 Wanderer must require real translation before Free Roam is established")
+
+if spawner_cpp.exists():
+    spawner_safety_text = spawner_cpp.read_text(errors="replace")
+    if "AdjustIfPossibleButAlwaysSpawn" in spawner_safety_text:
+        issues.append("v2.7.2 spawner must never force AI into blocking geometry with AlwaysSpawn")
+    for required in ("AdjustIfPossibleButDontSpawnIfColliding", "MaxSafeSpawnAttempts = 10", "SpawnShape == EARPGSpawnerShape::Point && Attempt > 0"):
+        if required not in spawner_safety_text:
+            issues.append(f"v2.7.2 collision-safe spawned AI missing: {required}")
 
 if ai_character_cpp.exists():
     ai_text = ai_character_cpp.read_text(errors="replace")
@@ -998,8 +1010,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 2540 or descriptor.get("VersionName") != "2.5.4-alpha":
-        issues.append("package descriptor must identify v2.5.4-alpha")
+    if descriptor.get("Version") != 2720 or descriptor.get("VersionName") != "2.7.2-alpha":
+        issues.append("package descriptor must identify v2.7.2-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1008,6 +1020,91 @@ try:
         issues.append(".uplugin must enable Niagara for v1.6 combat feedback")
 except Exception as exc:
     issues.append(f"invalid .uplugin JSON: {exc}")
+
+
+# v2.6 ambient NPC social interaction requirements.
+social_header = root / "Public" / "Components" / "ARPGAISocialComponent.h"
+social_cpp = root / "Private" / "Components" / "ARPGAISocialComponent.cpp"
+if not social_header.exists() or not social_cpp.exists():
+    issues.append("v2.6 ambient NPC social component source files are missing")
+else:
+    social_header_text = social_header.read_text(errors="replace")
+    for required in (
+        "bEnableSocialInteractions = false",
+        "InteractionChance = 0.35f",
+        "bAllowSameFaction = true",
+        "bAllowFriendlyFactions = true",
+        "bAllowNeutralFactions = true",
+        "SocialIdentityTags",
+        "InteractionPool",
+        "ForceSocialInteractionWith",
+        "OnSocialLineSpoken",
+    ):
+        if required not in social_header_text:
+            issues.append(f"AI social authoring/API missing required path: {required}")
+    social_cpp_text = social_cpp.read_text(errors="replace")
+    for required in (
+        "OverlapMultiByObjectType",
+        "PassesFactionRules",
+        "MineToTheirs < 0 || TheirsToMine < 0",
+        "PauseAmbientMovementForSocial",
+        "RestoreAmbientMovementAfterSocial",
+        "PauseRoute(true)",
+        "ResumeRoute()",
+        "HandleAICombatTargetChanged",
+        "HandleCombatHitReceived",
+        "MulticastSocialStarted",
+        "MulticastSocialBeat",
+        "MulticastSocialEnded",
+    ):
+        if required not in social_cpp_text:
+            issues.append(f"AI social runtime missing required path: {required}")
+
+if ai_character_cpp.exists():
+    ai_character_text_v26 = ai_character_cpp.read_text(errors="replace")
+    if "CreateDefaultSubobject<UARPGAISocialComponent>" not in ai_character_text_v26 or "AISocial->bEnableSocialInteractions = false" not in ai_character_text_v26:
+        issues.append("ARPGAICharacter must include a disabled-by-default AISocial component")
+
+
+# v2.6.1 spawned Free-Roam/social/cohesion handoff reliability.
+wanderer_header_261 = root / "Public" / "Components" / "ARPGWandererComponent.h"
+wanderer_cpp_261 = root / "Private" / "Components" / "ARPGWandererComponent.cpp"
+if wanderer_header_261.exists() and wanderer_cpp_261.exists():
+    wh261 = wanderer_header_261.read_text(errors="replace")
+    wc261 = wanderer_cpp_261.read_text(errors="replace")
+    for required in ("AcquireMovementPause", "ReleaseMovementPause", "MovementPauseReasons", "HasMovementPauseOtherThan"):
+        if required not in wh261:
+            issues.append(f"v2.6.1 Wanderer movement ownership missing native API/state: {required}")
+    for required in ("IsMovementPaused()", "EnsureThinkTimer();", "Spline->IsRouteActive()"):
+        if required not in wc261:
+            issues.append(f"v2.6.1 Wanderer reliability missing runtime guard: {required}")
+
+if social_cpp.exists():
+    social261 = social_cpp.read_text(errors="replace")
+    for required in (
+        'ARPGSocialWanderPauseReason(TEXT("SocialInteraction"))',
+        "AcquireMovementPause(ARPGSocialWanderPauseReason",
+        "ReleaseMovementPause(ARPGSocialWanderPauseReason",
+        "HasMovementPauseOtherThan(ARPGSocialWanderPauseReason)",
+        "NextOpportunityAt = GetWorld()->GetTimeSeconds() + FMath::FRandRange(DelayMin, DelayMax)",
+    ):
+        if required not in social261:
+            issues.append(f"v2.6.1 social/Wanderer handoff missing: {required}")
+    if "SetWandererEnabled(false)" in social261 or "SetWandererEnabled(true)" in social261:
+        issues.append("v2.6.1 social AI must not toggle persistent Wanderer enablement for temporary interactions")
+
+if spawner_cpp.exists():
+    spawner261 = spawner_cpp.read_text(errors="replace")
+    for required in (
+        'ARPGSpawnerCohesionWanderPauseReason(TEXT("SpawnerGroupCohesion"))',
+        "AcquireMovementPause(ARPGSpawnerCohesionWanderPauseReason",
+        "ReleaseMovementPause(ARPGSpawnerCohesionWanderPauseReason",
+        "if (Social->IsSociallyEngaged()) continue;",
+        "if (bRecovering)",
+        "Distance <= RecoveryRadius",
+    ):
+        if required not in spawner261:
+            issues.append(f"v2.6.1 spawner Free-Roam/cohesion reliability missing: {required}")
 
 markers = []
 for p in source_files:

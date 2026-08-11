@@ -4,6 +4,7 @@
 #include "AIController.h"
 #include "Actors/ARPGAISplineRoute.h"
 #include "Components/ARPGAICombatComponent.h"
+#include "Components/ARPGAISocialComponent.h"
 #include "Components/ARPGAISplineComponent.h"
 #include "Components/ARPGCombatComponent.h"
 #include "Components/ARPGWandererComponent.h"
@@ -14,6 +15,11 @@
 #include "NavigationSystem.h"
 #include "World/ARPGDayNightCycle.h"
 #include "TimerManager.h"
+
+namespace
+{
+    const FName ARPGSpawnerCohesionWanderPauseReason(TEXT("SpawnerGroupCohesion"));
+}
 
 AARPGAISpawner::AARPGAISpawner()
 {
@@ -550,6 +556,10 @@ void AARPGAISpawner::ConfigureFreeRoamPawn(APawn* Pawn, bool bIsLeader)
     Wanderer->bPauseDuringCombat = true;
     Wanderer->bStayNearHome = bFreeRoamLeashedToSpawner || (bStayTogether && !bIsLeader);
 
+    // Reconfiguration owns the new movement mode; discard only stale cohesion recovery ownership.
+    CohesionRecoveringPawns.Remove(TWeakObjectPtr<APawn>(Pawn));
+    Wanderer->ReleaseMovementPause(ARPGSpawnerCohesionWanderPauseReason, false);
+
     if (bStayTogether && !bIsLeader && IsValid(GroupLeader))
     {
         Wanderer->SetHomeLocation(GroupLeader->GetActorLocation());
@@ -568,6 +578,18 @@ void AARPGAISpawner::ConfigureSpawnedPawn(APawn* Pawn)
 {
     if (!IsValid(Pawn)) return;
 
+    const EARPGSpawnerMovementMode EffectiveMovementMode = GetEffectiveMovementMode();
+
+    // Free Roam and spline movement require an AI controller. Normally AutoPossessAI creates it during
+    // spawn, but explicitly ensure possession here so spawner-owned movement is not dependent on actor
+    // initialization order or a Blueprint subclass delaying its default controller creation.
+    if ((EffectiveMovementMode == EARPGSpawnerMovementMode::FreeRoam ||
+         EffectiveMovementMode == EARPGSpawnerMovementMode::SplineRoute) &&
+        !Pawn->GetController())
+    {
+        Pawn->SpawnDefaultController();
+    }
+
     if (UARPGAICombatComponent* AICombat = Pawn->FindComponentByClass<UARPGAICombatComponent>())
     {
         AICombat->SetSpawnGroupOwner(this);
@@ -579,11 +601,15 @@ void AARPGAISpawner::ConfigureSpawnedPawn(APawn* Pawn)
     UARPGAISplineComponent* SplineMovement = Pawn->FindComponentByClass<UARPGAISplineComponent>();
     UARPGWandererComponent* Wanderer = Pawn->FindComponentByClass<UARPGWandererComponent>();
 
-    switch (GetEffectiveMovementMode())
+    switch (EffectiveMovementMode)
     {
         case EARPGSpawnerMovementMode::SplineRoute:
         {
-            if (Wanderer) Wanderer->SetWandererEnabled(false);
+            if (Wanderer)
+            {
+                Wanderer->ReleaseMovementPause(ARPGSpawnerCohesionWanderPauseReason, false);
+                Wanderer->SetWandererEnabled(false);
+            }
             if (SplineMovement && AssignedSplineRoute)
             {
                 SplineMovement->bStartMovingForward = CurrentGroupSplineDirectionSign > 0;
@@ -602,7 +628,11 @@ void AARPGAISpawner::ConfigureSpawnedPawn(APawn* Pawn)
         default:
         {
             if (SplineMovement) SplineMovement->StopRoute(true);
-            if (Wanderer) Wanderer->SetWandererEnabled(false);
+            if (Wanderer)
+            {
+                Wanderer->ReleaseMovementPause(ARPGSpawnerCohesionWanderPauseReason, false);
+                Wanderer->SetWandererEnabled(false);
+            }
             break;
         }
     }
@@ -656,10 +686,43 @@ APawn* AARPGAISpawner::SpawnOne()
     TSubclassOf<APawn> Class = ChoosePawnClass();
     if (!Class) return nullptr;
 
+    // Never force an AI capsule into blocking geometry. `AlwaysSpawn` can create a perfectly possessed
+    // pawn that rotates/focuses yet cannot translate because it begins encroaching another pawn/prop.
+    // Retry several NavMesh-projected candidates and only accept a collision-safe spawn.
     FActorSpawnParameters Params;
-    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-    APawn* Pawn = GetWorld()->SpawnActor<APawn>(Class, ChooseSpawnLocation(), GetActorRotation(), Params);
-    if (!Pawn) return nullptr;
+    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
+
+    APawn* Pawn = nullptr;
+    constexpr int32 MaxSafeSpawnAttempts = 10;
+    for (int32 Attempt = 0; Attempt < MaxSafeSpawnAttempts && !Pawn; ++Attempt)
+    {
+        FVector Candidate = ChooseSpawnLocation();
+
+        // Point spawners otherwise retry the exact same blocked location. Add a small fallback spread
+        // after the first attempt, then project it back to navigation. This preserves the authored point
+        // as the preferred location while preventing a multi-member group from stacking capsules.
+        if (SpawnShape == EARPGSpawnerShape::Point && Attempt > 0)
+        {
+            const float SpreadRadius = FMath::Min(600.f, 90.f + static_cast<float>(Attempt) * 55.f);
+            const FVector2D Offset = FMath::RandPointInCircle(SpreadRadius);
+            Candidate = GetActorLocation() + FVector(Offset.X, Offset.Y, 0.f);
+            if (UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+            {
+                FNavLocation Projected;
+                if (Nav->ProjectPointToNavigation(Candidate, Projected, FVector(300.f, 300.f, 1000.f)))
+                    Candidate = Projected.Location;
+            }
+        }
+
+        Pawn = GetWorld()->SpawnActor<APawn>(Class, Candidate, GetActorRotation(), Params);
+    }
+
+    if (!Pawn)
+    {
+        UE_LOG(LogARPG, Warning, TEXT("AI Spawner %s could not find a collision-safe spawn position for %s after %d attempts; refusing to create a stuck/encroaching pawn."),
+            *GetName(), *GetNameSafe(Class.Get()), MaxSafeSpawnAttempts);
+        return nullptr;
+    }
 
     const bool bWasInactive = !bPopulationActive;
     if (bWasInactive)
@@ -690,6 +753,15 @@ void AARPGAISpawner::SetStayTogether(bool bNewStayTogether)
 {
     if (!HasAuthority()) return;
     bStayTogether = bNewStayTogether;
+
+    // Release only cohesion ownership before resetting its bookkeeping. Social/combat/route
+    // ownership remains untouched, so changing this option can never strand a Free-Roam pawn.
+    for (APawn* Pawn : SpawnedPawns)
+    {
+        if (!IsValid(Pawn)) continue;
+        if (UARPGWandererComponent* Wanderer = Pawn->FindComponentByClass<UARPGWandererComponent>())
+            Wanderer->ReleaseMovementPause(ARPGSpawnerCohesionWanderPauseReason, true);
+    }
     CohesionRecoveringPawns.Reset();
 
     if (GetWorld())
@@ -713,6 +785,13 @@ void AARPGAISpawner::SetMovementMode(EARPGSpawnerMovementMode NewMode, bool bApp
 {
     if (!HasAuthority()) return;
     MovementMode = NewMode;
+
+    for (APawn* Pawn : SpawnedPawns)
+    {
+        if (!IsValid(Pawn)) continue;
+        if (UARPGWandererComponent* Wanderer = Pawn->FindComponentByClass<UARPGWandererComponent>())
+            Wanderer->ReleaseMovementPause(ARPGSpawnerCohesionWanderPauseReason, true);
+    }
     CohesionRecoveringPawns.Reset();
     if (bApplyToExisting) ConfigureAllSpawnedPawns();
 }
@@ -838,6 +917,11 @@ void AARPGAISpawner::CheckGroupCohesion()
     {
         if (!IsPawnAlive(Pawn) || Pawn == GroupLeader || IsPawnInCombat(Pawn)) continue;
 
+        // Social encounters are an explicit temporary movement owner. Never inject a cohesion
+        // MoveTo while a pair is approaching/talking; the next cohesion pass will recover afterward.
+        if (const UARPGAISocialComponent* Social = Pawn->FindComponentByClass<UARPGAISocialComponent>())
+            if (Social->IsSociallyEngaged()) continue;
+
         UARPGWandererComponent* Wanderer = nullptr;
         if (EffectiveMode == EARPGSpawnerMovementMode::FreeRoam)
         {
@@ -854,21 +938,32 @@ void AARPGAISpawner::CheckGroupCohesion()
         const TWeakObjectPtr<APawn> PawnKey(Pawn);
         const bool bRecovering = CohesionRecoveringPawns.Contains(PawnKey);
 
+        if (bRecovering)
+        {
+            if (Distance <= RecoveryRadius)
+            {
+                CohesionRecoveringPawns.Remove(PawnKey);
+                if (Wanderer)
+                    Wanderer->ReleaseMovementPause(ARPGSpawnerCohesionWanderPauseReason, true);
+                continue;
+            }
+
+            // A previous MoveTo may have been interrupted by social/combat/navigation. Keep the
+            // recovery request alive across the full hysteresis band until RecoveryRadius is reached.
+            if (Wanderer)
+                Wanderer->AcquireMovementPause(ARPGSpawnerCohesionWanderPauseReason, false);
+            if (AAIController* AI = Cast<AAIController>(Pawn->GetController()))
+                AI->MoveToLocation(LeaderLocation, RecoveryRadius, true, true, true, false, nullptr, true);
+            continue;
+        }
+
         if (Distance > CohesionRadius)
         {
-            if (Wanderer && Wanderer->bEnabled) Wanderer->SetWandererEnabled(false);
+            if (Wanderer)
+                Wanderer->AcquireMovementPause(ARPGSpawnerCohesionWanderPauseReason, true);
             if (AAIController* AI = Cast<AAIController>(Pawn->GetController()))
                 AI->MoveToLocation(LeaderLocation, RecoveryRadius, true, true, true, false, nullptr, true);
             CohesionRecoveringPawns.Add(PawnKey);
-        }
-        else if (bRecovering && Distance <= RecoveryRadius)
-        {
-            CohesionRecoveringPawns.Remove(PawnKey);
-            if (Wanderer)
-            {
-                Wanderer->SetWandererEnabled(true);
-                Wanderer->ForceChooseNewDestination();
-            }
         }
     }
 }

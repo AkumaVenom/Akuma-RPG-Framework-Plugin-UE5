@@ -94,3 +94,21 @@ The inherited AI Wanderer also exposes `Set Wanderer Enabled`, `Set Home Locatio
 ## v1.10 performance streaming
 
 Spawner movement and group behavior are now wrapped by default-on player-distance population streaming. A far-away spawner can remain completely unloaded until a player enters its activation radius. Once loaded, spline/free-roam NPC locations can keep the population relevant so following a travelling NPC does not make it disappear simply because the spawner origin is far away. See `Docs/AI_SPAWNER_PERFORMANCE.md`.
+
+## v2.6.1 Free-Roam ownership hardening
+
+Free Roam now distinguishes the Wanderer's persistent `bEnabled` state from temporary movement ownership. Social encounters and Stay-Together cohesion recovery acquire independent native pause reasons instead of disabling the Wanderer. This prevents startup/order-dependent stalls and ensures one ambient system cannot accidentally restore or disable another system's movement state.
+
+When a spawner first enables Free Roam the Wanderer immediately requests a reachable destination, while its normal recurring Think remains timer driven. During group recovery, the follower keeps a dedicated cohesion pause and the spawner reissues the leader `MoveTo` until the true recovery radius is reached. Social AI will not select a follower already under that recovery ownership, and cohesion will not overwrite an active social approach/conversation.
+
+
+## Startup navigation readiness (v2.7.1)
+Free-Roam activation now waits for Unreal to accept a real AI navigation request. If a freshly spawned pawn is still waiting for AI possession/path following/NavMesh readiness, the Wanderer performs a short server-only retry instead of silently losing the first request. Ambient social interactions also wait until Free Roam has successfully established once, so a spawned NPC cannot become socially focused/rotating while its underlying locomotion never started.
+
+## v2.7.2 collision-safe spawning and locomotion proof
+
+Spawner-created AI are no longer force-spawned into blocking collision. The spawner now prefers the authored/NavMesh-projected spawn point, uses Unreal's collision-adjusting **do not spawn if still colliding** policy, and retries multiple candidates. Point spawners receive a small fallback spread after the exact point cannot safely accept another capsule. If no safe candidate exists, that individual spawn is skipped and a clear `LogARPG` warning is emitted instead of creating a rotate-only/stuck pawn.
+
+Free Roam also no longer treats `MoveToLocation == RequestSuccessful` as proof that the pawn is actually mobile. Each accepted roam request receives a short server-only movement proof. `HasEstablishedFreeRoam` becomes true only after real 2D actor displacement is observed. If path following accepts a request but the pawn remains stationary, the stale move is aborted and a fresh reachable destination is requested. Social AI remains unavailable until physical locomotion has been proven.
+
+This uses one-shot timers only and adds no permanent Actor/Component Tick.

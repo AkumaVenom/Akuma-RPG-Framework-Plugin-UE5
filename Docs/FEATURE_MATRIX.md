@@ -1,4 +1,15 @@
-# Feature Matrix — v2.5.0 JRPG Stats / Attribute Progression
+## Dynamic world lighting (v2.7.0)
+
+| System | Status | Notes |
+|---|---|---|
+| Blueprint-derivable dynamic street lamp | Implemented | Inherited movable Point Light, Niagara and Cascade components; add project mesh/components in child Blueprints. |
+| ARPGDayNightCycle integration | Implemented | Immediate startup phase sync, event-driven phase/hour updates, optional explicit cycle override and auto-discovery retry. |
+| Niagara / Cascade fallback | Implemented | Niagara-preferred fallback, Niagara-only, Cascade-only, both or none. |
+| Multi-light Blueprint support | Implemented | Optional control of all LightComponents owned by the lamp actor, including Blueprint-added Spot/Rect/Point lights. |
+| Blueprint presentation hooks | Implemented | State delegate + overridable event for emissive materials, sounds, animation and project-specific FX. |
+| Large-town runtime cost | Implemented | No permanent per-lamp Tick and no duplicate per-lamp replicated clock; derives cosmetic state from replicated Day/Night cycle. |
+
+# Feature Matrix — v2.6.0 Ambient NPC Social Interactions
 
 Legend:
 
@@ -27,6 +38,7 @@ Legend:
 | Player faction/building ownership | Implemented | Player-built structures inherit character/account/faction identity. |
 | Vendors | Implemented | Buy/sell, finite/unlimited stock, restock, quest/faction/level gates, discounts and buyback. |
 | Vendor services | Foundation | BlueprintNativeEvent service hook for repair/trainer/project-specific services. |
+| Ambient NPC social interactions | Implemented | Opt-in inherited `AISocial` component with faction/tag compatibility, local Pawn opportunity scans, randomized approach/conversation duration, shared interaction ids with per-NPC montage/audio/text content, movement pause/resume, combat interruption, cooldowns, replication and Blueprint events. |
 | Automatic NPC combat AI | Implemented | `ARPGAICharacter`/`ARPGAICombatComponent` auto-acquire/retaliate, use threat, chase, face, attack, dodge/block, optionally activate GAS ability tags, immediately restore temporary-retaliation targets to original disposition after death, and coordinate allied melee attack slots/wait-orbit movement without requiring a Behavior Tree. |
 | Automatic NPC ragdoll death | Implemented | `ARPGAICharacter` ragdolls by default with capsule/collision handling, inherited velocity, killing-hit impulse, multiplayer death presentation, respawn reset and automatic Death montage fallback when physics is unavailable. |
 | AI spline patrol / travel | Implemented | `ARPGAISplineRoute` + inherited `ARPGAISplineComponent`: NavMesh look-ahead following without attachment, route-level Loop/closed/open-end behavior, group direction synchronization, route-point waits/events, Route Id lookup, spawner assignment, combat suspension/leash/rejoin and Wanderer conflict handling. |
@@ -68,3 +80,11 @@ Legend:
 | Starting inventory authoring | Implemented | Editable Item Definition/quantity/Equip On Spawn array; runtime GUID entries remain protected. |
 | Equipment visuals | Implemented | Automatic local held static/skeletal/custom visual actor from replicated equipped state, socket + relative transform. |
 | Equipment presentation audio | Implemented | Equip/unequip/combat swing/gathering swing/gathering hit audio on Item Definitions with combat/Woodcutting integration. |
+
+### Ambient AI movement coordination (v2.6.1)
+- Spawned Free Roam immediate first destination: **Implemented**
+- Temporary Wanderer pause ownership without mutating persistent enablement: **Implemented**
+- Social ↔ Free Roam deterministic pause/resume handoff: **Implemented**
+- Social ↔ Stay-Together cohesion ownership arbitration: **Implemented**
+- Cohesion hysteresis recovery reissue until recovery radius: **Implemented**
+- Wanderer yields to active Spline route: **Implemented**

@@ -27,10 +27,33 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Wanderer") void ForceChooseNewDestination();
     UFUNCTION(BlueprintCallable, Category="ARPG|Wanderer") void ForceReturnHome();
 
+    /** Native coordination hook for temporary AI owners (social encounters, group recovery, etc.).
+     *  This never changes the authored bEnabled flag, so temporary pauses cannot permanently disable Free Roam. */
+    void AcquireMovementPause(FName PauseReason, bool bStopCurrentMovement = true);
+    /** Releases only the caller's pause. If this was the last pause, the normal Wanderer timer is restored. */
+    void ReleaseMovementPause(FName PauseReason, bool bChooseNewDestinationImmediately = true);
+    bool IsMovementPaused() const { return MovementPauseReasons.Num() > 0; }
+    bool HasMovementPauseOtherThan(FName AllowedReason) const;
+    /** True only after Free Roam has produced real actor translation from an accepted navigation request. Native-only locomotion health hook. */
+    bool HasEstablishedFreeRoam() const { return bHasEstablishedFreeRoam; }
+
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 protected:
     FTimerHandle ThinkTimer;
+    FTimerHandle MovementRetryTimer;
+    FTimerHandle MovementProofTimer;
+    TSet<FName> MovementPauseReasons;
+    bool bHasEstablishedFreeRoam = false;
+    bool bAwaitingMovementProof = false;
+    bool bWarnedLocomotionStall = false;
+    int32 MovementRetryCount = 0;
+    int32 MovementProofChecks = 0;
+    FVector MovementProofStartLocation = FVector::ZeroVector;
     void Think();
     void EnsureThinkTimer();
+    void ScheduleMovementRetry(float MinDelay = 0.10f, float MaxDelay = 0.30f);
+    void MarkNavigationRequestAccepted();
+    void VerifyNavigationMovement();
+    void CancelMovementProof();
 };

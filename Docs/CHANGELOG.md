@@ -1,3 +1,60 @@
+# Akuma RPG Framework Changelog
+
+## v2.7.2-alpha — Spawn Collision & Locomotion Proof Fix
+- Fixed the deeper rotate-but-will-not-walk failure path that v2.7.1 did not cover. The spawner no longer uses `AdjustIfPossibleButAlwaysSpawn`, which could legally create possessed AI capsules encroaching another pawn/prop and leave them able to rotate/focus while CharacterMovement could not translate.
+- Spawned AI now uses `AdjustIfPossibleButDontSpawnIfColliding` with up to 10 collision-safe candidate attempts. Point spawners receive a small NavMesh-projected fallback spread after the preferred origin fails, preventing multi-member groups from stacking capsules at one exact point.
+- If no safe position exists, the spawner now refuses that individual spawn and logs a clear warning instead of deliberately creating a stuck pawn.
+- `MoveToLocation == RequestSuccessful` is no longer considered proof that Free Roam works. Wanderer now performs a short server-only locomotion proof and requires real 2D actor displacement before `HasEstablishedFreeRoam` becomes true.
+- An accepted request that remains rotate-only/stationary or drops out of path following is aborted and retried at a fresh reachable destination. Social AI remains ineligible until real locomotion has been proven, not merely until path following accepts a request.
+- The locomotion proof uses one-shot timers only; no permanent Actor/Component Tick was added.
+- No reflected Blueprint API changes.
+
+## v2.7.1-alpha — Spawned AI Navigation Readiness Fix
+- Fixed an intermittent startup failure where Free-Roam NPCs could rotate/focus but never translate after being spawned.
+- Spawner-owned Free Roam/Spline movement now explicitly ensures a default AI controller exists before movement configuration.
+- Wanderer no longer assumes a synchronous startup `MoveToLocation` succeeded; it checks UE's `EPathFollowingRequestResult` and only marks Free Roam established after a real `RequestSuccessful`.
+- Added a short, server-only navigation readiness retry for temporary missing AIController/NavSystem, failed random NavMesh sampling, failed MoveTo requests, and `AlreadyAtGoal` startup results; retries back off if navigation remains unavailable so broken NavMesh authoring cannot create a high-frequency loop.
+- Startup retries are cancelled when Wanderer is disabled/paused and restored safely when temporary movement ownership is released.
+- Social AI will not reserve a Free-Roam NPC until that NPC has successfully established locomotion at least once, preventing social focus/rotation from masking a startup navigation failure.
+- No reflected Blueprint API changes; the new readiness state/hooks are native-only.
+
+## 2.7.0-alpha — 2026-08-12
+
+- Added `AARPGDynamicStreetLight`, a new Blueprint-derivable world-light actor that consumes the existing `AARPGDayNightCycle` rather than maintaining a second clock.
+- Added inherited editable `LampLight` Point Light, `NiagaraEffect` and `CascadeEffect` components. Derived Blueprints can attach meshes and reposition/tune all inherited components normally.
+- Automatic control applies the current Day/Night phase immediately at BeginPlay and then reacts to phase/hour events without a permanent Tick. Default schedule is Night + Dawn ON and Day + Dusk OFF, with all four phases independently authorable.
+- Added optional explicit Day/Night Cycle override plus first-cycle auto-discovery. Missing cycles fail safe (off by default), retry on a low-frequency timer only while unresolved, and re-resolve if the cycle actor is destroyed.
+- Added FX modes for Niagara preferred with Cascade fallback, Niagara-only, Cascade-only, both, or none. Auto activation is disabled on inherited FX components so the lamp state has deterministic ownership.
+- `Control All Owned Light Components` optionally toggles every LightComponent on the actor, allowing Blueprint-added Point/Spot/Rect lights to follow the same schedule while retaining an inherited ready-to-use Point Light.
+- Added Blueprint manual/force/refresh/query APIs plus a multicast and overridable state-change event for emissive materials, ignition audio, extra FX or project presentation.
+- Lamps intentionally do not replicate their own clock or run a permanent Tick; automatic cosmetic state derives from the framework's already-replicated Day/Night cycle, avoiding per-lamp network clock overhead in large towns.
+- Existing public headers/reflection schemas are unchanged; this release adds only the new dynamic-street-light public header/class.
+- Added `Docs/DYNAMIC_STREET_LIGHTS.md` and deterministic `Tools/test_dynamic_street_light_model.py` coverage.
+
+## 2.6.1-alpha — 2026-08-12
+
+- Fixed intermittent spawned-NPC Free Roam stalls exposed after v2.6 social AI by separating **persistent Wanderer enablement** from **temporary movement ownership**. Social interaction and group-cohesion recovery now use independent native pause reasons instead of toggling `Wanderer.bEnabled`.
+- A social reservation can no longer permanently lose the spawner's Free-Roam state when startup/configuration order differs. If social starts before the spawner enables Free Roam, the spawner's enable request is remembered and movement resumes when social releases its own pause. If the spawner disables Free Roam during social, social completion does not resurrect it.
+- Free-Roam Wanderers now choose an initial destination immediately when newly enabled while retaining the staggered recurring Think timer for performance.
+- Social AI now gives freshly spawned NPCs an initial opportunity grace window based on the existing Opportunity Retry range, allowing spawner movement configuration and a first roam destination before ambient conversations begin.
+- Hardened `Stay Together` group recovery: cohesion now owns its own Wanderer pause token, social encounters cannot steal a pawn already recovering cohesion, social encounters are never overwritten by cohesion MoveTo requests, and recovery MoveTo is reissued through the hysteresis band until the true recovery radius is reached.
+- Wanderer now ignores its own roam Think while a Spline route is active, preventing a restored timer from competing with route traversal.
+- Changing spawner Stay Together or Movement Mode releases stale cohesion ownership before clearing recovery bookkeeping, preventing disabled/stalled Wanderers from being stranded by runtime configuration changes.
+- No reflected Blueprint property/function/schema changes were required for this reliability patch; the new Wanderer pause API is native-only coordination state.
+- Added deterministic Free-Roam/social/cohesion handoff regression coverage.
+
+## 2.6.0-alpha — 2026-08-12
+
+- Added the inherited `AISocial` component to `AARPGAICharacter`; social AI is **disabled by default** and therefore preserves all existing NPC archetypes unless explicitly enabled.
+- Added server-authoritative ambient NPC-to-NPC social encounters: staggered local Pawn scans, throttled random opportunity rolls, atomic partner reservation, approach, natural facing, randomized interaction duration, alternating speech/audio beats, cooldowns and clean return to prior movement.
+- Added symmetric faction safety. Same/friendly/neutral/factionless participation can be authored independently, but a hostile relationship in either direction always blocks ambient social interaction.
+- Added optional GameplayTag-based archetype matching (`Social Identity`, required partner tags and blocked partner tags), allowing villagers/guards/merchants/wildlife/project-specific social types without hard-coded NPC classes.
+- Added a shared-id/local-presentation interaction pool. Both NPCs must contain the same `InteractionId`, while each actor uses its own montage/sound/FText line assets for that id so different skeleton/voice archetypes can interact safely.
+- Integrated social reservation with Free-Roam Wanderer and Spline movement. Ambient movement pauses for the encounter and resumes without discarding route/home state; combat suspension remains higher priority.
+- Combat target acquisition, incoming combat hits, death and active combat/defensive states interrupt social encounters immediately, preventing ambient behaviour from fighting chase/attack/dodge/stagger/death systems.
+- Added replicated runtime social state plus Blueprint force/test/cancel/query APIs and Started/Ended/Line/State events for speech bubbles, subtitles, quest scripting or custom presentation.
+- Added dedicated `Docs/AI_SOCIAL_INTERACTIONS.md` and deterministic social interaction model coverage.
+
 ## 2.5.4-alpha — 2026-08-11
 
 - Fixed a real UE 5.8.1 Windows packaging compile failure in `ARPGDayNightCycle.cpp`: packaged/non-editor targets do not expose the `ADirectionalLight::GetComponent()` path used by the external sun/moon resolver. External directional lights now resolve their `UDirectionalLightComponent` through the runtime-safe `AActor::FindComponentByClass<UDirectionalLightComponent>()` API.
