@@ -108,3 +108,8 @@ The built-in Sky Light uses **Real Time Capture** for dynamic time-of-day. The f
 ## Multiplayer authority rule
 
 World time is presentation + gameplay state owned by the authority. Clients may query it freely, but runtime changes to the selected clock source should be made on the server/host.
+
+
+## AI spawner midnight populations (v2.4)
+
+`ARPGAISpawner` can now consume this authoritative clock directly. Enable `Enable Midnight Population Swap` on a spawner to use its existing `Spawn Table` as the daylight/default population and `Midnight Spawn Table` from 00:00 until this actor reaches `DayStartHour`. Loaded old-phase pawns are cleanly replaced; distance-unloaded spawners only update phase and wait until player relevance before spawning. See `AI_SPAWNER_DAY_NIGHT.md` for full setup and lifecycle details.

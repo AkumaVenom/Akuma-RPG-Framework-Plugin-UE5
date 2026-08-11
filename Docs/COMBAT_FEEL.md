@@ -136,3 +136,27 @@ Stagger
 ```
 
 No per-NPC Blueprint hit-FX graph, audio graph or knockback graph is required for the normal framework path.
+
+## 2.3 attack interruption and AI pacing polish
+
+Normal damage and true interruption are now intentionally separate. A character already in `Combat.State.Attacking` keeps its current attack montage through ordinary non-stagger damage. The hit still applies damage, threat, hit audio and hit FX; only the cosmetic Hit React montage is suppressed while the attack is active. Critical stagger, parry/guard break and death still interrupt as real gameplay states. This keeps the visible montage aligned with the authoritative attack/impact timer instead of showing a reaction animation while an invisible swing still lands.
+
+Critical stagger still uses the original two-stage design: the attack must first be critical, then `Critical Stagger Chance` is evaluated on the defender. With the original defaults (`Critical Chance = 0.05`, `Critical Stagger Chance = 0.35`) the total occurrence rate is only 1.75% of damaging attacks, so it can look inactive during short testing. For deterministic verification, temporarily use:
+
+```text
+Attacker Combat Profile
+  Critical Chance = 1.0
+
+Defender Combat Profile > Defence > Stagger
+  Enabled = true
+  Critical Hits Can Stagger = true
+  Critical Stagger Chance = 1.0
+  Apply Knockback = true
+  Knockback Velocity = 425
+  Upward Velocity = 80
+  Stagger Sound = assigned under Feedback > Audio > Stagger
+```
+
+On a successful stagger, AI path following is stopped immediately before the launch is applied, and character movement velocity is cleared so NavMesh steering/current velocity cannot visually swallow the knockback.
+
+Automatic melee AI now performs one attack commitment at a time. It does not feed repeated calls into the player's combo-buffer logic while `bIsAttacking` is true. After the attack finishes, the existing `AI Combat > Group Combat > Attack Slot Cooldown After Attack` value provides additional breathing room even for a solo NPC. Typical wildlife values are around `0.8-1.25` seconds; heavier enemies can use longer pauses.

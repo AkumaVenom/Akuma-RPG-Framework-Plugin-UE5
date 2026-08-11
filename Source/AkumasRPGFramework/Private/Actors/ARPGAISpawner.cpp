@@ -1,5 +1,6 @@
 #include "Actors/ARPGAISpawner.h"
 
+#include "AkumasRPGFramework.h"
 #include "AIController.h"
 #include "Actors/ARPGAISplineRoute.h"
 #include "Components/ARPGAICombatComponent.h"
@@ -9,7 +10,9 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "NavigationSystem.h"
+#include "World/ARPGDayNightCycle.h"
 #include "TimerManager.h"
 
 AARPGAISpawner::AARPGAISpawner()
@@ -24,6 +27,7 @@ void AARPGAISpawner::BeginPlay()
     if (!HasAuthority()) return;
 
     CurrentGroupSplineDirectionSign = ChooseGroupSplineDirectionSign();
+    InitializeDayNightPopulation();
 
     if (bEnableDistanceBasedPopulation)
     {
@@ -51,6 +55,155 @@ void AARPGAISpawner::BeginPlay()
     }
 }
 
+void AARPGAISpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    ShutdownDayNightPopulation();
+    Super::EndPlay(EndPlayReason);
+}
+
+void AARPGAISpawner::InitializeDayNightPopulation()
+{
+    bMidnightPopulationActive = false;
+    if (!HasAuthority() || !bEnableMidnightPopulationSwap) return;
+
+    ResolveAndBindDayNightCycle();
+    if (ResolvedDayNightCycle.IsValid())
+        bMidnightPopulationActive = IsWorldTimeInMidnightPopulationWindow();
+}
+
+void AARPGAISpawner::ShutdownDayNightPopulation()
+{
+    if (AARPGDayNightCycle* Cycle = ResolvedDayNightCycle.Get())
+    {
+        Cycle->OnHourChanged.RemoveDynamic(this, &AARPGAISpawner::HandleWorldHourChanged);
+        Cycle->OnDayStarted.RemoveDynamic(this, &AARPGAISpawner::HandleDayStarted);
+    }
+    ResolvedDayNightCycle.Reset();
+}
+
+void AARPGAISpawner::ResolveAndBindDayNightCycle()
+{
+    if (!HasAuthority() || !bEnableMidnightPopulationSwap || !GetWorld()) return;
+
+    AARPGDayNightCycle* Cycle = DayNightCycleOverride;
+    if (!IsValid(Cycle))
+    {
+        for (TActorIterator<AARPGDayNightCycle> It(GetWorld()); It; ++It)
+        {
+            if (IsValid(*It))
+            {
+                Cycle = *It;
+                break;
+            }
+        }
+    }
+
+    if (!IsValid(Cycle))
+    {
+        if (!bWarnedMissingDayNightCycle)
+        {
+            UE_LOG(LogARPG, Warning, TEXT("AI Spawner '%s' has Enable Midnight Population Swap enabled but no ARPGDayNightCycle was found. Using the normal Spawn Table until a cycle becomes available."), *GetName());
+            bWarnedMissingDayNightCycle = true;
+        }
+        return;
+    }
+
+    if (ResolvedDayNightCycle.Get() == Cycle) return;
+    ShutdownDayNightPopulation();
+
+    ResolvedDayNightCycle = Cycle;
+    bWarnedMissingDayNightCycle = false;
+    Cycle->OnHourChanged.AddDynamic(this, &AARPGAISpawner::HandleWorldHourChanged);
+    Cycle->OnDayStarted.AddDynamic(this, &AARPGAISpawner::HandleDayStarted);
+}
+
+bool AARPGAISpawner::IsWorldTimeInMidnightPopulationWindow() const
+{
+    const AARPGDayNightCycle* Cycle = ResolvedDayNightCycle.Get();
+    if (!IsValid(Cycle)) return false;
+
+    // Midnight population begins at 00:00 and remains until the configured semantic Day Start Hour.
+    // This intentionally lets normal/daylight NPCs remain through the evening and swaps only at true midnight.
+    const float MorningHour = FMath::Clamp(Cycle->DayStartHour, 0.f, 24.f);
+    if (MorningHour <= KINDA_SMALL_NUMBER) return false;
+    return Cycle->GetWorldHour() < MorningHour;
+}
+
+void AARPGAISpawner::CheckDayNightPopulationPhase()
+{
+    if (!HasAuthority() || !bEnableMidnightPopulationSwap) return;
+
+    if (!ResolvedDayNightCycle.IsValid()) ResolveAndBindDayNightCycle();
+    if (!ResolvedDayNightCycle.IsValid()) return;
+
+    ApplyDayNightPopulationPhase(IsWorldTimeInMidnightPopulationWindow());
+}
+
+void AARPGAISpawner::ApplyDayNightPopulationPhase(bool bUseMidnightPopulation, bool bForceRefresh)
+{
+    if (!HasAuthority() || !bEnableMidnightPopulationSwap) return;
+    if (!bForceRefresh && bMidnightPopulationActive == bUseMidnightPopulation) return;
+
+    bMidnightPopulationActive = bUseMidnightPopulation;
+
+    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(RespawnTimer);
+    RespawnNotBeforeTime = 0.0;
+    bWholeGroupRespawnPending = false;
+    PreservedImmediatePopulationCount = 0;
+    DesiredGroupSize = 0;
+
+    // A phase transition is not a death/defeat. DespawnAll removes OnDestroyed bindings before Destroy(),
+    // preventing phase cleanup from scheduling respawns or broadcasting group-defeated events.
+    if (bPopulationActive)
+    {
+        DespawnAll(true);
+        SpawnGroup();
+    }
+
+    UE_LOG(LogARPG, Verbose, TEXT("AI Spawner '%s' switched to %s population."),
+        *GetName(), bMidnightPopulationActive ? TEXT("Midnight") : TEXT("Daylight"));
+}
+
+void AARPGAISpawner::HandleWorldHourChanged(int32 NewHour)
+{
+    // Re-evaluate on every authority hour change. This catches midnight and also remains correct when
+    // simulated/fixed clocks jump across multiple hours in one update.
+    (void)NewHour;
+    CheckDayNightPopulationPhase();
+}
+
+void AARPGAISpawner::HandleDayStarted()
+{
+    CheckDayNightPopulationPhase();
+}
+
+void AARPGAISpawner::RefreshDayNightPopulationNow()
+{
+    if (!HasAuthority() || !bEnableMidnightPopulationSwap) return;
+
+    ResolveAndBindDayNightCycle();
+    if (!ResolvedDayNightCycle.IsValid()) return;
+    ApplyDayNightPopulationPhase(IsWorldTimeInMidnightPopulationWindow(), true);
+}
+
+const TArray<FARPGSpawnEntry>& AARPGAISpawner::GetActiveSpawnTable() const
+{
+    if (bEnableMidnightPopulationSwap && bMidnightPopulationActive) return MidnightSpawnTable;
+    return SpawnTable;
+}
+
+void AARPGAISpawner::GetActiveGroupSizeRange(int32& OutMinGroupSize, int32& OutMaxGroupSize) const
+{
+    if (bEnableMidnightPopulationSwap && bMidnightPopulationActive && bUseSeparateMidnightGroupSize)
+    {
+        OutMinGroupSize = MidnightMinGroupSize;
+        OutMaxGroupSize = MidnightMaxGroupSize;
+        return;
+    }
+
+    OutMinGroupSize = MinGroupSize;
+    OutMaxGroupSize = MaxGroupSize;
+}
 
 void AARPGAISpawner::StartActiveRuntimeTimers()
 {
@@ -230,6 +383,7 @@ void AARPGAISpawner::DeactivateDistancePopulation()
 void AARPGAISpawner::CheckPopulationRelevance()
 {
     if (!HasAuthority() || !bEnableDistanceBasedPopulation) return;
+    CheckDayNightPopulationPhase();
 
     const bool bUsePawnAnchors = bPopulationActive && bKeepLoadedNearSpawnedPawns;
     NearestRelevantPlayerDistance = FindNearestRelevantPlayerDistance(bUsePawnAnchors);
@@ -308,20 +462,22 @@ int32 AARPGAISpawner::GetAliveCount() const
 
 TSubclassOf<APawn> AARPGAISpawner::ChoosePawnClass() const
 {
+    const TArray<FARPGSpawnEntry>& ActiveSpawnTable = GetActiveSpawnTable();
+
     float Total = 0.f;
-    for (const FARPGSpawnEntry& Entry : SpawnTable)
+    for (const FARPGSpawnEntry& Entry : ActiveSpawnTable)
         if (Entry.PawnClass && Entry.Weight > 0.f) Total += Entry.Weight;
 
     if (Total <= 0.f) return nullptr;
 
     float Roll = FMath::FRandRange(0.f, Total);
-    for (const FARPGSpawnEntry& Entry : SpawnTable)
+    for (const FARPGSpawnEntry& Entry : ActiveSpawnTable)
     {
         if (!Entry.PawnClass || Entry.Weight <= 0.f) continue;
         Roll -= Entry.Weight;
         if (Roll <= 0.f) return Entry.PawnClass;
     }
-    return SpawnTable.IsEmpty() ? nullptr : SpawnTable.Last().PawnClass;
+    return ActiveSpawnTable.IsEmpty() ? nullptr : ActiveSpawnTable.Last().PawnClass;
 }
 
 FVector AARPGAISpawner::ChooseSpawnLocation() const
@@ -583,9 +739,12 @@ void AARPGAISpawner::SpawnGroup()
         CurrentGroupSplineDirectionSign = ChooseGroupSplineDirectionSign();
     }
 
+    int32 ActiveMinGroupSize = MinGroupSize;
+    int32 ActiveMaxGroupSize = MaxGroupSize;
+    GetActiveGroupSizeRange(ActiveMinGroupSize, ActiveMaxGroupSize);
     DesiredGroupSize = FMath::RandRange(
-        FMath::Min(MinGroupSize, MaxGroupSize),
-        FMath::Max(MinGroupSize, MaxGroupSize));
+        FMath::Min(ActiveMinGroupSize, ActiveMaxGroupSize),
+        FMath::Max(ActiveMinGroupSize, ActiveMaxGroupSize));
 
     for (int32 Index = GetAliveCount(); Index < DesiredGroupSize; ++Index)
         SpawnOne();
@@ -717,6 +876,7 @@ void AARPGAISpawner::CheckGroupCohesion()
 void AARPGAISpawner::CheckLeashes()
 {
     if (!HasAuthority()) return;
+    CheckDayNightPopulationPhase();
 
     // Direction synchronization must survive leader death even when physical Stay Together is disabled.
     if (bSynchronizeSplineGroupDirection && GetEffectiveMovementMode() == EARPGSpawnerMovementMode::SplineRoute)

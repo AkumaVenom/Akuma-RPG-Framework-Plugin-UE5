@@ -1,3 +1,24 @@
+# 2.4.0-alpha — Day/night AI population swapping
+
+- Added opt-in `Enable Midnight Population Swap` to `ARPGAISpawner`; disabled spawners retain the pre-2.4 preserved population lifecycle unchanged.
+- The existing weighted `Spawn Table` is the daylight/default population. Added a weighted `Midnight Spawn Table` used from 00:00 until `ARPGDayNightCycle::DayStartHour`.
+- At midnight, loaded spawners cleanly remove daylight leftovers and immediately spawn midnight entries. At morning/day start, midnight leftovers are removed and daylight entries return.
+- Phase cleanup removes `OnDestroyed` bindings before destroying phase NPCs, so a time-of-day swap cannot be mistaken for combat death, group defeat, or schedule an obsolete respawn.
+- Respawn timers, pending whole-group state, preserved immediate counts and desired group size are reset atomically on a population-phase transition.
+- Distance-streamed spawners update their phase while unloaded without spawning; the next relevance activation uses only the correct current phase table instead of restoring the old phase.
+- Added optional `Day Night Cycle Override` and automatic first-cycle discovery, plus separate midnight Min/Max group-size authoring.
+- Added event-driven hour/day bindings with recurring spawner checks as a safety net, so simulated/fixed clock jumps that skip directly across midnight still synchronize correctly.
+- Added `Refresh Day Night Population Now` and `Is Midnight Population Active` Blueprint utilities for testing/diagnostics.
+- Added `Tools/test_day_night_spawner_model.py` regression coverage and dedicated setup documentation.
+
+# 2.3.0-alpha — Melee combat polish
+
+- Fixed ordinary Hit React montages interrupting an already-running attack montage while the authoritative attack timer continued, which made player combos look cancelled even though damage still resolved. Light hits now preserve an active attack; true stagger/guard-break/parry/death remain legitimate interruption states.
+- Critical stagger now stops AI path following immediately, zeroes character movement before launch, applies the full configured launch vector, and emits the Stagger cue from the successful stagger path itself.
+- Automatic melee AI no longer submits Basic Attack again while already attacking, preventing the Think loop from auto-buffering endless combo attacks.
+- `Attack Slot Cooldown After Attack` now gates solo melee AI as well as coordinated groups, and is measured after estimated attack recovery for readable spacing between attacks.
+- No Blueprint-facing public header/schema changes in this release.
+
 # Changelog
 
 ## 2.2.3-alpha.2 — 2026-08-11

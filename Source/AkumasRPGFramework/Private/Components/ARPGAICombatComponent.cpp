@@ -853,6 +853,18 @@ void UARPGAICombatComponent::Think()
     }
     if (MyCombat->bIsDodging || MyCombat->bGuardBroken) return;
 
+    // AI must never repeatedly call PerformBasicAttack while an attack is already active. The combat
+    // component treats calls inside the combo queue window as buffered combo input, so the old AI loop
+    // unintentionally queued another swing every think and could chain forever. Hold position and let
+    // the current attack/recovery finish first.
+    if (MyCombat->bIsAttacking)
+    {
+        AI->StopMovement();
+        ResetActiveMoveState();
+        FaceTarget(CurrentTarget);
+        return;
+    }
+
     const float Distance = FVector::Dist2D(GetOwner()->GetActorLocation(), CurrentTarget->GetActorLocation());
     const float DesiredRange = FMath::Max(50.f, DesiredRangeOverride > 0.f ? DesiredRangeOverride : MyCombat->GetPreferredCombatRange());
     const bool bLOS = !bRequireLineOfSightToAttack || HasLineOfSightTo(CurrentTarget);
@@ -917,13 +929,31 @@ void UARPGAICombatComponent::Think()
     ResetActiveMoveState();
     FaceTarget(CurrentTarget);
     if (MyCombat->bIsBlocking) return;
+
+    // AttackSlotCooldownAfterAttack used to matter only to coordinated melee groups. Apply the same
+    // gate to solo melee AI as well so wildlife and one-on-one enemies have readable breathing room
+    // instead of restarting an attack as soon as RecoveryTime expires.
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+    if (bMelee && Now < NextAttackSlotEligibleAt) return;
+
     if (TryUseAutomaticAbility()) return;
     if (MyCombat->PerformBasicAttack(CurrentTarget))
     {
         if (GetWorld())
         {
             LastAttackCommitAt = GetWorld()->GetTimeSeconds();
-            NextAttackSlotEligibleAt = LastAttackCommitAt + FMath::Max(0.f, AttackSlotCooldownAfterAttack);
+
+            // Match CombatComponent's finish timing closely, then add deliberate post-attack breathing
+            // room. This makes the exposed cooldown intuitive: it starts after the swing/recovery, not
+            // at the beginning of the montage.
+            float EstimatedAttackDuration = FARPGAttackStepDefinition().RecoveryTime;
+            if (Profile.DetailedComboSteps.Num() > 0)
+            {
+                const int32 StepIndex = FMath::Abs(MyCombat->CurrentComboIndex) % Profile.DetailedComboSteps.Num();
+                const FARPGAttackStepDefinition& Step = Profile.DetailedComboSteps[StepIndex];
+                EstimatedAttackDuration = FMath::Max(FMath::Max(0.05f, Step.RecoveryTime), FMath::Max(0.f, Step.ImpactDelay) + 0.05f);
+            }
+            NextAttackSlotEligibleAt = LastAttackCommitAt + EstimatedAttackDuration + FMath::Max(0.f, AttackSlotCooldownAfterAttack);
         }
         bHadAttackSlotLastThink = false;
         AttackSlotGrantedAt = -1.f;

@@ -7,6 +7,28 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 2.4.0-alpha day/night AI population swapping
+
+`ARPGAISpawner` can now optionally swap its runtime population at **true midnight (00:00)** and restore the normal/daylight population when the authoritative `ARPGDayNightCycle` reaches its configured **Day Start Hour**. The existing `Spawn Table` remains the daylight/default table, while a new weighted `Midnight Spawn Table` accepts night-only enemies such as undead, nocturnal wildlife or event creatures.
+
+Enable `Enable Midnight Population Swap` on only the spawners that should participate. When enabled, a phase transition cleanly removes the old phase population without treating the cleanup as death/defeat, cancels stale respawn state, then spawns the new phase population if the spawner is currently loaded. Distance-streamed spawners that are unloaded simply remember the new phase and spawn the correct table when a player returns. When the option is disabled, the existing preserved population/respawn/distance-streaming behavior is unchanged.
+
+The spawner automatically finds the first `ARPGDayNightCycle` in the world, with an optional per-instance override for multi-clock/test maps. Midnight can optionally use its own Min/Max group-size range. See `Docs/AI_SPAWNER_DAY_NIGHT.md`.
+
+
+## 2.3.0-alpha melee combat polish
+
+This release fixes three combat-feel problems without changing the framework's Blueprint-facing public headers:
+
+- ordinary damage no longer plays a Hit React montage over an attack that is already in progress; only real interruption states such as critical stagger, parry/guard break, dodge/death can cancel the visible attack;
+- critical stagger stops AI path following immediately, clears current movement velocity before launch, applies the full configured knockback vector, and owns its stagger audio/FX cue at the exact successful-stagger point;
+- automatic melee AI no longer repeatedly calls `PerformBasicAttack` while already attacking (which previously filled the combo queue every Think), and the existing `Attack Slot Cooldown After Attack` now also paces solo melee AI after attack recovery.
+
+For a chicken or other quick wildlife attacker, a good starting point is `Attack Slot Cooldown After Attack = 0.8-1.25`. The actual interval is the attack step's recovery/impact duration plus this breathing-room value.
+
+Critical stagger remains intentionally **critical-hit-only**, preserving the original framework design. Remember that the effective frequency is `Critical Chance × Critical Stagger Chance`; for a deterministic editor test, temporarily set both to `1.0`, verify stagger montage/sound/knockback, then restore gameplay values.
+
+
 ## 2.2.3-alpha.2 Blueprint compatibility hotfix
 
 This release preserves the exact public Quick Access C++ header/reflection schema from 2.2.3-alpha.1 while implementing active-slot replacement auto-equip entirely in private C++ logic. Existing Blueprint casts and serialized nodes therefore do not need to be reconstructed for this gameplay fix.

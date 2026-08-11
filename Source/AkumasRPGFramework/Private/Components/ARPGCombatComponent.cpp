@@ -19,7 +19,9 @@
 #include "Components/ARPGEquipmentComponent.h"
 #include "Data/ARPGClassDefinition.h"
 #include "Data/ARPGItemDefinition.h"
+#include "AIController.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -532,7 +534,13 @@ FARPGCombatHitInfo UARPGCombatComponent::ReceiveCombatHit(AActor* Attacker, floa
     if (Damage > 0.f && LifeState == EARPGLifeState::Alive && Info.Result != EARPGCombatHitResult::Blocked)
         TryApplyCriticalStaggerAuthority(Attacker, Info);
 
-    if (Damage > 0.f && LifeState == EARPGLifeState::Alive && !Info.bStaggered)
+    // Light hit reactions are cosmetic and must not silently cancel an attack montage while the
+    // authoritative attack timers continue running. Real interruption is owned by stagger, parry,
+    // guard break, dodge/death, etc. This keeps visible animation and gameplay state synchronized.
+    const bool bCanPlayLightHitReact = Damage > 0.f && LifeState == EARPGLifeState::Alive &&
+                                       !Info.bStaggered && Info.Result != EARPGCombatHitResult::Blocked &&
+                                       !bIsAttacking;
+    if (bCanPlayLightHitReact)
         if (UAnimMontage* HitReact = GetHitReactMontage()) MulticastPlayMontage(HitReact, 1.f);
 
     if (Info.Result == EARPGCombatHitResult::Blocked)
@@ -553,8 +561,6 @@ FARPGCombatHitInfo UARPGCombatComponent::ReceiveCombatHit(AActor* Attacker, floa
             MulticastPlayCombatCue(bCritical ? EARPGCombatFeedbackCue::CriticalHit : EARPGCombatFeedbackCue::Hit,
                                    LastReceivedHitLocation, LastReceivedHitDirection);
         }
-        if (Info.bStaggered)
-            MulticastPlayCombatCue(EARPGCombatFeedbackCue::Stagger, LastReceivedHitLocation, LastReceivedHitDirection);
     }
 
     OnCombatHitReceived.Broadcast(Info);
@@ -843,6 +849,13 @@ bool UARPGCombatComponent::TryApplyCriticalStaggerAuthority(AActor* Attacker, FA
         GetWorld()->GetTimerManager().ClearTimer(DodgeFinishTimer);
     }
 
+    // Cancel path-following immediately instead of waiting for the AI think timer. Otherwise an
+    // active MoveTo can fight LaunchCharacter for a frame or two and make knockback look like it
+    // never happened. This is harmless for player-controlled characters.
+    if (APawn* Pawn = Cast<APawn>(GetOwner()))
+        if (AAIController* AI = Cast<AAIController>(Pawn->GetController()))
+            AI->StopMovement();
+
     UAnimMontage* StaggerMontage = Stagger.StaggerMontage.LoadSynchronous();
     if (!StaggerMontage) StaggerMontage = GetHitReactMontage();
     if (StaggerMontage) MulticastPlayMontage(StaggerMontage, 1.f);
@@ -855,7 +868,11 @@ bool UARPGCombatComponent::TryApplyCriticalStaggerAuthority(AActor* Attacker, FA
     {
         if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
         {
-            Character->LaunchCharacter(KnockbackVelocity, true, Stagger.UpwardVelocity != 0.f);
+            if (UCharacterMovementComponent* Move = Character->GetCharacterMovement())
+                Move->StopMovementImmediately();
+            // Override both horizontal and vertical launch velocity so navigation/current velocity
+            // cannot dilute a configured stagger impulse.
+            Character->LaunchCharacter(KnockbackVelocity, true, true);
         }
         else if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent()))
         {
@@ -867,6 +884,7 @@ bool UARPGCombatComponent::TryApplyCriticalStaggerAuthority(AActor* Attacker, FA
     InOutHitInfo.bStaggered = true;
     InOutHitInfo.KnockbackVelocity = KnockbackVelocity;
     OnStaggerStateChanged.Broadcast(true);
+    MulticastPlayCombatCue(EARPGCombatFeedbackCue::Stagger, LastReceivedHitLocation, LastReceivedHitDirection);
 
     GetWorld()->GetTimerManager().ClearTimer(StaggerTimer);
     GetWorld()->GetTimerManager().SetTimer(StaggerTimer, this, &UARPGCombatComponent::EndStaggerAuthority, FMath::Max(0.05f, Stagger.Duration), false);

@@ -237,3 +237,13 @@ The v2.0 tree retains prior fixes discovered through real UE 5.8.1 Development E
 7. Kill one member of an Individual-respawn group, leave before its respawn delay expires, then return immediately; confirm previously living members return while the killed member waits for the remaining cooldown.
 8. Repeat with `Respawn Mode = Never`; confirm killed members do not return after distance unload/reload.
 9. With the spawner inactive, profile that its leash/cohesion timers are stopped and only the staggered population relevance timer remains.
+
+## v2.4 day/night spawner regression model
+
+Run:
+
+```bash
+python Tools/test_day_night_spawner_model.py
+```
+
+The model verifies legacy-disabled preservation, midnight daylight→midnight replacement, morning restoration, distance-unloaded phase switching without background spawning, and clock-jump robustness.

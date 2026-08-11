@@ -76,3 +76,9 @@ Runtime status and control nodes are exposed under `ARPG | AI Spawner | Performa
 - `On Population Deactivated`
 
 Normal games should rarely need to call these manually; the distance timer owns the default lifecycle.
+
+## Day/night population integration (v2.4)
+
+Distance streaming and midnight population swapping cooperate rather than competing. When `Enable Midnight Population Swap` is enabled and a spawner is distance-unloaded, midnight/morning changes update the selected population phase and discard obsolete preserved-count/respawn state **without spawning actors in the unloaded area**. The next distance activation spawns only the currently correct table.
+
+This means a group preserved before midnight cannot be resurrected as daylight NPCs at 02:00 simply because the player left and returned. Conversely, when the feature is disabled, the original distance-population preservation path is unchanged.

@@ -899,20 +899,84 @@ if save_cpp_v22.exists():
         if required not in save22:
             issues.append(f"v2.2 Quick Access persistence missing: {required}")
 
-# v2.2.3-alpha.2 must preserve the 2.2.3-alpha.1 public reflection API: no active-slot auto-equip UPROPERTY.
+# v2.4 day/night AI population swapping. Only ARPGAISpawner intentionally gains new reflected
+# authoring/runtime API; existing SpawnTable remains the daylight/default path when the feature is disabled.
+if spawner_header.exists():
+    spawner24h = spawner_header.read_text(errors="replace")
+    for required in (
+        "bEnableMidnightPopulationSwap = false",
+        "MidnightSpawnTable",
+        "bUseSeparateMidnightGroupSize = false",
+        "MidnightMinGroupSize",
+        "MidnightMaxGroupSize",
+        "DayNightCycleOverride",
+        "bMidnightPopulationActive = false",
+        "RefreshDayNightPopulationNow",
+        "IsMidnightPopulationActive",
+    ):
+        if required not in spawner24h:
+            issues.append(f"v2.4 day/night AI spawner missing authoring/runtime API: {required}")
+
+if spawner_cpp.exists():
+    spawner24c = spawner_cpp.read_text(errors="replace")
+    for required in (
+        "InitializeDayNightPopulation",
+        "ResolveAndBindDayNightCycle",
+        "OnHourChanged.AddDynamic",
+        "OnDayStarted.AddDynamic",
+        "IsWorldTimeInMidnightPopulationWindow",
+        "ApplyDayNightPopulationPhase",
+        "GetActiveSpawnTable",
+        "GetActiveGroupSizeRange",
+        "DespawnAll(true);",
+        "GetWorldHour() < MorningHour",
+        "CheckDayNightPopulationPhase();",
+    ):
+        if required not in spawner24c:
+            issues.append(f"v2.4 day/night AI spawner missing runtime path: {required}")
+    if "Pawn->OnDestroyed.RemoveDynamic(this, &AARPGAISpawner::HandlePawnDestroyed);" not in spawner24c:
+        issues.append("v2.4 phase population cleanup must remain death/respawn-neutral through DespawnAll delegate removal")
+
+# v2.3 retains the Blueprint-compatible Quick Access reflection API from the 2.2.3-alpha.2 baseline.
 if quick_header_v22.exists():
     qh_compat = quick_header_v22.read_text(errors="replace")
     if "bAutoEquipReplacementInActiveSlot" in qh_compat:
-        issues.append("v2.2.3-alpha.2 must not add reflected active-slot auto-equip state to the public Quick Access header")
+        issues.append("v2.3 must not reintroduce reflected active-slot auto-equip state to the public Quick Access header")
 if quick_cpp_v22.exists():
     qc_compat = quick_cpp_v22.read_text(errors="replace")
     if "bReplacedCurrentlyActiveSlot" not in qc_compat or "ActivateSlotAuthority(SlotNumber, ActivatedInstanceId)" not in qc_compat:
-        issues.append("v2.2.3-alpha.2 private active-slot replacement handoff missing")
+        issues.append("v2.3 must retain the private active-slot replacement handoff")
+
+# v2.3 melee combat polish: light hits cannot visually cancel active attacks, stagger must stop
+# navigation immediately, and AI attack pacing must not auto-buffer combo input every Think.
+if combat_cpp.exists():
+    combat23 = combat_cpp.read_text(errors="replace")
+    for required in (
+        "const bool bCanPlayLightHitReact",
+        "Info.Result != EARPGCombatHitResult::Blocked",
+        "!bIsAttacking",
+        "AI->StopMovement();",
+        "Move->StopMovementImmediately();",
+        "LaunchCharacter(KnockbackVelocity, true, true)",
+        "MulticastPlayCombatCue(EARPGCombatFeedbackCue::Stagger",
+    ):
+        if required not in combat23:
+            issues.append(f"v2.3 melee combat polish missing combat path: {required}")
+if ai_combat_cpp.exists():
+    ai23 = ai_combat_cpp.read_text(errors="replace")
+    for required in (
+        "if (MyCombat->bIsAttacking)",
+        "if (bMelee && Now < NextAttackSlotEligibleAt) return;",
+        "EstimatedAttackDuration",
+        "EstimatedAttackDuration + FMath::Max(0.f, AttackSlotCooldownAfterAttack)",
+    ):
+        if required not in ai23:
+            issues.append(f"v2.3 melee AI pacing missing runtime path: {required}")
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 2232 or descriptor.get("VersionName") != "2.2.3-alpha.2":
-        issues.append("package descriptor must identify v2.2.3-alpha.2")
+    if descriptor.get("Version") != 2400 or descriptor.get("VersionName") != "2.4.0-alpha":
+        issues.append("package descriptor must identify v2.4.0-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:

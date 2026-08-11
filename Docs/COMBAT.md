@@ -244,3 +244,11 @@ See `Docs/COMBAT_FEEL.md` for the complete editor setup and tuning reference.
 ## Automatic retaliation and ally assist
 
 `ARPGAICharacter` now binds its AI Combat component to received combat-hit events. By default, neutral or missing-faction attackers are remembered temporarily and become valid retaliation targets, so passive wildlife fights back instead of returning immediately to free roam. Nearby allies can join through faction, spawn-group, explicit Assist Group Id, or same-class fallback rules. See `AI_AGGRO_ASSIST.md`.
+
+## 2.3 melee interruption and NPC attack cadence
+
+Ordinary damaging hits no longer replace an attack montage that is already playing. This is deliberate poise/state synchronization: damage still lands, but the attack only visually interrupts when a real interrupt state occurs (critical stagger, parry/guard break, death, etc.).
+
+Automatic melee AI also no longer calls Basic Attack again while its current attack is active. This prevents automatic combo-buffer spam. `Attack Slot Cooldown After Attack` now provides post-recovery breathing room for solo melee NPCs too, so fast wildlife such as chickens can be slowed without Blueprint timers.
+
+Critical stagger is still critical-only. For testing, use `Critical Chance = 1.0` on the attacker and `Critical Stagger Chance = 1.0` on the defender; after confirming montage/audio/knockback, restore balanced values.

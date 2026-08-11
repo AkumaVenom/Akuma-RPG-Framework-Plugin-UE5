@@ -1,4 +1,4 @@
-# Feature Matrix — v2.2.1 Quick Access / Active Item Slots
+# Feature Matrix — v2.4.0 Day/Night AI Population Swapping
 
 Legend:
 
@@ -29,7 +29,7 @@ Legend:
 | Automatic NPC combat AI | Implemented | `ARPGAICharacter`/`ARPGAICombatComponent` auto-acquire/retaliate, use threat, chase, face, attack, dodge/block, optionally activate GAS ability tags, immediately restore temporary-retaliation targets to original disposition after death, and coordinate allied melee attack slots/wait-orbit movement without requiring a Behavior Tree. |
 | Automatic NPC ragdoll death | Implemented | `ARPGAICharacter` ragdolls by default with capsule/collision handling, inherited velocity, killing-hit impulse, multiplayer death presentation, respawn reset and automatic Death montage fallback when physics is unavailable. |
 | AI spline patrol / travel | Implemented | `ARPGAISplineRoute` + inherited `ARPGAISplineComponent`: NavMesh look-ahead following without attachment, route-level Loop/closed/open-end behavior, group direction synchronization, route-point waits/events, Route Id lookup, spawner assignment, combat suspension/leash/rejoin and Wanderer conflict handling. |
-| Advanced AI spawner | Implemented | Weighted group spawn, count range, shape/radius, NavMesh projection, independent group-vs-cohesion semantics, synchronized spline direction, selectable Automatic/Spline/Free-Roam/Hold movement, spawner-leashed reachable-point roaming, combat-home leash integration, dead-pawn corpse cleanup/respawn, plus default-on player-distance population streaming with activation/despawn hysteresis, route-aware relevance, clean unload and respawn-cooldown preservation. |
+| Advanced AI spawner | Implemented | Weighted group spawn, count range, shape/radius, NavMesh projection, independent group-vs-cohesion semantics, synchronized spline direction, selectable Automatic/Spline/Free-Roam/Hold movement, spawner-leashed reachable-point roaming, combat-home leash integration, dead-pawn corpse cleanup/respawn, default-on player-distance population streaming, plus opt-in midnight population swapping with a separate weighted enemy table, clean midnight/morning handoff, and phase-aware distance reload preservation. |
 | Wanderer AI | Foundation | Optional autonomous roaming/activity foundation; game-specific playerbot brains can extend it. |
 | Threat/aggro | Implemented | Threat table, highest target, taunt/set/clear utilities, temporary aggression/ally assist, target-death threat cleanup, original-disposition restoration and automatic AI target preference. |
 | Bosses | Implemented | Boss types, encounter state, phases, enrage, leash/reset, scaling, contributions and world respawn. |

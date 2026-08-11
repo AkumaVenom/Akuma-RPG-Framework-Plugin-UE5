@@ -7,6 +7,7 @@
 
 class APawn;
 class AARPGAISplineRoute;
+class AARPGDayNightCycle;
 class UARPGWandererComponent;
 
 USTRUCT(BlueprintType)
@@ -55,6 +56,35 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn") EARPGRespawnMode RespawnMode = EARPGRespawnMode::Individual;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn", meta=(ClampMin="0")) float RespawnDelay = 20.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn", meta=(ClampMin="0")) float CorpseDespawnDelay = 8.f;
+
+    /**
+     * Optional runtime population swap driven by ARPGDayNightCycle. Disabled preserves the original spawner
+     * behavior exactly: Spawn Table remains the only population and distance unload/reload preserves it as before.
+     * When enabled, Spawn Table is the daylight population; at midnight (00:00) the current population is removed
+     * and Midnight Spawn Table is spawned. At the Day/Night actor's Day Start Hour, midnight NPCs are removed and
+     * the daylight Spawn Table returns. Distance-streamed spawners update their phase while unloaded and spawn only
+     * the correct phase when a player makes them relevant again.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn|Day Night Population", meta=(DisplayName="Enable Midnight Population Swap"))
+    bool bEnableMidnightPopulationSwap = false;
+
+    /** Optional explicit world clock. Leave unset to automatically use the first ARPGDayNightCycle in the world. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category="Spawn|Day Night Population", meta=(EditCondition="bEnableMidnightPopulationSwap"))
+    TObjectPtr<AARPGDayNightCycle> DayNightCycleOverride;
+
+    /** Weighted NPC classes used from 00:00 until the Day/Night actor reaches Day Start Hour. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn|Day Night Population", meta=(EditCondition="bEnableMidnightPopulationSwap", DisplayName="Midnight Spawn Table"))
+    TArray<FARPGSpawnEntry> MidnightSpawnTable;
+
+    /** Use a different group-size range for the midnight population. Otherwise Min/Max Group Size are shared. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn|Day Night Population", meta=(EditCondition="bEnableMidnightPopulationSwap"))
+    bool bUseSeparateMidnightGroupSize = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn|Day Night Population", meta=(ClampMin="0", EditCondition="bEnableMidnightPopulationSwap && bUseSeparateMidnightGroupSize"))
+    int32 MidnightMinGroupSize = 1;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn|Day Night Population", meta=(ClampMin="0", EditCondition="bEnableMidnightPopulationSwap && bUseSeparateMidnightGroupSize"))
+    int32 MidnightMaxGroupSize = 1;
 
     /**
      * Performance streaming for spawned AI. When enabled, this spawner stays unloaded until a player-controlled pawn
@@ -138,6 +168,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime|Performance") bool bPopulationActive = false;
     /** Nearest relevant player distance from the spawner/population. -1 means no player-controlled pawn is currently available. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime|Performance") float NearestRelevantPlayerDistance = -1.f;
+    /** True while the spawner is currently selecting Midnight Spawn Table instead of the normal daylight Spawn Table. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime|Day Night Population") bool bMidnightPopulationActive = false;
     UPROPERTY(BlueprintAssignable) FARPGOnSpawnedAI OnSpawnedAI;
     UPROPERTY(BlueprintAssignable) FARPGOnSpawnGroupDefeated OnSpawnGroupDefeated;
     UPROPERTY(BlueprintAssignable, Category="ARPG|AI Spawner|Performance") FARPGOnSpawnerPopulationStateChanged OnPopulationActivated;
@@ -157,8 +189,12 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner|Performance", meta=(BlueprintAuthorityOnly)) void EvaluatePopulationRelevanceNow();
     /** Manually load/unload the distance-streamed population. Automatic distance checks continue afterward. */
     UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner|Performance", meta=(BlueprintAuthorityOnly)) void SetPopulationActive(bool bNewActive);
+    /** Re-resolve the world clock and immediately synchronize this spawner to the correct daylight/midnight population. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|AI Spawner|Day Night Population", meta=(BlueprintAuthorityOnly)) void RefreshDayNightPopulationNow();
+    UFUNCTION(BlueprintPure, Category="ARPG|AI Spawner|Day Night Population") bool IsMidnightPopulationActive() const { return bMidnightPopulationActive; }
 
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 protected:
     UPROPERTY(VisibleAnywhere) int32 DesiredGroupSize = 0;
     FTimerHandle LeashTimer;
@@ -171,8 +207,18 @@ protected:
     double OutOfRangeSinceTime = -1.0;
     double RespawnNotBeforeTime = 0.0;
     bool bWholeGroupRespawnPending = false;
+    TWeakObjectPtr<AARPGDayNightCycle> ResolvedDayNightCycle;
+    bool bWarnedMissingDayNightCycle = false;
     FVector ChooseSpawnLocation() const;
     TSubclassOf<APawn> ChoosePawnClass() const;
+    const TArray<FARPGSpawnEntry>& GetActiveSpawnTable() const;
+    void GetActiveGroupSizeRange(int32& OutMinGroupSize, int32& OutMaxGroupSize) const;
+    void InitializeDayNightPopulation();
+    void ShutdownDayNightPopulation();
+    void ResolveAndBindDayNightCycle();
+    bool IsWorldTimeInMidnightPopulationWindow() const;
+    void CheckDayNightPopulationPhase();
+    void ApplyDayNightPopulationPhase(bool bUseMidnightPopulation, bool bForceRefresh = false);
     void CheckLeashes();
     void CheckPopulationRelevance();
     void ActivateDistancePopulation();
@@ -197,4 +243,6 @@ protected:
     UARPGWandererComponent* GetOrCreateWanderer(APawn* Pawn) const;
     int32 ChooseGroupSplineDirectionSign() const;
     UFUNCTION() void HandlePawnDestroyed(AActor* DestroyedActor);
+    UFUNCTION() void HandleWorldHourChanged(int32 NewHour);
+    UFUNCTION() void HandleDayStarted();
 };
