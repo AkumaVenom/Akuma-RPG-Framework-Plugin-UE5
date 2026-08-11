@@ -4,6 +4,9 @@
 #include "Components/ARPGCombatComponent.h"
 #include "Data/ARPGItemDefinition.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 
@@ -61,13 +64,42 @@ void UARPGStatsComponent::BeginPlay()
     if (UARPGInventoryComponent* Inventory = GetOwner() ? GetOwner()->FindComponentByClass<UARPGInventoryComponent>() : nullptr)
         Inventory->OnInventoryChanged.AddDynamic(this, &UARPGStatsComponent::HandleInventoryChanged);
 
+    // v2.5.3: Scale NPC To Player is the master opt-in for AI level/stat scaling. Do not let an
+    // editor dependency make the feature silently inert: a non-player Pawn that explicitly enables
+    // scaling automatically opts into the JRPG stat layer on the authority at runtime. Player pawns
+    // are never auto-converted by this NPC-only setting. Designers can still enable JRPG Stats in the
+    // editor to author Growth/Derived settings before play.
+    if (GetOwner() && GetOwner()->HasAuthority() && NPCLevelScalingSettings.bScaleToPlayer && !bEnableJRPGStatSystem)
+    {
+        if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+        {
+            if (!OwnerPawn->IsPlayerControlled())
+                bEnableJRPGStatSystem = true;
+        }
+    }
+
     if (GetOwner() && GetOwner()->HasAuthority() && bEnableJRPGStatSystem)
     {
-        const UARPGProgressionComponent* Progression = GetOwner()->FindComponentByClass<UARPGProgressionComponent>();
-        const int32 Level = Progression ? FMath::Max(1, Progression->Level) : 1;
-        InitializeStatProgressionForLevel(Level, false);
-        RecalculateJRPGStatsInternal(false);
+        const int32 BaseLevel = GetBaseProgressionLevel();
+        InitializeStatProgressionForLevel(BaseLevel, false);
+        if (CanUseNPCLevelScaling())
+        {
+            RefreshNPCLevelScalingInternal(true, false);
+            EnsureNPCLevelScalingTimer();
+        }
+        else
+        {
+            NPCLevelScalingRuntime.BaseLevel = BaseLevel;
+            NPCLevelScalingRuntime.EffectiveLevel = BaseLevel;
+            RecalculateJRPGStatsInternal(false);
+        }
     }
+}
+
+void UARPGStatsComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    ClearNPCLevelScalingTimer();
+    Super::EndPlay(EndPlayReason);
 }
 
 bool UARPGStatsComponent::ApplyDamage(float Amount)
@@ -242,6 +274,259 @@ bool UARPGStatsComponent::RefundAllAttributePoints()
     return true;
 }
 
+int32 UARPGStatsComponent::GetBaseProgressionLevel() const
+{
+    const UARPGProgressionComponent* Progression = GetOwner() ? GetOwner()->FindComponentByClass<UARPGProgressionComponent>() : nullptr;
+    return Progression ? FMath::Max(1, Progression->Level) : 1;
+}
+
+int32 UARPGStatsComponent::GetEffectiveLevel() const
+{
+    if (NPCLevelScalingRuntime.bScalingApplied && NPCLevelScalingRuntime.EffectiveLevel > 0)
+        return NPCLevelScalingRuntime.EffectiveLevel;
+    return GetBaseProgressionLevel();
+}
+
+bool UARPGStatsComponent::CanUseNPCLevelScaling() const
+{
+    if (!bEnableJRPGStatSystem || !NPCLevelScalingSettings.bScaleToPlayer || !GetOwner()) return false;
+    if (const APawn* Pawn = Cast<APawn>(GetOwner()))
+        if (Pawn->IsPlayerControlled()) return false;
+    return true;
+}
+
+bool UARPGStatsComponent::IsOwnerInCombat() const
+{
+    if (!GetOwner()) return false;
+    if (const UARPGCombatComponent* Combat = GetOwner()->FindComponentByClass<UARPGCombatComponent>())
+        return Combat->IsAlive() && Combat->CombatTarget != nullptr;
+    return false;
+}
+
+bool UARPGStatsComponent::IsEligibleScalingPlayer(AActor* Candidate) const
+{
+    if (!Candidate || Candidate == GetOwner()) return false;
+    const APawn* Pawn = Cast<APawn>(Candidate);
+    if (!Pawn || !Pawn->IsPlayerControlled()) return false;
+    const UARPGProgressionComponent* Progression = Candidate->FindComponentByClass<UARPGProgressionComponent>();
+    if (!Progression || Progression->Level <= 0) return false;
+    if (NPCLevelScalingSettings.bIgnoreDeadPlayers)
+    {
+        if (const UARPGCombatComponent* Combat = Candidate->FindComponentByClass<UARPGCombatComponent>())
+            if (!Combat->IsAlive()) return false;
+        if (const UARPGStatsComponent* Stats = Candidate->FindComponentByClass<UARPGStatsComponent>())
+            if (Stats->Health <= 0.f) return false;
+    }
+    return true;
+}
+
+bool UARPGStatsComponent::ResolveNPCScalingReference(int32& OutPlayerLevel) const
+{
+    OutPlayerLevel = 0;
+    if (!GetOwner() || !GetWorld()) return false;
+
+    // The currently fought player is the most stable and intuitive reference for a shared NPC.
+    if (NPCLevelScalingSettings.ReferenceMode == EARPGNPCPlayerScalingReference::CombatTargetThenNearest)
+    {
+        if (const UARPGCombatComponent* Combat = GetOwner()->FindComponentByClass<UARPGCombatComponent>())
+        {
+            AActor* Target = Combat->CombatTarget;
+            if (IsEligibleScalingPlayer(Target))
+            {
+                if (const UARPGProgressionComponent* Progression = Target->FindComponentByClass<UARPGProgressionComponent>())
+                {
+                    OutPlayerLevel = FMath::Max(1, Progression->Level);
+                    return true;
+                }
+            }
+        }
+    }
+
+    const FVector OwnerLocation = GetOwner()->GetActorLocation();
+    const float Radius = FMath::Max(0.f, NPCLevelScalingSettings.ReferenceSearchRadius);
+    const float RadiusSq = Radius > 0.f ? FMath::Square(Radius) : TNumericLimits<float>::Max();
+
+    int32 Count = 0;
+    int64 LevelTotal = 0;
+    int32 SelectedLevel = 0;
+    float SelectedDistanceSq = TNumericLimits<float>::Max();
+
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        const APlayerController* PC = It->Get();
+        AActor* Candidate = PC ? PC->GetPawn() : nullptr;
+        if (!IsEligibleScalingPlayer(Candidate)) continue;
+
+        const float DistanceSq = FVector::DistSquared(OwnerLocation, Candidate->GetActorLocation());
+        if (DistanceSq > RadiusSq) continue;
+        const UARPGProgressionComponent* Progression = Candidate->FindComponentByClass<UARPGProgressionComponent>();
+        if (!Progression) continue;
+        const int32 CandidateLevel = FMath::Max(1, Progression->Level);
+
+        ++Count;
+        LevelTotal += CandidateLevel;
+
+        switch (NPCLevelScalingSettings.ReferenceMode)
+        {
+            case EARPGNPCPlayerScalingReference::HighestLevelPlayer:
+                if (SelectedLevel <= 0 || CandidateLevel > SelectedLevel || (CandidateLevel == SelectedLevel && DistanceSq < SelectedDistanceSq))
+                {
+                    SelectedLevel = CandidateLevel;
+                    SelectedDistanceSq = DistanceSq;
+                }
+                break;
+            case EARPGNPCPlayerScalingReference::LowestLevelPlayer:
+                if (SelectedLevel <= 0 || CandidateLevel < SelectedLevel || (CandidateLevel == SelectedLevel && DistanceSq < SelectedDistanceSq))
+                {
+                    SelectedLevel = CandidateLevel;
+                    SelectedDistanceSq = DistanceSq;
+                }
+                break;
+            case EARPGNPCPlayerScalingReference::AverageNearbyPlayers:
+                break;
+            case EARPGNPCPlayerScalingReference::CombatTargetThenNearest:
+            case EARPGNPCPlayerScalingReference::NearestPlayer:
+            default:
+                if (DistanceSq < SelectedDistanceSq)
+                {
+                    SelectedLevel = CandidateLevel;
+                    SelectedDistanceSq = DistanceSq;
+                }
+                break;
+        }
+    }
+
+    if (Count <= 0) return false;
+    if (NPCLevelScalingSettings.ReferenceMode == EARPGNPCPlayerScalingReference::AverageNearbyPlayers)
+        SelectedLevel = FMath::Max(1, FMath::RoundToInt(static_cast<float>(LevelTotal) / static_cast<float>(Count)));
+
+    OutPlayerLevel = FMath::Max(1, SelectedLevel);
+    return OutPlayerLevel > 0;
+}
+
+int32 UARPGStatsComponent::ComputeNPCScaledLevel(int32 BaseLevel, int32 PlayerLevel) const
+{
+    BaseLevel = FMath::Max(1, BaseLevel);
+    PlayerLevel = FMath::Max(1, PlayerLevel);
+
+    int32 TargetLevel = FMath::Max(1, PlayerLevel + NPCLevelScalingSettings.LevelOffset);
+    if (!NPCLevelScalingSettings.bAllowScaleUp) TargetLevel = FMath::Min(TargetLevel, BaseLevel);
+    if (!NPCLevelScalingSettings.bAllowScaleDown) TargetLevel = FMath::Max(TargetLevel, BaseLevel);
+
+    const float MatchStrength = FMath::Clamp(NPCLevelScalingSettings.LevelMatchStrength, 0.f, 1.f);
+    int32 EffectiveLevel = FMath::RoundToInt(FMath::Lerp(static_cast<float>(BaseLevel), static_cast<float>(TargetLevel), MatchStrength));
+
+    const UARPGProgressionComponent* Progression = GetOwner() ? GetOwner()->FindComponentByClass<UARPGProgressionComponent>() : nullptr;
+    const int32 ProgressionMaxLevel = Progression ? FMath::Max(1, Progression->MaxLevel) : FMath::Max(1, NPCLevelScalingSettings.MaximumScaledLevel);
+    const int32 MaxLevel = FMath::Max(1, FMath::Min(FMath::Max(1, NPCLevelScalingSettings.MaximumScaledLevel), ProgressionMaxLevel));
+    const int32 MinLevel = FMath::Clamp(FMath::Max(1, NPCLevelScalingSettings.MinimumScaledLevel), 1, MaxLevel);
+    return FMath::Clamp(EffectiveLevel, MinLevel, MaxLevel);
+}
+
+void UARPGStatsComponent::RefreshNPCLevelScalingNow()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !bEnableJRPGStatSystem) return;
+    RefreshNPCLevelScalingInternal(true, false);
+    if (CanUseNPCLevelScaling()) EnsureNPCLevelScalingTimer();
+    else ClearNPCLevelScalingTimer();
+}
+
+void UARPGStatsComponent::HandleNPCLevelScalingTimer()
+{
+    if (GetOwner() && GetOwner()->HasAuthority())
+        RefreshNPCLevelScalingInternal(false, false);
+}
+
+void UARPGStatsComponent::EnsureNPCLevelScalingTimer()
+{
+    if (!GetWorld() || !CanUseNPCLevelScaling()) return;
+    const float Interval = FMath::Clamp(NPCLevelScalingSettings.RefreshInterval, 0.10f, 10.f);
+    if (GetWorld()->GetTimerManager().IsTimerActive(NPCLevelScalingTimer)) return;
+    const float FirstDelay = FMath::FRandRange(0.05f, FMath::Max(0.05f, Interval));
+    GetWorld()->GetTimerManager().SetTimer(NPCLevelScalingTimer, this, &UARPGStatsComponent::HandleNPCLevelScalingTimer, Interval, true, FirstDelay);
+}
+
+void UARPGStatsComponent::ClearNPCLevelScalingTimer()
+{
+    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(NPCLevelScalingTimer);
+}
+
+void UARPGStatsComponent::RefreshNPCLevelScalingInternal(bool bForceRecalculate, bool bFromLevelUp)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !bEnableJRPGStatSystem) return;
+
+    const int32 BaseLevel = GetBaseProgressionLevel();
+    const bool bCanScale = CanUseNPCLevelScaling();
+    const bool bInCombat = IsOwnerInCombat();
+
+    FARPGNPCLevelScalingRuntimeState NewState = NPCLevelScalingRuntime;
+    NewState.BaseLevel = BaseLevel;
+
+    if (!bCanScale)
+    {
+        bNPCScalingEncounterLocked = false;
+        NewState.bHasPlayerReference = false;
+        NewState.bEncounterLevelLocked = false;
+        NewState.bScalingApplied = false;
+        NewState.ReferencePlayerLevel = 0;
+        NewState.EffectiveLevel = BaseLevel;
+    }
+    else if (NPCLevelScalingSettings.bLockLevelWhileInCombat && bInCombat && bNPCScalingEncounterLocked)
+    {
+        // Encounter snapshot: keep the level/stat budget stable until combat ends, even if another
+        // player walks closer or the reference player levels during the fight.
+        NewState.bEncounterLevelLocked = true;
+        NewState.EffectiveLevel = FMath::Max(1, NPCLevelScalingRuntime.EffectiveLevel);
+    }
+    else
+    {
+        if (!bInCombat) bNPCScalingEncounterLocked = false;
+
+        int32 ReferenceLevel = 0;
+        const bool bHasReference = ResolveNPCScalingReference(ReferenceLevel);
+        NewState.bHasPlayerReference = bHasReference;
+        NewState.ReferencePlayerLevel = bHasReference ? ReferenceLevel : 0;
+
+        if (bHasReference)
+        {
+            NewState.EffectiveLevel = ComputeNPCScaledLevel(BaseLevel, ReferenceLevel);
+            NewState.bScalingApplied = true;
+        }
+        else if (NPCLevelScalingSettings.bReturnToBaseLevelWithoutPlayer)
+        {
+            NewState.EffectiveLevel = BaseLevel;
+            NewState.bScalingApplied = false;
+        }
+        else
+        {
+            NewState.EffectiveLevel = FMath::Max(1, NPCLevelScalingRuntime.EffectiveLevel > 0 ? NPCLevelScalingRuntime.EffectiveLevel : BaseLevel);
+            NewState.bScalingApplied = NPCLevelScalingRuntime.bScalingApplied;
+        }
+
+        if (NPCLevelScalingSettings.bLockLevelWhileInCombat && bInCombat)
+            bNPCScalingEncounterLocked = true;
+        NewState.bEncounterLevelLocked = bNPCScalingEncounterLocked;
+    }
+
+    const bool bRuntimeChanged =
+        NewState.bScalingApplied != NPCLevelScalingRuntime.bScalingApplied ||
+        NewState.bHasPlayerReference != NPCLevelScalingRuntime.bHasPlayerReference ||
+        NewState.bEncounterLevelLocked != NPCLevelScalingRuntime.bEncounterLevelLocked ||
+        NewState.BaseLevel != NPCLevelScalingRuntime.BaseLevel ||
+        NewState.ReferencePlayerLevel != NPCLevelScalingRuntime.ReferencePlayerLevel ||
+        NewState.EffectiveLevel != NPCLevelScalingRuntime.EffectiveLevel;
+    const bool bEffectiveLevelChanged = NewState.EffectiveLevel != NPCLevelScalingRuntime.EffectiveLevel;
+
+    NPCLevelScalingRuntime = NewState;
+    if (bRuntimeChanged)
+        OnNPCLevelScalingChanged.Broadcast(NPCLevelScalingRuntime);
+
+    if (bEffectiveLevelChanged || bForceRecalculate)
+        RecalculateJRPGStatsInternal(bFromLevelUp);
+    else if (bRuntimeChanged)
+        BroadcastStatSnapshot();
+}
+
 void UARPGStatsComponent::InitializeStatProgressionForLevel(int32 Level, bool bForceReset)
 {
     Level = FMath::Max(1, Level);
@@ -307,9 +592,11 @@ void UARPGStatsComponent::RecalculateJRPGStatsInternal(bool bFromLevelUp)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || !bEnableJRPGStatSystem) return;
 
-    const UARPGProgressionComponent* Progression = GetOwner()->FindComponentByClass<UARPGProgressionComponent>();
-    const int32 Level = Progression ? FMath::Max(1, Progression->Level) : 1;
-    if (!StatProgression.bInitialized) InitializeStatProgressionForLevel(Level, false);
+    const int32 BaseLevel = GetBaseProgressionLevel();
+    const int32 Level = GetEffectiveLevel();
+    // Attribute-point ownership follows the authored progression level, never the temporary scaled
+    // encounter level. A level-1 chicken scaled to a level-50 player therefore does not mint 147 points.
+    if (!StatProgression.bInitialized) InitializeStatProgressionForLevel(BaseLevel, false);
 
     const float OldMaxHealth = FMath::Max(1.f, MaxHealth);
     const float OldMaxMana = FMath::Max(1.f, MaxMana);
@@ -435,7 +722,10 @@ void UARPGStatsComponent::HandleLevelChanged(int32 OldLevel, int32 NewLevel)
         StatProgression.TotalAttributePointsEarned += Gained;
     }
     StatProgression.LastProcessedLevel = FMath::Max(RewardedThroughLevel, NewLevel);
-    RecalculateJRPGStatsInternal(NewLevel > OldLevel);
+    if (CanUseNPCLevelScaling())
+        RefreshNPCLevelScalingInternal(true, NewLevel > OldLevel);
+    else
+        RecalculateJRPGStatsInternal(NewLevel > OldLevel);
     OnAttributePointsChanged.Broadcast(StatProgression.UnspentAttributePoints, StatProgression.TotalAttributePointsEarned);
 }
 
@@ -487,8 +777,7 @@ FARPGStatSnapshot UARPGStatsComponent::GetStatSnapshot() const
 {
     FARPGStatSnapshot Snapshot;
     Snapshot.bJRPGStatSystemEnabled = bEnableJRPGStatSystem;
-    if (const UARPGProgressionComponent* Progression = GetOwner() ? GetOwner()->FindComponentByClass<UARPGProgressionComponent>() : nullptr)
-        Snapshot.Level = Progression->Level;
+    Snapshot.Level = GetEffectiveLevel();
     Snapshot.PrimaryStats = PrimaryStats;
     Snapshot.AllocatedPoints = StatProgression.AllocatedPoints;
     Snapshot.DerivedStats = DerivedStats;
@@ -545,6 +834,12 @@ void UARPGStatsComponent::OnRep_StatRevision()
     OnAttributePointsChanged.Broadcast(StatProgression.UnspentAttributePoints, StatProgression.TotalAttributePointsEarned);
 }
 
+void UARPGStatsComponent::OnRep_NPCLevelScalingRuntime()
+{
+    OnNPCLevelScalingChanged.Broadcast(NPCLevelScalingRuntime);
+    BroadcastStatSnapshot();
+}
+
 void UARPGStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -562,4 +857,5 @@ void UARPGStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     DOREPLIFETIME(UARPGStatsComponent, DerivedStats);
     DOREPLIFETIME(UARPGStatsComponent, StatProgression);
     DOREPLIFETIME(UARPGStatsComponent, StatRevision);
+    DOREPLIFETIME(UARPGStatsComponent, NPCLevelScalingRuntime);
 }

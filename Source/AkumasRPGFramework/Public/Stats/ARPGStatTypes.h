@@ -155,6 +155,61 @@ struct AKUMASRPGFRAMEWORK_API FARPGDerivedStatFormula
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Speed", meta=(ClampMin="0.01")) float MaxMovementSpeedMultiplier = 1.50f;
 };
 
+UENUM(BlueprintType)
+enum class EARPGNPCPlayerScalingReference : uint8
+{
+    CombatTargetThenNearest UMETA(DisplayName="Combat Target, Then Nearest Player"),
+    NearestPlayer UMETA(DisplayName="Nearest Player"),
+    HighestLevelPlayer UMETA(DisplayName="Highest-Level Player In Range"),
+    LowestLevelPlayer UMETA(DisplayName="Lowest-Level Player In Range"),
+    AverageNearbyPlayers UMETA(DisplayName="Average Nearby Player Level")
+};
+
+USTRUCT(BlueprintType)
+struct AKUMASRPGFRAMEWORK_API FARPGNPCLevelScalingSettings
+{
+    GENERATED_BODY()
+
+    /** Opt-in only. Disabled NPCs keep their authored Progression Level and pre-scaling behavior. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Player Scaling", meta=(DisplayName="Scale NPC To Player", ToolTip="Opt this non-player NPC into player-relative level/stat scaling. This toggle remains editable even before the JRPG stat system is enabled; at runtime an AI NPC with scaling enabled automatically enables the JRPG stat layer so scaling cannot silently do nothing.")) bool bScaleToPlayer = false;
+    /** How a shared server-authoritative NPC chooses a reference level when multiple players are present. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Player Scaling", meta=(EditCondition="bScaleToPlayer")) EARPGNPCPlayerScalingReference ReferenceMode = EARPGNPCPlayerScalingReference::CombatTargetThenNearest;
+    /** Player search radius while the NPC is not directly fighting a player. Zero means no distance limit. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Player Scaling", meta=(EditCondition="bScaleToPlayer", ClampMin="0.0", Units="cm")) float ReferenceSearchRadius = 6000.f;
+    /** Lightweight server refresh; this scans player controllers only, never every world actor. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Player Scaling", meta=(EditCondition="bScaleToPlayer", ClampMin="0.10", ClampMax="10.0", Units="s")) float RefreshInterval = 0.75f;
+
+    /** +2 makes an elite track two levels above its reference player; -2 makes a softer creature. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Level Matching", meta=(EditCondition="bScaleToPlayer", ClampMin="-100", ClampMax="100")) int32 LevelOffset = 0;
+    /** 1.0 fully matches the target level. 0.5 moves only halfway from the NPC's authored level. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Level Matching", meta=(EditCondition="bScaleToPlayer", ClampMin="0.0", ClampMax="1.0")) float LevelMatchStrength = 1.f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Level Matching", meta=(EditCondition="bScaleToPlayer", ClampMin="1")) int32 MinimumScaledLevel = 1;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Level Matching", meta=(EditCondition="bScaleToPlayer", ClampMin="1")) int32 MaximumScaledLevel = 100;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Level Matching", meta=(EditCondition="bScaleToPlayer")) bool bAllowScaleUp = true;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Level Matching", meta=(EditCondition="bScaleToPlayer")) bool bAllowScaleDown = true;
+
+    /** Prevent max-health/damage/stat jumps when a different player becomes the best reference mid-fight. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter Stability", meta=(EditCondition="bScaleToPlayer")) bool bLockLevelWhileInCombat = true;
+    /** If no eligible player remains nearby, restore the authored/base level instead of retaining the last scaled level. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter Stability", meta=(EditCondition="bScaleToPlayer")) bool bReturnToBaseLevelWithoutPlayer = true;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Reference Filtering", meta=(EditCondition="bScaleToPlayer")) bool bIgnoreDeadPlayers = true;
+};
+
+USTRUCT(BlueprintType)
+struct AKUMASRPGFRAMEWORK_API FARPGNPCLevelScalingRuntimeState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime") bool bScalingApplied = false;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime") bool bHasPlayerReference = false;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime") bool bEncounterLevelLocked = false;
+    /** The NPC's real authored Progression Level. Scaling never overwrites this value. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime") int32 BaseLevel = 1;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime") int32 ReferencePlayerLevel = 0;
+    /** Runtime level used to evaluate natural primary growth, derived stats and max vitals. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime") int32 EffectiveLevel = 1;
+};
+
 USTRUCT(BlueprintType)
 struct AKUMASRPGFRAMEWORK_API FARPGAttributePointSettings
 {

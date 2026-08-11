@@ -6,6 +6,18 @@ UARPGProgressionComponent::UARPGProgressionComponent()
     SetIsReplicatedByDefault(true);
 }
 
+void UARPGProgressionComponent::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // Development convenience only: apply a real progression level so Stats, NPC scaling, quests,
+    // equipment requirements and every other level consumer observe one authoritative value.
+    if (GetOwner() && GetOwner()->HasAuthority() && bEnableManualLevelOverride)
+    {
+        ApplyManualLevelOverrideNow();
+    }
+}
+
 int64 UARPGProgressionComponent::GetXPRequiredForLevel(int32 InLevel) const
 {
     return FMath::Max<int64>(1, FMath::RoundToInt64(BaseXP * FMath::Pow(FMath::Max(1, InLevel), XPExponent)));
@@ -33,6 +45,18 @@ float UARPGProgressionComponent::GetLevelProgress01() const
 {
     if (Level >= MaxLevel) return 1.f;
     return FMath::Clamp(static_cast<float>(XP) / static_cast<float>(GetXPRequiredForLevel(Level)), 0.f, 1.f);
+}
+
+void UARPGProgressionComponent::SetLevel(int32 NewLevel, bool bResetCurrentXP)
+{
+    SetProgression(NewLevel, bResetCurrentXP ? 0 : XP);
+}
+
+bool UARPGProgressionComponent::ApplyManualLevelOverrideNow()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !bEnableManualLevelOverride) return false;
+    SetProgression(ManualLevelOverride, bResetXPWhenApplyingManualLevel ? 0 : XP);
+    return true;
 }
 
 void UARPGProgressionComponent::SetProgression(int32 NewLevel, int64 NewXP)

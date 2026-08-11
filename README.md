@@ -8,6 +8,24 @@ The design goal is simple: create content with Data Assets, assign components/de
 
 
 
+## 2.5.3-alpha NPC scaling editor exposure fix
+
+- `Scale NPC To Player` is now always editable in the Stats component instead of being greyed out by the outer JRPG enable edit condition.
+- Explicitly opting an AI NPC into player scaling now auto-enables the JRPG stat layer at runtime if the separate JRPG checkbox was accidentally left off, while player-controlled pawns are never auto-converted.
+- v2.5.2 manual Base Character Level / PIE testing controls remain fully intact.
+
+Every player/NPC has one authoritative `Progression` component. Select it in the Blueprint and set `Progression -> Level -> Base Character Level` to author the character level directly; enabled JRPG Stats reads that value automatically and rebuilds natural/derived stats from it.
+
+For rapid PIE validation, enable `Progression -> Testing -> Enable Manual Level Override` and set `Manual Test Level`. The override applies through the real progression event path at BeginPlay, so Stats, player-relative NPC scaling and other level consumers all observe the same value. Disable it for normal save/XP-driven play. Runtime Blueprint tests can also use `Set Level` or `Apply Manual Test Level Now` (also exposed as a Details-panel Call In Editor button).
+
+## 2.5.1-alpha player-relative NPC level/stat scaling
+
+NPCs using the JRPG stat layer can now opt into **Scale NPC To Player**. Scaling does not copy the player's Strength/health/damage and does not overwrite the NPC's real Progression Level. Instead it computes a replicated runtime **Effective Level**, then reevaluates the NPC's own authored Strength/Vitality/Magic/Spirit/Dexterity/Luck growth and every derived stat at that level. This preserves creature identity while keeping enabled enemies relevant to the player.
+
+The system supports level offsets (for elites or intentionally weaker creatures), partial level matching, min/max level brackets, scale-up/down controls, multiplayer reference policies, dead-player filtering, no-player fallback and an encounter lock that prevents stats changing in the middle of combat. Server refreshes iterate player controllers only and are staggered to avoid synchronized AI spikes. Attribute Points remain tied to the NPC's authored base level, so runtime scaling cannot mint progression rewards.
+
+For nameplates/UI, use `Stats -> Get Effective Level` (or `Get Stat Snapshot`, whose Level is effective while scaling is active). Use `Get Base Progression Level` when the authored template level is required. See `Docs/NPC_PLAYER_LEVEL_SCALING.md`.
+
 ## 2.5.0-alpha classic JRPG stats + attribute-point progression
 
 `ARPGStatsComponent` now has an opt-in six-primary-stat progression model: **Strength, Vitality, Magic, Spirit, Dexterity and Luck**. Natural stats grow automatically from the existing character Level, while derived Melee/Ranged/Magic Attack Power, Physical/Magic Defense, Accuracy, Physical/Magic Evasion, Speed, critical chance/damage, attack speed, movement speed and max vitals are rebuilt authoritatively.

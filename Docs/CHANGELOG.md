@@ -1,3 +1,34 @@
+## 2.5.3-alpha — 2026-08-11
+
+- Fixed `Stats -> JRPG Stats -> NPC Player Scaling -> Scale NPC To Player` being greyed out because the entire nested scaling settings struct inherited the outer `Enable JRPG Stat System` edit condition.
+- The master `Scale NPC To Player` checkbox is now always editable in the Details panel; only its subordinate reference/matching/stability controls remain conditional on that checkbox.
+- For non-player Pawns, explicitly enabling `Scale NPC To Player` now automatically opts the authority into the JRPG stat layer at runtime if it was left disabled, preventing a valid scaling setup from silently doing nothing. Player-controlled Pawns are never auto-converted by the NPC-only scaling switch.
+- Designers can still explicitly enable `Enable JRPG Stat System` in the editor to author Growth/Derived settings before PIE. No existing setting was removed or renamed.
+- Added regression coverage for the Details-panel metadata trap and runtime auto-enable safety path.
+
+## 2.5.2-alpha — 2026-08-11
+
+- Made the authoritative player/NPC level much easier to author and test: `Progression -> Level -> Base Character Level` is now explicitly named, clamped and documented as the single base-level source of truth.
+- Added optional `Progression -> Testing -> Enable Manual Level Override` + `Manual Test Level` for fast PIE validation without grinding XP. The override applies a real authoritative progression level at BeginPlay, so JRPG natural growth, derived stats, max vitals, NPC scaling references, requirements and other level consumers all see the same value.
+- Added Blueprint `Set Level` and `Apply Manual Test Level Now` (also exposed as a Details-panel Call In Editor button); both use the existing progression event path, so `OnLevelChanged` drives immediate JRPG stat recalculation instead of silently editing an unrelated debug value.
+- Preserved player-scaled NPC semantics: `Base Character Level` remains the NPC's authored identity while `Get Effective Level` remains its player-relative runtime level. Manual test override changes Base Level first, then optional NPC scaling evaluates from that base.
+- Manual override is disabled by default and is intentionally not a second saved level system. Normal XP/save progression remains the production source of truth when the override is off.
+
+# 2.5.1-alpha — player-relative NPC level/stat scaling
+
+- Added opt-in `Scale NPC To Player` under `Stats -> JRPG Stats -> NPC Player Scaling`; disabled NPCs retain their authored level/stat behavior exactly.
+- Player scaling never overwrites `Progression.Level`. The NPC keeps a permanent authored **Base Level** and receives a replicated runtime **Effective Level** used for JRPG natural growth, all six primary stats, every derived combat stat, max vitals, crit, accuracy/evasion, attack speed and movement speed.
+- Scaling preserves creature identity: each NPC continues to use its own Base Primary Stats, Primary Growth Per Level, derived formulas and equipped modifiers. A chicken and a demon scaled to the same player level therefore remain intentionally different creatures.
+- Added `Level Offset`, `Level Match Strength`, minimum/maximum scaled level, allow-up/allow-down controls and no-player fallback, supporting soft scaling, elites, fixed difficulty floors and zone brackets.
+- Added multiplayer reference policies: Combat Target then Nearest, Nearest, Highest Level, Lowest Level and Average Nearby Player Level. The server scans player controllers only rather than searching every actor.
+- `Lock Level While In Combat` snapshots the encounter level so a different nearby player or mid-fight player level-up cannot suddenly inflate/deflate NPC health, damage or movement during an active fight.
+- Scaling refresh is timer-driven, server-authoritative, staggered across NPCs, and replicated through a compact runtime state with `On NPC Level Scaling Changed`.
+- Attribute Point ownership remains based on the NPC's real authored Progression Level. Temporarily scaling a level-1 creature to effective level 50 cannot generate level-50 Attribute Points.
+- `Get Stat Snapshot().Level` now reports Effective Level when scaling is active; `Get Effective Level`, `Get Base Progression Level`, `Get NPC Level Scaling State` and `Refresh NPC Level Scaling Now` support nameplates/debugging/Blueprint systems.
+- Runtime scaling state is intentionally not saved: saves retain the authored base progression and normal stat allocation, then resolve the appropriate nearby-player scaling after load.
+
+See `Docs/NPC_PLAYER_LEVEL_SCALING.md`.
+
 # 2.5.0-alpha — classic JRPG stats + attribute points
 
 - Added an opt-in six-primary-stat system to `ARPGStatsComponent`: Strength, Vitality, Magic, Spirit, Dexterity and Luck.

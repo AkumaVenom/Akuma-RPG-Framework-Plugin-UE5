@@ -203,3 +203,18 @@ Then grant enough XP to level once. Expected default behavior:
 - spending Vitality raises Physical Defense, Max Health and Max Stamina;
 - spending Spirit raises Magic Defense and Max Mana;
 - spending Luck raises critical chance and critical damage scaling.
+
+## v2.5.1 NPC player-relative level scaling
+
+NPCs can optionally enable `JRPG Stats -> NPC Player Scaling -> Scale NPC To Player`. The NPC keeps its authored `Progression.Level` as Base Level; the component computes a runtime Effective Level from nearby/engaged players and evaluates the normal JRPG growth formulas at that level. This means Strength, Vitality, Magic, Spirit, Dexterity, Luck and every derived/vital result scale together without copying the player's own stat values.
+
+Use `Get Effective Level` or `Get Stat Snapshot().Level` for NPC nameplates. `Get Base Progression Level` returns the authored value. See `NPC_PLAYER_LEVEL_SCALING.md` for multiplayer reference modes, encounter locking, level offsets, scaling brackets and performance behavior.
+
+
+## v2.5.2 level authoring and functional testing
+
+Every `ARPGCharacter` owns one authoritative `Progression` component. Select that inherited component in the player or NPC Blueprint and use `Progression -> Level -> Base Character Level` to author the character's starting/base level. JRPG Stats reads it automatically; no separate stats-level field is required.
+
+For fast PIE validation, optionally enable `Progression -> Testing -> Enable Manual Level Override` and set `Manual Test Level`. At BeginPlay the component applies that level through the real `SetProgression` event path. This makes natural primary growth, derived stats, max vitals and Attribute Point level rewards react exactly as they would to a real level change. Disable the override for normal XP/save-driven gameplay.
+
+Blueprint/runtime tests can call `Set Level(New Level, Reset Current XP)` or `Apply Manual Test Level Now` (also exposed as a Details-panel Call In Editor button). `Get Base Progression Level` reports the authored/real level; `Get Effective Level` reports the player-relative level used for stats when NPC scaling is active.
