@@ -978,6 +978,11 @@ void UARPGAICombatComponent::Think()
                 const FARPGAttackStepDefinition& Step = Profile.DetailedComboSteps[StepIndex];
                 EstimatedAttackDuration = FMath::Max(FMath::Max(0.05f, Step.RecoveryTime), FMath::Max(0.f, Step.ImpactDelay) + 0.05f);
             }
+            // CombatComponent scales montage, impact and recovery together from the JRPG Speed-derived
+            // attack-speed multiplier. Keep AI's post-attack eligibility estimate on the same clock so
+            // Speed is functional for NPCs instead of being visually faster while cadence stays stale.
+            if (const UARPGStatsComponent* Stats = GetOwner()->FindComponentByClass<UARPGStatsComponent>())
+                EstimatedAttackDuration /= FMath::Clamp(Stats->GetAttackSpeedMultiplier(), 0.25f, 4.f);
             NextAttackSlotEligibleAt = LastAttackCommitAt + EstimatedAttackDuration + FMath::Max(0.f, AttackSlotCooldownAfterAttack);
         }
         bHadAttackSlotLastThink = false;

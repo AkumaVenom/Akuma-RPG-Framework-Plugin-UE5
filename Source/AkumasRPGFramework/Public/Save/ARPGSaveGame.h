@@ -10,7 +10,7 @@ class AKUMASRPGFRAMEWORK_API UARPGSaveGame : public USaveGame
 {
     GENERATED_BODY()
 public:
-    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 3;
+    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 4;
     UPROPERTY(SaveGame, BlueprintReadWrite) FGuid AccountId;
     UPROPERTY(SaveGame, BlueprintReadWrite) FARPGCharacterSaveData Character;
     UPROPERTY(SaveGame, BlueprintReadWrite) FDateTime SavedAtUtc;
@@ -21,6 +21,7 @@ class AKUMASRPGFRAMEWORK_API UARPGWorldSaveGame : public USaveGame
 {
     GENERATED_BODY()
 public:
+    // World persistence schema is unchanged by v2.5; keep its existing version independent of character stats.
     UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 3;
     UPROPERTY(SaveGame, BlueprintReadWrite) FARPGWorldSaveData World;
 };

@@ -5,6 +5,7 @@
 #include "ARPGTypes.h"
 #include "Data/ARPGDefinitionBase.h"
 #include "Equipment/ARPGEquipmentVisualActor.h"
+#include "Stats/ARPGStatTypes.h"
 #include "ARPGItemDefinition.generated.h"
 
 class UGameplayEffect;
@@ -55,6 +56,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment") int32 RequiredLevel = 1;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment") FName RequiredClassId = NAME_None;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment") TSubclassOf<UGameplayEffect> EquippedGameplayEffect;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment|Stats", meta=(ShowOnlyInnerProperties)) FARPGStatModifier EquippedStatModifier;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment|Visual") FName AttachSocket = NAME_None;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment|Visual") TSubclassOf<AARPGEquipmentVisualActor> EquippedVisualActorClass;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment|Visual", meta=(DisplayName="Equipped Static Mesh")) TSoftObjectPtr<UStaticMesh> EquippedStaticMesh;

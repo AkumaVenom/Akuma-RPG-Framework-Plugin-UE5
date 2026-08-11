@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "Engine/EngineTypes.h"
+#include "Stats/ARPGStatTypes.h"
 #include "ARPGTypes.generated.h"
 
 class UAnimMontage;
@@ -404,6 +405,7 @@ struct AKUMASRPGFRAMEWORK_API FARPGCharacterSaveData
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FName GuildId = NAME_None;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) int32 Level = 1;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) int64 XP = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FARPGStatProgressionSaveState StatProgression;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FVector Location = FVector::ZeroVector;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FRotator Rotation = FRotator::ZeroRotator;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) float Health = 100.f;

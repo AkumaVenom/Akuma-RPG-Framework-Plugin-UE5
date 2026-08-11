@@ -1,3 +1,19 @@
+# 2.5.0-alpha — classic JRPG stats + attribute points
+
+- Added an opt-in six-primary-stat system to `ARPGStatsComponent`: Strength, Vitality, Magic, Spirit, Dexterity and Luck.
+- Added deterministic per-level natural stat growth, configurable 255-style primary caps and derived Max Health/Mana/Stamina growth.
+- Added separate derived melee, ranged and magic attack power; physical and magic defense; Accuracy, Physical Evasion, Magic Evasion, Speed; critical chance/damage; attack-speed and movement-speed multipliers.
+- Combat now consumes the attack-type-specific power/defense values, combines Luck-derived critical bonuses with the existing Combat Profile critical settings, and scales montage/impact/combo/recovery timing together from derived attack speed. AI attack-cadence estimation uses the same Speed clock.
+- Speed-driven movement remains correct through blocking: stat/equipment changes preserve the active block movement penalty and restore the new derived full speed when blocking ends.
+- Added server-authoritative Attribute Points with points-per-level, point spending, cap validation, refund, external point rewards, replicated UI events and Blueprint snapshot/getter APIs.
+- Added `Equipment -> Stats -> Equipped Stat Modifier` to Item Definitions. Only genuinely equipped runtime inventory instances contribute bonuses, and inventory/equipment changes rebuild stats automatically.
+- Character save format advanced to version 4 and persists stat allocations/unspent points; older saves are migrated from their saved Level without discarding existing inventory/XP/vitals. Equipped max-vital bonuses are restored before saved current vitals are clamped.
+- Attribute Point level rewards use a saved high-water mark so level-down/re-level cycles cannot duplicate point rewards. Direct authoritative `SetProgression` changes now emit the normal XP/Level events.
+- Added optional classic Accuracy/Evasion hit checks. They are disabled by default for action-combat presentation compatibility.
+- `Enable JRPG Stat System` is disabled by default so all pre-v2.5 characters retain their existing legacy stat/combat behavior until explicitly migrated.
+
+See `Docs/JRPG_STATS.md`.
+
 # 2.4.2-alpha — AI dodge authoring + stagger escape
 
 - Added `AI Dodge Chance` directly to `Combat -> Dodge`, so NPC dodge probability is visible alongside Direction Montages, Duration, Distance and invulnerability settings instead of being hidden on the separate AICombat component.

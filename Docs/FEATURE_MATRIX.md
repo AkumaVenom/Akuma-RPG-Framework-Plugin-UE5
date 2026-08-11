@@ -1,4 +1,4 @@
-# Feature Matrix — v2.4.0 Day/Night AI Population Swapping
+# Feature Matrix — v2.5.0 JRPG Stats / Attribute Progression
 
 Legend:
 
@@ -8,6 +8,7 @@ Legend:
 | Area | Status | Included in this source build |
 |---|---|---|
 | Ready RPG character | Implemented | Main components preinstalled on `AARPGCharacter`. |
+| Character JRPG stats / attribute points | Implemented | Opt-in Strength/Vitality/Magic/Spirit/Dexterity/Luck progression, natural level growth, derived melee/ranged/magic/defense/evasion/crit/speed/vitals, server-authoritative spendable Attribute Points, equipment stat modifiers, save migration and replicated UMG-ready snapshots/events. |
 | Day / night world time | Implemented | Drop-in `ARPGDayNightCycle` with host-PC local time authority, replicated/smoothed client clock, built-in sun/moon/Sky Atmosphere/real-time Sky Light/fog rig, external-light support, semantic dawn/day/dusk/night phases, events and global Blueprint-pure time/day/night nodes. |
 | GAS integration | Implemented | Ability-system component/attribute set/ability bridge, `ARPGGameplayAbility` lock-on targeting policy/TargetData helpers and effect-friendly data hooks. |
 | Automatic action-RPG combat | Implemented | Class-driven melee/ranged/magic basic attacks, ordered montage combos, timed sphere traces/hitscan/projectiles, damage/crit/armor, dodge, block/parry/guard break, critical-hit stagger/knockback, Niagara/Cascade impact FX, exposed combat audio, hit reactions and combat state tags. |
@@ -40,7 +41,7 @@ Legend:
 | Production Internet auth | Foundation | Must be supplied by a trusted backend/platform provider; intentionally not faked by local SaveGame authentication. |
 | Direct IP hosting/join | Implemented | Listen-server open-level flow, configurable port, direct ClientTravel join. |
 | LAN discovery/NAT traversal | Foundation | Direct LAN IP works; service/session discovery and NAT traversal require an online subsystem/provider. |
-| Character saves | Implemented | Character identity/state, vitals, progression, inventory/equipment, Quick Access slots/active slot, quests, skills, Slayer, reputation, currencies, pets, group and mounts. |
+| Character saves | Implemented | Character identity/state, vitals, progression, JRPG stat allocation/unspent Attribute Points, inventory/equipment, Quick Access slots/active slot, quests, skills, Slayer, reputation, currencies, pets, group and mounts. |
 | World saves | Implemented | Runtime player buildings, ownership, health/upgrades, storage, crafting queues/output and dungeon progress. |
 | Building | Implemented | Snapping, validation, cost consumption, support/collision, health, repair/demolish and faction rules. |
 | Build preview UI/material | Foundation | Placement evaluation API is exposed; project supplies preferred ghost mesh/material UX. |

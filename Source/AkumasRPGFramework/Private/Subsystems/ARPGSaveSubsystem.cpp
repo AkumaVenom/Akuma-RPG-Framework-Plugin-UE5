@@ -56,7 +56,7 @@ bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverr
     D.CharacterId = Character->CharacterId; D.CharacterName = Character->RPGCharacterName; D.Location = Character->GetActorLocation(); D.Rotation = Character->GetActorRotation();
     if (Character->ClassComponent) D.ClassId = Character->ClassComponent->GetClassId();
     if (Character->Faction) { D.PrimaryFactionId = Character->Faction->GetPrimaryFactionId(); D.Reputation = Character->Faction->Reputation; }
-    if (Character->Stats) { D.Health=Character->Stats->Health; D.Mana=Character->Stats->Mana; D.Stamina=Character->Stats->Stamina; }
+    if (Character->Stats) { D.Health=Character->Stats->Health; D.Mana=Character->Stats->Mana; D.Stamina=Character->Stats->Stamina; D.StatProgression=Character->Stats->MakeStatProgressionSaveState(); }
     if (Character->Progression) { D.Level = Character->Progression->Level; D.XP = Character->Progression->XP; }
     if (Character->Inventory) D.Inventory = Character->Inventory->Items;
     if (Character->QuickAccess) { D.QuickAccessSlots = Character->QuickAccess->QuickAccessSlots; D.ActiveQuickAccessSlotNumber = Character->QuickAccess->ActiveSlotNumber; }
@@ -85,8 +85,20 @@ bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverr
     Character->SetActorLocationAndRotation(D.Location, D.Rotation, false, nullptr, ETeleportType::TeleportPhysics);
     if (Character->Combat) Character->Combat->SetRespawnTransform(Character->GetActorTransform());
     if (Character->Progression) Character->Progression->SetProgression(D.Level, D.XP);
-    if (Character->Stats) { Character->Stats->Health=FMath::Clamp(D.Health,0.f,Character->Stats->MaxHealth); Character->Stats->Mana=FMath::Clamp(D.Mana,0.f,Character->Stats->MaxMana); Character->Stats->Stamina=FMath::Clamp(D.Stamina,0.f,Character->Stats->MaxStamina); }
+    if (Character->Stats)
+        Character->Stats->RestoreStatProgressionState(D.StatProgression, D.Level, Save->SaveVersion < 4);
+
+    // Restore equipment before current vitals. Equipped items can now modify max HP/MP/Stamina;
+    // clamping a saved current value against the unequipped maximum would permanently lose health/mana
+    // from the save before those equipment bonuses were restored. ReplaceInventory triggers one stats
+    // recalculation, then current vitals are clamped against the final equipped maxima.
     if (Character->Inventory) Character->Inventory->ReplaceInventory(D.Inventory);
+    if (Character->Stats)
+    {
+        Character->Stats->Health=FMath::Clamp(D.Health,0.f,Character->Stats->MaxHealth);
+        Character->Stats->Mana=FMath::Clamp(D.Mana,0.f,Character->Stats->MaxMana);
+        Character->Stats->Stamina=FMath::Clamp(D.Stamina,0.f,Character->Stats->MaxStamina);
+    }
     if (Character->QuickAccess) Character->QuickAccess->ReplaceQuickAccessState(D.QuickAccessSlots, D.ActiveQuickAccessSlotNumber);
     if (Character->Quests) Character->Quests->ReplaceQuests(D.Quests);
     if (Character->Skills) Character->Skills->ReplaceSkills(D.Skills);

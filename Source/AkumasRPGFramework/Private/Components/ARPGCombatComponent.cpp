@@ -218,6 +218,7 @@ bool UARPGCombatComponent::StartAttackAuthority(AActor* OptionalTarget)
         if (ActiveAttackStep.ManaCost > 0.f) Stats->SpendMana(ActiveAttackStep.ManaCost);
     }
 
+    const float AttackSpeedMultiplier = Stats ? FMath::Clamp(Stats->GetAttackSpeedMultiplier(), 0.25f, 4.f) : 1.f;
     const FARPGCombatProfile Profile = GetCombatProfile();
     if (Profile.bAutoFaceCombatTarget && IsValid(CombatTarget))
     {
@@ -237,13 +238,18 @@ bool UARPGCombatComponent::StartAttackAuthority(AActor* OptionalTarget)
     bImpactResolved = false;
     ++AttackSerial;
     HitActorsThisSwing.Reset();
+    const float ScaledImpactDelay = ActiveAttackStep.ImpactDelay / AttackSpeedMultiplier;
+    const float ScaledComboOpen = ActiveAttackStep.ComboQueueOpenTime / AttackSpeedMultiplier;
+    const float ScaledComboClose = ActiveAttackStep.ComboQueueCloseTime / AttackSpeedMultiplier;
+    const float ScaledRecovery = ActiveAttackStep.RecoveryTime / AttackSpeedMultiplier;
+
     AttackStartedAt = Now;
-    AttackImpactAt = Now + ActiveAttackStep.ImpactDelay;
-    ComboQueueOpenAt = Now + ActiveAttackStep.ComboQueueOpenTime;
-    ComboQueueCloseAt = Now + ActiveAttackStep.ComboQueueCloseTime;
+    AttackImpactAt = Now + ScaledImpactDelay;
+    ComboQueueOpenAt = Now + ScaledComboOpen;
+    ComboQueueCloseAt = Now + ScaledComboClose;
 
     UAnimMontage* Montage = ActiveAttackStep.Montage.LoadSynchronous();
-    if (Montage) MulticastPlayMontage(Montage, 1.f);
+    if (Montage) MulticastPlayMontage(Montage, AttackSpeedMultiplier);
     OnAttackStarted.Broadcast(CurrentComboIndex, Montage);
     const EARPGCombatFeedbackCue AttackCue =
         Profile.BasicAttackType == EARPGBasicAttackType::Magic ? EARPGCombatFeedbackCue::MagicCast :
@@ -255,8 +261,8 @@ bool UARPGCombatComponent::StartAttackAuthority(AActor* OptionalTarget)
         GetWorld()->GetTimerManager().ClearTimer(AttackImpactTimer);
         GetWorld()->GetTimerManager().ClearTimer(AttackFinishTimer);
         if (Profile.bAutomaticTimedImpact)
-            GetWorld()->GetTimerManager().SetTimer(AttackImpactTimer, this, &UARPGCombatComponent::ResolveAttackImpactAuthority, FMath::Max(0.001f, ActiveAttackStep.ImpactDelay), false);
-        const float FinishDelay = FMath::Max(ActiveAttackStep.RecoveryTime, ActiveAttackStep.ImpactDelay + 0.05f);
+            GetWorld()->GetTimerManager().SetTimer(AttackImpactTimer, this, &UARPGCombatComponent::ResolveAttackImpactAuthority, FMath::Max(0.001f, ScaledImpactDelay), false);
+        const float FinishDelay = FMath::Max(ScaledRecovery, ScaledImpactDelay + 0.05f / AttackSpeedMultiplier);
         GetWorld()->GetTimerManager().SetTimer(AttackFinishTimer, this, &UARPGCombatComponent::FinishAttackAuthority, FinishDelay, false);
     }
     return true;
@@ -280,13 +286,23 @@ float UARPGCombatComponent::CalculateAttackDamage(const FARPGAttackStepDefinitio
     const UARPGStatsComponent* Stats = GetOwner() ? GetOwner()->FindComponentByClass<UARPGStatsComponent>() : nullptr;
     float Power = 0.f;
     if (Stats)
-        Power = Profile.BasicAttackType == EARPGBasicAttackType::Magic ? Stats->SpellPower * Profile.SpellPowerScale : Stats->AttackPower * Profile.AttackPowerScale;
+    {
+        switch (Profile.BasicAttackType)
+        {
+            case EARPGBasicAttackType::Magic: Power = Stats->GetMagicAttackPower() * Profile.SpellPowerScale; break;
+            case EARPGBasicAttackType::Ranged: Power = Stats->GetRangedAttackPower() * Profile.AttackPowerScale; break;
+            case EARPGBasicAttackType::Melee:
+            default: Power = Stats->GetMeleeAttackPower() * Profile.AttackPowerScale; break;
+        }
+    }
 
     float Damage = (Profile.BaseDamage + Power) * FMath::Max(0.f, Step.DamageMultiplier);
     const float Variance = FMath::Clamp(Profile.DamageVariance, 0.f, 1.f);
     Damage *= FMath::FRandRange(1.f - Variance, 1.f + Variance);
-    bOutCritical = FMath::FRand() <= FMath::Clamp(Profile.CriticalChance, 0.f, 1.f);
-    if (bOutCritical) Damage *= FMath::Max(1.f, Profile.CriticalMultiplier);
+    const float StatCriticalChance = Stats ? Stats->GetCriticalChanceBonus() : 0.f;
+    bOutCritical = FMath::FRand() <= FMath::Clamp(Profile.CriticalChance + StatCriticalChance, 0.f, 1.f);
+    const float StatCriticalMultiplier = Stats ? Stats->GetCriticalDamageMultiplier() : 1.f;
+    if (bOutCritical) Damage *= FMath::Max(1.f, Profile.CriticalMultiplier * StatCriticalMultiplier);
     return FMath::Max(0.f, Damage);
 }
 
@@ -482,6 +498,29 @@ FARPGCombatHitInfo UARPGCombatComponent::ReceiveCombatHit(AActor* Attacker, floa
     const FARPGCombatProfile Profile = GetCombatProfile();
     UARPGStatsComponent* Stats = GetOwner()->FindComponentByClass<UARPGStatsComponent>();
 
+    // Optional classic-JRPG accuracy/evasion resolution. It is disabled by default because action
+    // combat already has spatial collision; projects that want FF-style hit/miss rules can opt in
+    // per attacker without changing the physical trace/projectile pipeline.
+    if (const UARPGStatsComponent* AttackerStats = Attacker->FindComponentByClass<UARPGStatsComponent>())
+    {
+        if (AttackerStats->UsesAccuracyEvasionHitChecks())
+        {
+            const float TargetEvasion = Stats
+                ? (AttackType == EARPGBasicAttackType::Magic ? Stats->GetMagicEvasion() : Stats->GetEvasion())
+                : 0.f;
+            const float RawHitChance = (AttackerStats->GetAccuracy() - TargetEvasion) / 100.f;
+            const float MinHitChance = FMath::Min(AttackerStats->DerivedFormula.MinimumHitChance, AttackerStats->DerivedFormula.MaximumHitChance);
+            const float MaxHitChance = FMath::Max(AttackerStats->DerivedFormula.MinimumHitChance, AttackerStats->DerivedFormula.MaximumHitChance);
+            const float HitChance = FMath::Clamp(RawHitChance, MinHitChance, MaxHitChance);
+            if (FMath::FRand() > HitChance)
+            {
+                Info.Result = EARPGCombatHitResult::Miss;
+                OnCombatHitReceived.Broadcast(Info);
+                return Info;
+            }
+        }
+    }
+
     const bool bFacing = IsBlockFacingAttacker(Attacker, Profile.Block.BlockHalfAngleDegrees);
     const bool bTypeBlockable = AttackType == EARPGBasicAttackType::Melee ? Profile.Block.bCanBlockMelee :
                                 (AttackType == EARPGBasicAttackType::Ranged ? Profile.Block.bCanBlockRanged : Profile.Block.bCanBlockMagic);
@@ -516,10 +555,12 @@ FARPGCombatHitInfo UARPGCombatComponent::ReceiveCombatHit(AActor* Attacker, floa
         }
     }
 
-    if (Stats && AttackType != EARPGBasicAttackType::Magic)
+    if (Stats)
     {
-        const float Armor = FMath::Max(0.f, Stats->Armor);
-        Damage *= 100.f / (100.f + Armor);
+        const float Defense = AttackType == EARPGBasicAttackType::Magic
+            ? FMath::Max(0.f, Stats->GetMagicDefense())
+            : FMath::Max(0.f, Stats->GetPhysicalDefense());
+        if (Defense > 0.f) Damage *= 100.f / (100.f + Defense);
     }
 
     Damage = FMath::Max(0.f, Damage);
@@ -809,6 +850,12 @@ void UARPGCombatComponent::RestoreBlockingMoveSpeed()
     if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
         if (UCharacterMovementComponent* Move = Character->GetCharacterMovement()) Move->MaxWalkSpeed = CachedPreBlockWalkSpeed;
     CachedPreBlockWalkSpeed = 0.f;
+
+    // If JRPG Speed changed while the character was blocking, CachedPreBlockWalkSpeed represents the
+    // speed from before that stat change. Re-apply the authoritative derived movement speed now that
+    // bIsBlocking has been cleared so the character does not snap back to a stale value.
+    if (UARPGStatsComponent* Stats = GetOwner() ? GetOwner()->FindComponentByClass<UARPGStatsComponent>() : nullptr)
+        Stats->RefreshMovementSpeedFromStats();
 }
 
 void UARPGCombatComponent::StopBlockingAuthority(bool bPlayEndMontage)

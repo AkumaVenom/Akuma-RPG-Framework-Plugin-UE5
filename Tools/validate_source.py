@@ -975,8 +975,8 @@ if ai_combat_cpp.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 2402 or descriptor.get("VersionName") != "2.4.2-alpha":
-        issues.append("package descriptor must identify v2.4.2-alpha")
+    if descriptor.get("Version") != 2500 or descriptor.get("VersionName") != "2.5.0-alpha":
+        issues.append("package descriptor must identify v2.5.0-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:

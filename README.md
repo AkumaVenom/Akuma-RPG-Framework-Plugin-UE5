@@ -7,6 +7,15 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+
+## 2.5.0-alpha classic JRPG stats + attribute-point progression
+
+`ARPGStatsComponent` now has an opt-in six-primary-stat progression model: **Strength, Vitality, Magic, Spirit, Dexterity and Luck**. Natural stats grow automatically from the existing character Level, while derived Melee/Ranged/Magic Attack Power, Physical/Magic Defense, Accuracy, Physical/Magic Evasion, Speed, critical chance/damage, attack speed, movement speed and max vitals are rebuilt authoritatively.
+
+Level-ups now grant configurable **Attribute Points** that players can spend on the six primary stats through a server-validated Blueprint API. Allocations and unspent points save/replicate, old pre-v2.5 saves receive a clean migration state, and equipped runtime items can contribute first-class primary/derived/vital stat modifiers. Combat now consumes separate melee/ranged/magic power, physical/magic defense, Luck-driven critical bonuses and synchronized Speed-driven attack timing. Existing projects remain safe because `Enable JRPG Stat System` is disabled by default and the old `AttackPower` / `SpellPower` / `Armor` behavior remains unchanged until a character opts in.
+
+See `Docs/JRPG_STATS.md`.
+
 ## 2.4.2-alpha AI dodge authoring + stagger escape
 
 - Added **AI Dodge Chance** directly to `Combat -> Dodge`, matching the editor location where dodge montages, Duration, Distance, invulnerability and root-motion settings are authored.
