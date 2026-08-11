@@ -1,3 +1,11 @@
+## 2.5.4-alpha — 2026-08-11
+
+- Fixed a real UE 5.8.1 Windows packaging compile failure in `ARPGDayNightCycle.cpp`: packaged/non-editor targets do not expose the `ADirectionalLight::GetComponent()` path used by the external sun/moon resolver. External directional lights now resolve their `UDirectionalLightComponent` through the runtime-safe `AActor::FindComponentByClass<UDirectionalLightComponent>()` API.
+- Preserved all Day/Night authoring and runtime semantics: built-in rig behavior is unchanged, external Sun/Moon actor assignments still work, and no reflected/public DayNight API changed.
+- Removed the two UE 5.8 `C4996` inventory compile warnings seen in the same packaging log by constructing the saved `TSoftObjectPtr<UARPGItemDefinition>` through `FSoftObjectPath` instead of assigning from a const raw definition pointer. No Inventory public API or runtime ownership semantics changed.
+- Added a packaging-compatibility regression model and source-validator checks for both issues.
+- This patch is based on the user-provided UE 5.8.1 packaging log. Repository validation cannot replace a real local Unreal package/build; the next Windows package attempt is the final verification.
+
 ## 2.5.3-alpha — 2026-08-11
 
 - Fixed `Stats -> JRPG Stats -> NPC Player Scaling -> Scale NPC To Player` being greyed out because the entire nested scaling settings struct inherited the outer `Enable JRPG Stat System` edit condition.

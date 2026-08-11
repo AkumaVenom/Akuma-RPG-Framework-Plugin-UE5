@@ -694,13 +694,14 @@ if inventory_header_v2.exists() and inventory_cpp_v2.exists():
         "Entry.ItemDefinition.LoadSynchronous()",
         "Starting.Item->GetFName()",
         "StableId = Item->DefinitionId.IsNone() ? Item->GetFName()",
-        "Entry.ItemDefinition = ExplicitDefinition",
         "BackfillDefinitionReference",
         "Slot != Definition->EquipmentSlot",
         "OccupiedEquipmentSlots",
     ):
         if required not in ic211:
             issues.append(f"v2.1.1 exact runtime Item Definition path missing: {required}")
+    if "Entry.ItemDefinition = ExplicitDefinition" not in ic211 and "FSoftObjectPath(ExplicitDefinition)" not in ic211:
+        issues.append("v2.1.1 exact runtime Item Definition path missing: soft reference assignment from ExplicitDefinition")
     if "if (!Item || Item->DefinitionId.IsNone()" in ic211:
         issues.append("v2.1.1 inventory must allow Item Definition asset-name fallback when DefinitionId is blank")
 
@@ -973,10 +974,32 @@ if ai_combat_cpp.exists():
         if required not in ai23:
             issues.append(f"v2.3 melee AI pacing missing runtime path: {required}")
 
+
+# v2.5.4 packaged-build compatibility: avoid editor-only DirectionalLight component access and
+# UE 5.8 soft-pointer assignment deprecations observed by the real Windows packaging toolchain.
+if day_night_cpp_v201.exists():
+    package_daynight = day_night_cpp_v201.read_text(errors="replace")
+    for forbidden in ("ExternalSunLight->GetComponent()", "ExternalMoonLight->GetComponent()"):
+        if forbidden in package_daynight:
+            issues.append(f"v2.5.4 packaged build must not use editor-only ADirectionalLight access: {forbidden}")
+    for required in (
+        "ExternalSunLight->FindComponentByClass<UDirectionalLightComponent>()",
+        "ExternalMoonLight->FindComponentByClass<UDirectionalLightComponent>()",
+    ):
+        if required not in package_daynight:
+            issues.append(f"v2.5.4 packaged build runtime light resolution missing: {required}")
+
+if inventory_cpp_v2.exists():
+    inventory254 = inventory_cpp_v2.read_text(errors="replace")
+    if "Entry.ItemDefinition = ExplicitDefinition" in inventory254:
+        issues.append("v2.5.4 must avoid deprecated TSoftObjectPtr assignment from const raw item-definition pointers")
+    if "FSoftObjectPath(ExplicitDefinition)" not in inventory254:
+        issues.append("v2.5.4 inventory soft-reference assignment should construct through FSoftObjectPath")
+
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 2530 or descriptor.get("VersionName") != "2.5.3-alpha":
-        issues.append("package descriptor must identify v2.5.3-alpha")
+    if descriptor.get("Version") != 2540 or descriptor.get("VersionName") != "2.5.4-alpha":
+        issues.append("package descriptor must identify v2.5.4-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:

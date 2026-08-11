@@ -4,6 +4,7 @@
 #include "Data/ARPGItemDefinition.h"
 #include "Utilities/ARPGAssetLibrary.h"
 #include "Net/UnrealNetwork.h"
+#include "UObject/SoftObjectPath.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 
@@ -218,7 +219,10 @@ bool UARPGInventoryComponent::AddItemAuthority(FName ItemId, int32 Quantity, int
         if (Entry.ItemId != ItemId || Entry.bEquipped || Entry.Quantity >= MaxStack) continue;
         const int32 Added = FMath::Min(Remaining, MaxStack - Entry.Quantity);
         Entry.Quantity += Added;
-        if (Entry.ItemDefinition.IsNull() && ExplicitDefinition) Entry.ItemDefinition = ExplicitDefinition;
+        if (Entry.ItemDefinition.IsNull() && ExplicitDefinition)
+        {
+            Entry.ItemDefinition = TSoftObjectPtr<UARPGItemDefinition>(FSoftObjectPath(ExplicitDefinition));
+        }
         Remaining -= Added;
         if (Remaining <= 0) { OnInventoryChanged.Broadcast(); return true; }
     }
@@ -226,7 +230,10 @@ bool UARPGInventoryComponent::AddItemAuthority(FName ItemId, int32 Quantity, int
     {
         FARPGInventoryEntry Entry;
         Entry.InstanceId = FGuid::NewGuid();
-        Entry.ItemDefinition = ExplicitDefinition;
+        if (ExplicitDefinition)
+        {
+            Entry.ItemDefinition = TSoftObjectPtr<UARPGItemDefinition>(FSoftObjectPath(ExplicitDefinition));
+        }
         Entry.ItemId = ItemId;
         Entry.Quantity = FMath::Min(Remaining, MaxStack);
         Remaining -= Entry.Quantity;

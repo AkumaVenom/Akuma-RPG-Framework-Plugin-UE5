@@ -7,6 +7,13 @@ The design goal is simple: create content with Data Assets, assign components/de
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
 
+## 2.5.4-alpha packaged-build compile fix
+
+A real UE 5.8.1 Windows packaging test exposed two `ARPGDayNightCycle.cpp` compile errors that Editor/PIE use had not surfaced. External Sun/Moon directional-light resolution now uses the runtime-safe actor component lookup path, removing the non-editor `ADirectionalLight::GetComponent()` dependency. The same package log also exposed two non-fatal UE 5.8 soft-pointer deprecation warnings in Inventory; those assignments now construct the soft reference through `FSoftObjectPath` without changing Inventory's public schema or ownership semantics.
+
+No reflected/public header changed in this patch. Re-run a clean Windows package after installing v2.5.4-alpha; that real Unreal package is the acceptance test for this correction.
+
+
 
 ## 2.5.3-alpha NPC scaling editor exposure fix
 

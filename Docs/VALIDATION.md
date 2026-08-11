@@ -1,3 +1,8 @@
+
+## v2.5.4 packaged-build compatibility
+
+The user-provided UE 5.8.1 Windows packaging log identified the external DirectionalLight `GetComponent()` call as a non-editor compile failure and two deprecated Inventory soft-pointer assignments as C4996 warnings. v2.5.4 replaces those paths and adds static regression checks. These checks are not a substitute for UnrealBuildTool/UHT/MSVC packaging; a fresh local Windows package remains required.
+
 # Source Validation — Akuma's RPG Framework v2.2.1-alpha
 
 Package: **Akuma's RPG Framework — 2.2.1-alpha Quick Access / Active Item Slots**  

@@ -404,12 +404,14 @@ void AARPGDayNightCycle::ApplyRigVisibility()
 
 UDirectionalLightComponent* AARPGDayNightCycle::ResolveSunComponent() const
 {
-    return bUseBuiltInLightingRig ? SunLight.Get() : (ExternalSunLight ? ExternalSunLight->GetComponent() : nullptr);
+    // ADirectionalLight::GetComponent() is not available in non-editor/package targets in UE 5.8.
+    // Resolve the runtime component through AActor instead so external lighting works in Editor and packaged builds.
+    return bUseBuiltInLightingRig ? SunLight.Get() : (ExternalSunLight ? ExternalSunLight->FindComponentByClass<UDirectionalLightComponent>() : nullptr);
 }
 
 UDirectionalLightComponent* AARPGDayNightCycle::ResolveMoonComponent() const
 {
-    return bUseBuiltInLightingRig ? MoonLight.Get() : (ExternalMoonLight ? ExternalMoonLight->GetComponent() : nullptr);
+    return bUseBuiltInLightingRig ? MoonLight.Get() : (ExternalMoonLight ? ExternalMoonLight->FindComponentByClass<UDirectionalLightComponent>() : nullptr);
 }
 
 USkyLightComponent* AARPGDayNightCycle::ResolveSkyLightComponent() const
