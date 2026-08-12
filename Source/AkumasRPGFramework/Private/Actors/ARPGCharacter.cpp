@@ -26,6 +26,7 @@
 #include "Components/ARPGAICombatComponent.h"
 #include "Components/ARPGTargetingComponent.h"
 #include "Components/ARPGWoodcuttingComponent.h"
+#include "Components/ARPGFootstepComponent.h"
 #include "Gathering/ARPGTree.h"
 #include "Net/UnrealNetwork.h"
 
@@ -60,6 +61,7 @@ AARPGCharacter::AARPGCharacter()
     AICombat = CreateDefaultSubobject<UARPGAICombatComponent>(TEXT("AICombat"));
     Targeting = CreateDefaultSubobject<UARPGTargetingComponent>(TEXT("Targeting"));
     Woodcutting = CreateDefaultSubobject<UARPGWoodcuttingComponent>(TEXT("Woodcutting"));
+    Footsteps = CreateDefaultSubobject<UARPGFootstepComponent>(TEXT("Footsteps"));
 }
 
 void AARPGCharacter::BeginPlay()
@@ -83,6 +85,7 @@ void AARPGCharacter::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
     if (AbilitySystem) AbilitySystem->InitAbilityActorInfo(this, this);
+    if (Footsteps) Footsteps->RefreshFootstepRuntime();
     if (HasAuthority() && NewController && NewController->IsPlayerController())
     {
         const UARPGDeveloperSettings* Settings = GetDefault<UARPGDeveloperSettings>();
@@ -96,6 +99,13 @@ void AARPGCharacter::OnRep_PlayerState()
 {
     Super::OnRep_PlayerState();
     if (AbilitySystem) AbilitySystem->InitAbilityActorInfo(this, this);
+    if (Footsteps) Footsteps->RefreshFootstepRuntime();
+}
+
+void AARPGCharacter::PawnClientRestart()
+{
+    Super::PawnClientRestart();
+    if (Footsteps) Footsteps->RefreshFootstepRuntime();
 }
 
 void AARPGCharacter::EnsureCharacterId()

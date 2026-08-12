@@ -22,7 +22,8 @@ public class AkumasRPGFramework : ModuleRules
             "UMG",
             "Slate",
             "SlateCore",
-            "Niagara"
+            "Niagara",
+            "PhysicsCore"
         });
     }
 }

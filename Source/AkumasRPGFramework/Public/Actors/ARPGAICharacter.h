@@ -7,6 +7,7 @@
 class UARPGAISplineComponent;
 class UARPGWandererComponent;
 class UARPGAISocialComponent;
+class UARPGSpawnEntranceComponent;
 
 UCLASS(BlueprintType, Blueprintable)
 class AKUMASRPGFRAMEWORK_API AARPGAICharacter : public AARPGCharacter
@@ -21,4 +22,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGWandererComponent> AIWanderer;
     /** Optional ambient NPC-to-NPC social behaviour. Disabled by default until enabled per NPC archetype. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGAISocialComponent> AISocial;
+    /** Replicated visual spawn entrance used automatically by ARPG AI Spawners for polished ground-rise spawning. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGSpawnEntranceComponent> SpawnEntrance;
 };

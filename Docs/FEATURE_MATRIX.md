@@ -1,3 +1,24 @@
+## Polished AI spawner entrances (v2.9.0)
+
+| System | Status | Notes |
+|---|---|---|
+| Automatic ground-rise entrance | Implemented | Enabled by default on `ARPGAISpawner`; every `SpawnOne()` path applies the same entrance to framework AI. |
+| Collision-safe presentation | Implemented | Final actor/capsule remains at the v2.7.2 accepted spawn position; only the skeletal mesh is temporarily offset below ground. |
+| Multiplayer timing | Implemented | Replicated compact entrance state + synchronized server world time; no per-frame transform replication stream. |
+| Movement ownership | Implemented | CharacterMovement, AIController, Wanderer, Spline and optional Combat/Social behaviour are held and independently restored after the reveal. |
+| Size-aware authoring | Implemented | Automatic full-capsule visual depth plus exposed manual depth, extra depth, delay, duration, easing and actor-location lock. |
+| Performance | Implemented | SpawnEntrance component Tick is disabled except for the short active reveal. |
+
+## Automatic replicated footsteps (v2.8.0)
+
+| System | Status | Notes |
+|---|---|---|
+| Player + NPC automatic footsteps | Implemented | Inherited `Footsteps` component on `ARPGCharacter`; grounded real-distance cadence, left/right alternation and no animation notify requirement. |
+| Physical Surface audio | Implemented | Per-surface randomized sound pools with Default Sounds fallback, pitch/volume variation and real ground tracing. |
+| Multiplayer presentation | Implemented | Server-authoritative unreliable multicast; owning player local prediction suppresses duplicate return audio; NPC cadence stays server-driven. |
+| 3D/crowd audio authoring | Implemented | Optional Sound Attenuation and Sound Concurrency assets exposed on the component. |
+| Performance | Implemented | No permanent Tick; staggered timers and traces only when a footstep is due. |
+
 ## Dynamic world lighting (v2.7.0)
 
 | System | Status | Notes |
@@ -42,7 +63,7 @@ Legend:
 | Automatic NPC combat AI | Implemented | `ARPGAICharacter`/`ARPGAICombatComponent` auto-acquire/retaliate, use threat, chase, face, attack, dodge/block, optionally activate GAS ability tags, immediately restore temporary-retaliation targets to original disposition after death, and coordinate allied melee attack slots/wait-orbit movement without requiring a Behavior Tree. |
 | Automatic NPC ragdoll death | Implemented | `ARPGAICharacter` ragdolls by default with capsule/collision handling, inherited velocity, killing-hit impulse, multiplayer death presentation, respawn reset and automatic Death montage fallback when physics is unavailable. |
 | AI spline patrol / travel | Implemented | `ARPGAISplineRoute` + inherited `ARPGAISplineComponent`: NavMesh look-ahead following without attachment, route-level Loop/closed/open-end behavior, group direction synchronization, route-point waits/events, Route Id lookup, spawner assignment, combat suspension/leash/rejoin and Wanderer conflict handling. |
-| Advanced AI spawner | Implemented | Weighted group spawn, count range, shape/radius, NavMesh projection, independent group-vs-cohesion semantics, synchronized spline direction, selectable Automatic/Spline/Free-Roam/Hold movement, spawner-leashed reachable-point roaming, combat-home leash integration, dead-pawn corpse cleanup/respawn, default-on player-distance population streaming, plus opt-in midnight population swapping with a separate weighted enemy table, clean midnight/morning handoff, and phase-aware distance reload preservation. |
+| Advanced AI spawner | Implemented | Weighted collision-safe group spawn, capsule-safe replicated ground-rise entrance, count range, shape/radius, NavMesh projection, independent group-vs-cohesion semantics, synchronized spline direction, selectable Automatic/Spline/Free-Roam/Hold movement, spawner-leashed reachable-point roaming, combat-home leash integration, dead-pawn corpse cleanup/respawn, default-on player-distance population streaming, plus opt-in midnight population swapping with a separate weighted enemy table, clean midnight/morning handoff, and phase-aware distance reload preservation. |
 | Wanderer AI | Foundation | Optional autonomous roaming/activity foundation; game-specific playerbot brains can extend it. |
 | Threat/aggro | Implemented | Threat table, highest target, taunt/set/clear utilities, temporary aggression/ally assist, target-death threat cleanup, original-disposition restoration and automatic AI target preference. |
 | Bosses | Implemented | Boss types, encounter state, phases, enrage, leash/reset, scaling, contributions and world respawn. |

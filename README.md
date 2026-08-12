@@ -6,6 +6,14 @@ The design goal is simple: create content with Data Assets, assign components/de
 
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
+## 2.9.0-alpha polished AI spawner ground-rise entrances
+
+`ARPGAISpawner` now gives every spawned framework AI an automatic replicated **Ground Rise Entrance** by default. The accepted collision-safe pawn/capsule remains at its final NavMesh position while only the skeletal mesh starts below the floor and eases upward, preserving the v2.7.2 spawn-collision proof instead of physically spawning capsules underground. During the short reveal, CharacterMovement, AIController pathing, Free Roam, Spline travel, combat AI and ambient social behaviour are held; each owner is restored independently afterward. The entrance runs for initial groups, respawns, distance reloads and Day/Night population swaps. Depth can auto-scale from capsule height and duration/delay/easing/behaviour locking are exposed directly on each spawner. See `Docs/AI_SPAWNER_GROUND_RISE.md`.
+
+## 2.8.0-alpha automatic replicated footsteps
+
+Every `ARPGCharacter` now includes an inherited **Footsteps** component, so players and `ARPGAICharacter` NPCs gain automatic grounded travel-distance footsteps with no animation notify wiring. Each due foot contact traces the actual floor, resolves its UE Physical Surface, selects from exposed randomized sound pools, and supports optional attenuation/concurrency assets. Multiplayer uses server-authoritative unreliable multicast cues plus owner-side local prediction for responsive player audio; NPCs remain server-driven. No permanent Tick is used. See `Docs/FOOTSTEPS.md`.
+
 ## 2.7.2-alpha spawned AI navigation readiness
 
 v2.7.1 hardens Free Roam startup for spawned NPCs. Spawner-owned Free Roam/Spline pawns explicitly ensure their default AI controller exists before movement configuration. Wanderer no longer assumes its first synchronous `MoveToLocation` succeeded: it checks Unreal's path-following request result, performs short server-only retries while AI possession/NavMesh/path following are still becoming ready, and only marks Free Roam established after a real navigation request is accepted. Social AI waits for that locomotion handshake before reserving a Free-Roam NPC, preventing the misleading state where a pawn can rotate/focus on another actor but never translate. No reflected Blueprint API changed.

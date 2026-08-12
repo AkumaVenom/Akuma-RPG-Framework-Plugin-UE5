@@ -57,6 +57,42 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn", meta=(ClampMin="0")) float RespawnDelay = 20.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawn", meta=(ClampMin="0")) float CorpseDespawnDelay = 8.f;
 
+    /** Polished default entrance: spawned framework NPCs visually rise from below ground before normal locomotion begins. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", meta=(DisplayName="Enable Ground Rise Entrance"))
+    bool bEnableGroundRiseEntrance = true;
+
+    /** Automatically sink the visual body by approximately one full capsule height, plus Extra Ground Rise Depth. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", meta=(EditCondition="bEnableGroundRiseEntrance"))
+    bool bAutoCalculateGroundRiseDepth = true;
+
+    /** Manual visual sink depth used when Auto Calculate Ground Rise Depth is disabled. The real capsule never moves underground. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", meta=(EditCondition="bEnableGroundRiseEntrance && !bAutoCalculateGroundRiseDepth", ClampMin="1.0", Units="cm"))
+    float GroundRiseDepth = 200.f;
+
+    /** Extra depth added to the automatic full-capsule visual sink so feet/body begin cleanly below the terrain surface. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", meta=(EditCondition="bEnableGroundRiseEntrance && bAutoCalculateGroundRiseDepth", ClampMin="0.0", Units="cm"))
+    float ExtraGroundRiseDepth = 18.f;
+
+    /** Time spent rising from the buried visual position to the authored mesh position. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", meta=(EditCondition="bEnableGroundRiseEntrance", ClampMin="0.05", ClampMax="10.0", Units="s"))
+    float GroundRiseDuration = 1.15f;
+
+    /** Optional short hold while fully below ground before the rise begins. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", meta=(EditCondition="bEnableGroundRiseEntrance", ClampMin="0.0", ClampMax="5.0", Units="s"))
+    float GroundRiseStartDelay = 0.05f;
+
+    /** Ease-out exponent. 1 is linear; values around 2-3 create a weighty fast-start/soft-finish emergence. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", meta=(EditCondition="bEnableGroundRiseEntrance", ClampMin="0.1", ClampMax="8.0"))
+    float GroundRiseEaseExponent = 2.25f;
+
+    /** Pause framework combat/social decision making as well as locomotion until the entrance completes. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", meta=(EditCondition="bEnableGroundRiseEntrance"))
+    bool bSuspendAIBehaviourDuringGroundRise = true;
+
+    /** Reject external/custom translation attempts during the short entrance, while still allowing facing/rotation. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spawn|Ground Rise Entrance", AdvancedDisplay, meta=(EditCondition="bEnableGroundRiseEntrance"))
+    bool bLockActorLocationDuringGroundRise = true;
+
     /**
      * Optional runtime population swap driven by ARPGDayNightCycle. Disabled preserves the original spawner
      * behavior exactly: Spawn Table remains the only population and distance unload/reload preserves it as before.
@@ -233,6 +269,7 @@ protected:
     void CheckGroupCohesion();
     void ReplenishGroup();
     void ConfigureSpawnedPawn(APawn* Pawn);
+    void BeginGroundRiseEntrance(APawn* Pawn);
     void ConfigureAllSpawnedPawns();
     void RefreshGroupLeader();
     void RefreshSplineGroupDirectionLeaders();

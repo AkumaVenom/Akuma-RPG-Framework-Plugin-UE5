@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 2720,
-  "VersionName": "2.7.2-alpha",
+  "Version": 2900,
+  "VersionName": "2.9.0-alpha",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with collision-safe spawned AI plus translation-proven Free-Roam recovery, dynamic Day/Night-driven street lights, ambient NPC social interactions, classic JRPG stats/attribute progression, player-relative NPC scaling, Quick Access, inventory/equipment, distance-streamed AI, coordinated combat, factions, saves and networking.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with polished replicated ground-rise AI spawning, automatic replicated physical-surface footsteps, collision-safe spawned AI plus translation-proven Free-Roam recovery, dynamic Day/Night-driven street lights, ambient NPC social interactions, JRPG progression, inventory/equipment, distance-streamed AI, combat, factions, saves and networking.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,

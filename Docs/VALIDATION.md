@@ -317,3 +317,20 @@ Static/model validation additionally checks that:
 - no reflected Blueprint API was added for the native-only locomotion proof state.
 
 These checks do not replace repeated PIE/runtime observation or a UE 5.8.1 compile/package test.
+
+
+## v2.9.0 AI spawner ground-rise entrance checks
+
+Run:
+
+```bash
+python Tools/test_spawner_ground_rise_model.py
+```
+
+The model verifies that every framework AI uses the inherited replicated `SpawnEntrance` component, that `SpawnOne()` applies the entrance only after normal spawner movement configuration, and that the v2.7.2 `AdjustIfPossibleButDontSpawnIfColliding` safety path remains intact. It also guards the critical visual-only invariant: rise depth is applied to the Character mesh relative transform while the accepted actor/capsule location is retained as a lock target.
+
+Movement-ownership checks require the entrance to stop AIController pathing, disable CharacterMovement, acquire an independent Wanderer pause reason, pause active Spline travel, optionally suspend AI Combat/Social behaviour, and restore/release those owners after the reveal. Replication checks require compact replicated state plus synchronized server world time and short-lived component Tick ownership.
+
+Recommended UE 5.8/5.8.1 PIE acceptance: test initial spawn, Individual + Whole Group respawn, distance unload/reload and Day/Night swaps with both Free Roam and Spline movement. Observe that the mesh rises smoothly, the capsule never travels underground, no NPC translates during the entrance, and normal locomotion begins immediately after completion. Repeat in multiplayer PIE.
+
+These checks are repository/model validation only and do not claim an Unreal Engine compile.

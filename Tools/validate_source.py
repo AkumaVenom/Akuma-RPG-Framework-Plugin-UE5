@@ -1010,8 +1010,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 2720 or descriptor.get("VersionName") != "2.7.2-alpha":
-        issues.append("package descriptor must identify v2.7.2-alpha")
+    if descriptor.get("Version") != 2900 or descriptor.get("VersionName") != "2.9.0-alpha":
+        issues.append("package descriptor must identify v2.9.0-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1105,6 +1105,129 @@ if spawner_cpp.exists():
     ):
         if required not in spawner261:
             issues.append(f"v2.6.1 spawner Free-Roam/cohesion reliability missing: {required}")
+
+
+# v2.8 automatic replicated physical-surface footsteps.
+footstep_header = root / "Public" / "Components" / "ARPGFootstepComponent.h"
+footstep_cpp = root / "Private" / "Components" / "ARPGFootstepComponent.cpp"
+if not footstep_header.exists() or not footstep_cpp.exists():
+    issues.append("v2.8 automatic footstep component source files are missing")
+else:
+    fh28 = footstep_header.read_text(errors="replace")
+    fc28 = footstep_cpp.read_text(errors="replace")
+    for required in (
+        "FARPGFootstepSurfaceAudio",
+        "bEnableFootsteps = true",
+        "bAutomaticFootsteps = true",
+        "bPredictOwningPlayer = true",
+        "DefaultSounds",
+        "SurfaceAudio",
+        "AttenuationSettings",
+        "ConcurrencySettings",
+        "UFUNCTION(Server, Unreliable)",
+        "UFUNCTION(NetMulticast, Unreliable)",
+    ):
+        if required not in fh28:
+            issues.append(f"v2.8 footstep authoring/network API missing: {required}")
+    for required in (
+        "PrimaryComponentTick.bCanEverTick = false",
+        "SetIsReplicatedByDefault(true)",
+        "IsMovingOnGround()",
+        "Params.bReturnPhysicalMaterial = true",
+        "UPhysicalMaterial::DetermineSurfaceType",
+        "LineTraceSingleByChannel",
+        "PickSoundAvoidingImmediateRepeat",
+        "MulticastPlayFootstep",
+        "GetNetMode() == NM_DedicatedServer",
+        "Character->IsLocallyControlled()",
+        "TeleportResetDistance",
+        "HasAnyConfiguredSound()",
+    ):
+        if required not in fc28:
+            issues.append(f"v2.8 footstep runtime missing: {required}")
+    if "TickComponent(" in fh28 or "TickComponent(" in fc28:
+        issues.append("v2.8 footsteps must remain timer/event based without permanent component Tick")
+    if "Reliable) void MulticastPlayFootstep" in fh28:
+        issues.append("v2.8 transient footstep multicast must remain unreliable")
+
+character_header_28 = root / "Public" / "Actors" / "ARPGCharacter.h"
+character_cpp_28 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+if character_header_28.exists() and character_cpp_28.exists():
+    ch28 = character_header_28.read_text(errors="replace")
+    cc28 = character_cpp_28.read_text(errors="replace")
+    for required in ("TObjectPtr<UARPGFootstepComponent> Footsteps", "PawnClientRestart"):
+        if required not in ch28:
+            issues.append(f"v2.8 base character footstep integration missing: {required}")
+    for required in ("CreateDefaultSubobject<UARPGFootstepComponent>(TEXT(\"Footsteps\"))", "Footsteps->RefreshFootstepRuntime()"):
+        if required not in cc28:
+            issues.append(f"v2.8 base character footstep runtime integration missing: {required}")
+
+if build_cs.exists() and '"PhysicsCore"' not in build_cs.read_text(errors="replace"):
+    issues.append("AkumasRPGFramework.Build.cs must depend on PhysicsCore for physical-surface footsteps")
+
+# v2.9 polished replicated AI-spawner ground-rise entrances.
+spawn_entrance_header = root / "Public" / "Components" / "ARPGSpawnEntranceComponent.h"
+spawn_entrance_cpp = root / "Private" / "Components" / "ARPGSpawnEntranceComponent.cpp"
+if not spawn_entrance_header.exists() or not spawn_entrance_cpp.exists():
+    issues.append("v2.9 spawn entrance component source files are missing")
+else:
+    seh29 = spawn_entrance_header.read_text(errors="replace")
+    sec29 = spawn_entrance_cpp.read_text(errors="replace")
+    for required in (
+        "FARPGSpawnEntranceRepState",
+        "ReplicatedUsing=OnRep_RepState",
+        "StartGroundRise",
+        "IsGroundRiseActive",
+        "TickComponent",
+    ):
+        if required not in seh29:
+            issues.append(f"v2.9 spawn entrance replicated API/state missing: {required}")
+    for required in (
+        "SetIsReplicatedByDefault(true)",
+        "DOREPLIFETIME(UARPGSpawnEntranceComponent, RepState)",
+        "GetServerWorldTimeSeconds",
+        "Mesh->SetRelativeLocation",
+        "Movement->DisableMovement()",
+        "AI->StopMovement()",
+        "AcquireMovementPause(ARPGSpawnEntranceWanderPauseReason",
+        "Spline->PauseRoute(true)",
+        "AICombat->SetAICombatEnabled(false)",
+        "Social->SetSocialInteractionsEnabled(false)",
+        "ReleaseMovementPause(ARPGSpawnEntranceWanderPauseReason",
+        "Movement->SetMovementMode",
+        "Spline->ResumeRoute()",
+        "PrimaryComponentTick.bStartWithTickEnabled = false",
+    ):
+        if required not in sec29:
+            issues.append(f"v2.9 spawn entrance runtime missing: {required}")
+
+if spawner_header.exists() and spawner_cpp.exists():
+    sh29 = spawner_header.read_text(errors="replace")
+    sc29 = spawner_cpp.read_text(errors="replace")
+    for required in (
+        "bEnableGroundRiseEntrance = true",
+        "bAutoCalculateGroundRiseDepth = true",
+        "GroundRiseDuration = 1.15f",
+        "GroundRiseEaseExponent = 2.25f",
+        "bSuspendAIBehaviourDuringGroundRise = true",
+        "bLockActorLocationDuringGroundRise = true",
+    ):
+        if required not in sh29:
+            issues.append(f"v2.9 spawner ground-rise authoring missing: {required}")
+    for required in (
+        "BeginGroundRiseEntrance(Pawn)",
+        "Capsule->GetScaledCapsuleHalfHeight() * 2.f",
+        "Entrance->StartGroundRise",
+    ):
+        if required not in sc29:
+            issues.append(f"v2.9 spawner ground-rise integration missing: {required}")
+    if sc29.find("ConfigureSpawnedPawn(Pawn);") > sc29.find("BeginGroundRiseEntrance(Pawn);"):
+        issues.append("v2.9 spawner must configure movement ownership before applying the ground-rise lock")
+
+if ai_character_cpp.exists():
+    aic29 = ai_character_cpp.read_text(errors="replace")
+    if 'CreateDefaultSubobject<UARPGSpawnEntranceComponent>(TEXT("SpawnEntrance"))' not in aic29:
+        issues.append("v2.9 ARPGAICharacter must include the replicated SpawnEntrance component by default")
 
 markers = []
 for p in source_files:

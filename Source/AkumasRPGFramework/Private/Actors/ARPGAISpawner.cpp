@@ -8,7 +8,10 @@
 #include "Components/ARPGAISplineComponent.h"
 #include "Components/ARPGCombatComponent.h"
 #include "Components/ARPGWandererComponent.h"
+#include "Components/ARPGSpawnEntranceComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -638,6 +641,41 @@ void AARPGAISpawner::ConfigureSpawnedPawn(APawn* Pawn)
     }
 }
 
+void AARPGAISpawner::BeginGroundRiseEntrance(APawn* Pawn)
+{
+    if (!bEnableGroundRiseEntrance || !IsValid(Pawn) || !Pawn->HasAuthority()) return;
+
+    UARPGSpawnEntranceComponent* Entrance = Pawn->FindComponentByClass<UARPGSpawnEntranceComponent>();
+    if (!Entrance)
+    {
+        UE_LOG(LogARPG, Verbose, TEXT("AI Spawner '%s' has Ground Rise Entrance enabled, but spawned pawn '%s' has no ARPG Spawn Entrance component. Framework AARPGAICharacter subclasses include it automatically."),
+            *GetName(), *GetNameSafe(Pawn));
+        return;
+    }
+
+    float ResolvedDepth = FMath::Max(1.f, GroundRiseDepth);
+    if (bAutoCalculateGroundRiseDepth)
+    {
+        // One full scaled capsule height places a standard character mesh completely below its standing floor plane.
+        // Only the visual mesh is offset; the collision-safe actor/capsule remains exactly where SpawnActor accepted it.
+        if (const ACharacter* Character = Cast<ACharacter>(Pawn))
+        {
+            if (const UCapsuleComponent* Capsule = Character->GetCapsuleComponent())
+            {
+                ResolvedDepth = (Capsule->GetScaledCapsuleHalfHeight() * 2.f) + FMath::Max(0.f, ExtraGroundRiseDepth);
+            }
+        }
+    }
+
+    Entrance->StartGroundRise(
+        ResolvedDepth,
+        FMath::Max(0.05f, GroundRiseDuration),
+        FMath::Max(0.f, GroundRiseStartDelay),
+        FMath::Clamp(GroundRiseEaseExponent, 0.1f, 8.f),
+        bSuspendAIBehaviourDuringGroundRise,
+        bLockActorLocationDuringGroundRise);
+}
+
 void AARPGAISpawner::ConfigureAllSpawnedPawns()
 {
     RefreshGroupLeader();
@@ -737,6 +775,7 @@ APawn* AARPGAISpawner::SpawnOne()
     RefreshGroupLeader();
     ConfigureSpawnedPawn(Pawn);
     RefreshSplineGroupDirectionLeaders();
+    BeginGroundRiseEntrance(Pawn);
     OnSpawnedAI.Broadcast(Pawn);
     if (bWasInactive) OnPopulationActivated.Broadcast();
     return Pawn;

@@ -1,5 +1,28 @@
 # Akuma RPG Framework Changelog
 
+## v2.9.0-alpha — Polished Replicated Spawner Ground-Rise Entrances
+
+- Added an automatic `Ground Rise Entrance` section to `ARPGAISpawner`, enabled by default for framework NPCs. Every `SpawnOne()` path now applies the same entrance, covering BeginPlay populations, individual/whole-group respawns, distance-stream reloads and Day/Night population swaps.
+- Preserved the v2.7.2 collision-safe spawn proof: the actual pawn/capsule remains at the final accepted NavMesh/collision-safe position. Only the skeletal mesh is offset below ground and eased back to its authored relative position.
+- Added `UARPGSpawnEntranceComponent` to `AARPGAICharacter`. Its compact replicated state uses synchronized server world time so clients observe the same rise timing without replicating a per-frame transform stream.
+- Added capsule-size-aware automatic rise depth, optional extra depth, start delay, duration and ease-out exponent controls. Manual depth remains available for unusual creatures.
+- During the entrance, the component stops AIController pathing, disables CharacterMovement, acquires its own Wanderer pause token, pauses active Spline travel, and optionally suspends AI Combat plus ambient Social behaviour. Restoration releases only the state owned by the entrance.
+- Optional actor-location locking rejects custom/external translation during the short reveal while leaving facing/rotation available. The location lock never drives the visual rise itself.
+- Death during the reveal ends the presentation without restoring walking/AI locomotion into a dead pawn, and ragdolling meshes are not forced back through a relative-transform write.
+- Added `Tools/test_spawner_ground_rise_model.py` plus structural validation guards for replication, movement ownership, capsule-safe visual-only presentation and preserved v2.7.2 spawn collision handling.
+
+## v2.8.0-alpha — Automatic Replicated Physical-Surface Footsteps
+- Added inherited `UARPGFootstepComponent` to `AARPGCharacter`, automatically covering player characters and all `AARPGAICharacter` NPCs without Blueprint component setup or animation notifies.
+- Automatic cadence is driven by real grounded horizontal travel distance with walk/run stride blending, left/right alternation, stop resets and teleport/network-correction rejection.
+- Each due step traces from the matching foot socket/bone (`foot_l` / `foot_r` by default) with capsule-bottom left/right fallback when those names do not exist.
+- Ground hits request Physical Material data and resolve Unreal Physical Surface types into exposed per-surface randomized sound pools, with Default Sounds fallback, immediate-repeat avoidance, per-surface volume/pitch variation and movement-speed volume scaling.
+- Added optional Sound Attenuation and Sound Concurrency authoring directly on the inherited Footsteps component for project-quality 3D/crowd audio control.
+- Multiplayer uses server-authoritative automatic cadence plus `NetMulticast, Unreliable` transient cues. The owning player can locally predict its own automatic footstep audio while the authoritative multicast skips that owner, avoiding duplicate playback and reducing audible network latency; NPCs remain server-driven.
+- Manual `Trigger Footstep` is also exposed for projects that later choose animation-authored contacts; client requests are locally predicted, server re-traced/rate-limited, and never trusted for surface/sound/location selection.
+- Dedicated servers never play local audio. Dead/ragdolled or non-grounded ARPG characters do not generate footsteps.
+- Performance remains timer/event based: no permanent Actor/Component Tick was added, characters with no configured footstep audio create no automatic sampling timer, active timers are staggered, and ground traces only occur when accumulated movement says a step is due.
+- Added `Docs/FOOTSTEPS.md` and deterministic `Tools/test_footstep_replication_model.py` coverage.
+
 ## v2.7.2-alpha — Spawn Collision & Locomotion Proof Fix
 - Fixed the deeper rotate-but-will-not-walk failure path that v2.7.1 did not cover. The spawner no longer uses `AdjustIfPossibleButAlwaysSpawn`, which could legally create possessed AI capsules encroaching another pawn/prop and leave them able to rotate/focus while CharacterMovement could not translate.
 - Spawned AI now uses `AdjustIfPossibleButDontSpawnIfColliding` with up to 10 collision-safe candidate attempts. Point spawners receive a small NavMesh-projected fallback spread after the preferred origin fails, preventing multi-member groups from stacking capsules at one exact point.

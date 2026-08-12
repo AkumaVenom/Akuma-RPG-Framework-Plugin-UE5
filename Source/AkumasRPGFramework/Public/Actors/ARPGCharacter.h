@@ -32,6 +32,7 @@ class UARPGThreatComponent;
 class UARPGAICombatComponent;
 class UARPGTargetingComponent;
 class UARPGWoodcuttingComponent;
+class UARPGFootstepComponent;
 class AARPGTree;
 
 UCLASS(BlueprintType, Blueprintable)
@@ -71,6 +72,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGAICombatComponent> AICombat;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGTargetingComponent> Targeting;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGWoodcuttingComponent> Woodcutting;
+    /** Automatic physical-surface footsteps for players and NPCs. Select this inherited component to author audio/stride settings. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGFootstepComponent> Footsteps;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool BasicAttack(AActor* OptionalTarget = nullptr);
     UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool Dodge(EARPGDodgeDirection Direction = EARPGDodgeDirection::Auto);
@@ -96,6 +99,7 @@ public:
     virtual void BeginPlay() override;
     virtual void PossessedBy(AController* NewController) override;
     virtual void OnRep_PlayerState() override;
+    virtual void PawnClientRestart() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Identity", meta=(BlueprintAuthorityOnly)) void EnsureCharacterId();
