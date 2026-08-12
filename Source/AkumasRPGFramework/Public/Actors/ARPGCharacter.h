@@ -34,6 +34,8 @@ class UARPGTargetingComponent;
 class UARPGWoodcuttingComponent;
 class UARPGFootstepComponent;
 class UARPGCharacterInfoComponent;
+class UARPGStatsUIComponent;
+class UARPGInventoryUIComponent;
 class AARPGTree;
 
 UCLASS(BlueprintType, Blueprintable)
@@ -77,6 +79,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGFootstepComponent> Footsteps;
     /** Automatic local overhead name/level/health popup. Select this inherited component and assign a Widget Class. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGCharacterInfoComponent> CharacterInfo;
+    /** Local player JRPG stats panel owner. Select this inherited component to assign a custom Stats Widget Class. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGStatsUIComponent> StatsUI;
+    /** Ready-to-use local player Inventory + Quick Access UI. Select this inherited component to assign custom widget classes. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGInventoryUIComponent> InventoryUI;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool BasicAttack(AActor* OptionalTarget = nullptr);
     UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool Dodge(EARPGDodgeDirection Direction = EARPGDodgeDirection::Auto);
@@ -97,6 +103,18 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcutting(AARPGTree* Tree);
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool ChopTreeOnce(AARPGTree* Tree);
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") void StopWoodcutting();
+
+    // One-call local player stats panel wrappers. The inherited StatsUI component owns presentation/input state.
+    UFUNCTION(BlueprintCallable, Category="ARPG|Stats UI|Input") bool OpenStatsUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Stats UI|Input") bool CloseStatsUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Stats UI|Input") bool ToggleStatsUI();
+    UFUNCTION(BlueprintPure, Category="ARPG|Stats UI") bool IsStatsUIOpen() const;
+
+    // One-call local Inventory panel wrappers. The Quick Access HUD is auto-created by the inherited InventoryUI component.
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Input") bool OpenInventoryUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Input") bool CloseInventoryUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Input") bool ToggleInventoryUI();
+    UFUNCTION(BlueprintPure, Category="ARPG|Inventory UI") bool IsInventoryUIOpen() const;
 
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return AbilitySystem; }
     virtual void BeginPlay() override;

@@ -1,5 +1,43 @@
 # Akuma RPG Framework Changelog
 
+## v2.12.2-alpha — Inventory Viewport Hit-Test Ownership Fix
+- Fixed the actual full-panel input blocker: the higher-Z Quick Access `UUserWidget` spans the viewport and was still `Visible`/hit-testable at its top level even though its inner Canvas was pass-through.
+- Quick Access now uses `SelfHitTestInvisible` at the top-level widget whenever shown, so its actual hotbar children remain interactive while unused full-screen space no longer blocks the lower-Z Inventory panel.
+- Kept Quick Access above Inventory so Inventory -> Quick Access drag/drop remains reachable.
+- Preserved the v2.12.1 Inventory preview mouse handling as a secondary ScrollBox-safe interaction guard.
+- No gameplay ownership, Inventory, Equipment, Quick Access authority, replication, Stats UI, NPC popup, spawn, movement or footstep logic changed.
+
+## v2.12.1-alpha — Inventory Interaction / Drag-and-Drop Input Fix
+- Fixed Inventory item tiles being visible but unable to receive selection/drag interaction when hosted beneath the native Inventory `ScrollBox`.
+- Inventory item presses now use `NativeOnPreviewMouseButtonDown` for the Inventory source only, so selection/right-click equip and `DetectDragIfPressed` are armed before the scrolling container can consume the pointer gesture.
+- Marked the full-screen dim decoration hit-test invisible and made decorative Inventory panel/grid/slot-size wrappers pass input through to the actual slot widgets.
+- Preserved the already-working Quick Access interaction route and all existing authoritative drag/drop, equipment, active-slot clear/unequip and replication behavior.
+
+## v2.12.0-alpha — Complete Ready-to-Use Inventory + Quick Access UI
+- Compile-fix repackage: removed unsupported `Units="px"` UPROPERTY metadata from `InventorySlotSize` and `QuickAccessSlotSize` for UE 5.8.1 UnrealHeaderTool compatibility; clamps and runtime sizing are unchanged.
+- Added inherited local-only `InventoryUI` component to every `AARPGCharacter`, with automatic local-player Quick Access HUD creation after possession/client restart.
+- Added native `ARPGInventoryPanelWidget`, `ARPGQuickAccessBarWidget`, reusable `ARPGInventoryItemSlotWidget`, typed `ARPGInventoryDragDropOperation` and Blueprint-friendly `FARPGInventoryUISlotView`.
+- Added ready native Inventory presentation for Item Definition icon/name/description/rarity, exact runtime quantity/GUID, durability, bound/equipped state and Inventory capacity.
+- Added ready native Quick Access presentation for slot number, Item Definition/icon, owned quantity, active/equipped state and authoritative consumable cooldown progress.
+- Added functional drag/drop: Inventory -> Quick Access assignment, Quick Access -> Quick Access swapping, Quick Access -> Inventory clearing, and drag-away clearing.
+- Added `Clear Slot And Unequip Active` to Quick Access as an atomic server-authoritative UI-safe path so clearing the active held weapon/tool cannot leave it equipped accidentally.
+- Added right-click Inventory equip/unequip using the existing `ARPGEquipmentComponent` request path; usable items already assigned to Quick Access can be activated through the same context action.
+- Added one-call Character Blueprint wrappers: `Open Inventory UI`, `Close Inventory UI`, `Toggle Inventory UI`, `Is Inventory UI Open`.
+- Added exposed Inventory/Quick Access/slot Widget Classes, grid columns, slot sizes, Z-order, input/cursor handling, automatic hotbar creation and drag-out unequip policy.
+- Kept UI state local/non-replicated and event-driven. A cooldown refresh timer exists only while at least one visible Quick Access slot is cooling down; no permanent Tick was added.
+- Preserved all existing Inventory ownership, Equipment authority, Quick Access duplicate repair/save state, JRPG Stats UI, NPC info popup, ground-rise, footsteps and spawn/locomotion behavior.
+
+## v2.11.0-alpha — Complete Ready-to-Use JRPG Stats UI
+- Added inherited local-only `StatsUI` component to every `AARPGCharacter`, with no NPC/dedicated-server runtime work unless a locally controlled player explicitly opens the panel.
+- Added one-call Character Blueprint wrappers: `Open Stats UI`, `Close Stats UI`, `Toggle Stats UI` and `Is Stats UI Open`.
+- Added native `ARPGStatsPanelWidget` default that requires no Widget Blueprint and presents Character Name, effective Level, XP, Health/Mana/Stamina, all six primary stats, per-stat allocations, Attribute Points and all derived JRPG combat stats.
+- Added native `+` buttons for Strength/Vitality/Magic/Spirit/Dexterity/Luck using the existing validated `SpendAttributePoints` client/server path.
+- Added built-in Close button and optional automatic Game-and-UI input/cursor management for immediate mouse interaction.
+- Added exposed `Stats Widget Class` so projects can select a Blueprint subclass while keeping a working native fallback.
+- Added `ARPGStatsUISnapshot`, `On ARPG Stats UI Updated`, helper accessors and standard child-name auto binding for custom zero-graph UMG layouts.
+- Added a local 0.15 s refresh timer only while the panel is open; no permanent Component/Widget Tick and no new replicated UI state.
+- Preserved all existing JRPG Stats authority/replication, NPC info popups, ground-rise spawns, locomotion proof and footsteps.
+
 ## v2.10.1-alpha — NPC Info Popup Runtime Visibility Fix
 - Fixed a runtime blocker where `UARPGCharacterInfoComponent` permanently set `PrimaryComponentTick.bCanEverTick = false`. Because the component derives from `UWidgetComponent`, this also disabled Unreal's own screen-space projection/rendering TickComponent path, allowing proximity state to become visible internally while nothing could appear on screen.
 - CharacterInfo now keeps WidgetComponent ticking available but starts disabled, enables native component ticking only while an overhead popup is visible, and disables it again after hiding. Proximity decisions remain on the existing staggered timer and do not move into Tick.

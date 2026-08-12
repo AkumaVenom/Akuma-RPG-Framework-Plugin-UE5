@@ -54,6 +54,28 @@ Recommended first edits:
 - Tune inventory size, respawn delay and skill/character caps under **Project Settings > Game > Akuma's RPG Framework**.
 - Bind your UMG widgets to inventory, quests, stats, chat, battle pets, skills and interaction delegates.
 
+## 2A. Complete JRPG Stats panel
+
+Every `ARPGCharacter` now owns an inherited **StatsUI** component. The supplied panel works without creating a Widget Blueprint. Bind one input action on the player to:
+
+```text
+Toggle Stats UI
+```
+
+The panel opens with Character Name, Level/XP, Health/Mana/Stamina, all JRPG primary/derived stats and Attribute Point `+` buttons, and includes its own **Close** button. To use custom art, create a Widget Blueprint derived from `ARPGStatsPanelWidget` and select it under `StatsUI -> Stats Widget Class`. See `Docs/JRPG_STATS_UI.md`.
+
+## 2B. Ready Inventory + Quick Access UI
+
+Every `ARPGCharacter` also owns an inherited **InventoryUI** component. The Quick Access HUD auto-creates for the local player by default. Bind one Inventory input action to:
+
+```text
+Toggle Inventory UI
+```
+
+The supplied native Inventory panel and hotbar work without Widget Blueprints. Drag an Inventory item onto a Quick Access slot to assign it, drag hotbar slots onto one another to rearrange them, and drag a Quick Access item back over the Inventory panel or away from the hotbar to clear it. Clearing the active held weapon/tool through this UI also unequips it while leaving it in Inventory. Right-click an equippable Inventory item to equip/unequip it.
+
+For custom art, derive Widget Blueprints from `ARPGInventoryPanelWidget`, `ARPGQuickAccessBarWidget` and/or `ARPGInventoryItemSlotWidget`, then select them on the inherited `InventoryUI` component. See `Docs/INVENTORY_UI.md`.
+
 ## 3. Use the supplied GameMode/Controller/GameState
 
 For the complete default flow, derive project classes from:

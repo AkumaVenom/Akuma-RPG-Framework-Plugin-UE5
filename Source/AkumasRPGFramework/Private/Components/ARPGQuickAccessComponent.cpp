@@ -424,6 +424,43 @@ bool UARPGQuickAccessComponent::ClearSlotAuthority(int32 SlotNumber)
     return true;
 }
 
+bool UARPGQuickAccessComponent::ClearSlotAndUnequipActive(int32 SlotNumber)
+{
+    if (!GetOwner() || !IsValidSlotNumber(SlotNumber)) return false;
+    if (!GetOwner()->HasAuthority())
+    {
+        ServerClearSlotAndUnequipActive(SlotNumber);
+        return true;
+    }
+    return ClearSlotAndUnequipActiveAuthority(SlotNumber);
+}
+
+bool UARPGQuickAccessComponent::ClearSlotAndUnequipActiveAuthority(int32 SlotNumber)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValidSlotNumber(SlotNumber)) return false;
+    EnsureSlotArrayAuthority();
+    if (RepairRuntimeBindingsAuthority()) OnQuickAccessChanged.Broadcast();
+    if (!IsCanonicalSlotForView(SlotNumber)) return false;
+
+    const FARPGQuickAccessSlot& Slot = QuickAccessSlots[ToIndex(SlotNumber)];
+    if (Slot.ItemId.IsNone() && !Slot.ItemInstanceId.IsValid()) return false;
+
+    if (ActiveSlotNumber == SlotNumber)
+    {
+        UARPGInventoryComponent* Inventory = GetInventory();
+        UARPGEquipmentComponent* Equipment = GetEquipment();
+        const FARPGInventoryEntry* Entry = ResolveOwnedEntry(Slot);
+        if (Inventory && Entry && Inventory->IsItemInstanceEquipped(Entry->InstanceId))
+        {
+            const FGuid EquippedInstanceId = Entry->InstanceId;
+            if (!Equipment || !Equipment->UnequipItem(EquippedInstanceId)) return false;
+            if (LastQuickAccessEquippedInstanceId == EquippedInstanceId) LastQuickAccessEquippedInstanceId.Invalidate();
+        }
+    }
+
+    return ClearSlotAuthority(SlotNumber);
+}
+
 bool UARPGQuickAccessComponent::SwapSlots(int32 FirstSlotNumber, int32 SecondSlotNumber)
 {
     if (!GetOwner() || !IsValidSlotNumber(FirstSlotNumber) || !IsValidSlotNumber(SecondSlotNumber) || FirstSlotNumber == SecondSlotNumber) return false;
@@ -965,6 +1002,7 @@ void UARPGQuickAccessComponent::MulticastPlayItemUsePresentation_Implementation(
 void UARPGQuickAccessComponent::ServerAssignItemToSlot_Implementation(int32 SlotNumber, FGuid ItemInstanceId) { AssignItemToSlotAuthority(SlotNumber, ItemInstanceId); }
 void UARPGQuickAccessComponent::ServerAssignItemIdToSlot_Implementation(int32 SlotNumber, FName ItemId) { AssignItemIdToSlotAuthority(SlotNumber, ItemId); }
 void UARPGQuickAccessComponent::ServerClearSlot_Implementation(int32 SlotNumber) { ClearSlotAuthority(SlotNumber); }
+void UARPGQuickAccessComponent::ServerClearSlotAndUnequipActive_Implementation(int32 SlotNumber) { ClearSlotAndUnequipActiveAuthority(SlotNumber); }
 void UARPGQuickAccessComponent::ServerSwapSlots_Implementation(int32 FirstSlotNumber, int32 SecondSlotNumber) { SwapSlotsAuthority(FirstSlotNumber, SecondSlotNumber); }
 void UARPGQuickAccessComponent::ServerClearAllSlots_Implementation() { ClearAllSlotsAuthority(); }
 

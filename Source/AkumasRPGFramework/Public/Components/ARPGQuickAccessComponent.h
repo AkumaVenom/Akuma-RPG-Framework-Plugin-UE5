@@ -64,6 +64,8 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access") bool AssignItemToSlot(int32 SlotNumber, FGuid ItemInstanceId);
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access") bool AssignItemIdToSlot(int32 SlotNumber, FName ItemId);
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access") bool ClearSlot(int32 SlotNumber);
+    /** UI-friendly atomic clear: if this is the active equipped Quick Access item, authority unequips it before clearing the slot. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access") bool ClearSlotAndUnequipActive(int32 SlotNumber);
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access") bool SwapSlots(int32 FirstSlotNumber, int32 SecondSlotNumber);
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access") bool ClearAllSlots();
 
@@ -100,6 +102,7 @@ protected:
     UFUNCTION(Server, Reliable) void ServerAssignItemToSlot(int32 SlotNumber, FGuid ItemInstanceId);
     UFUNCTION(Server, Reliable) void ServerAssignItemIdToSlot(int32 SlotNumber, FName ItemId);
     UFUNCTION(Server, Reliable) void ServerClearSlot(int32 SlotNumber);
+    UFUNCTION(Server, Reliable) void ServerClearSlotAndUnequipActive(int32 SlotNumber);
     UFUNCTION(Server, Reliable) void ServerSwapSlots(int32 FirstSlotNumber, int32 SecondSlotNumber);
     UFUNCTION(Server, Reliable) void ServerClearAllSlots();
     UFUNCTION(Server, Reliable) void ServerSelectSlot(int32 SlotNumber);
@@ -127,6 +130,7 @@ protected:
     bool AssignItemToSlotAuthority(int32 SlotNumber, FGuid ItemInstanceId);
     bool AssignItemIdToSlotAuthority(int32 SlotNumber, FName ItemId);
     bool ClearSlotAuthority(int32 SlotNumber);
+    bool ClearSlotAndUnequipActiveAuthority(int32 SlotNumber);
     bool SwapSlotsAuthority(int32 FirstSlotNumber, int32 SecondSlotNumber);
     bool ClearAllSlotsAuthority();
     EARPGQuickAccessResult SelectSlotAuthority(int32 SlotNumber, FGuid& OutInstanceId);

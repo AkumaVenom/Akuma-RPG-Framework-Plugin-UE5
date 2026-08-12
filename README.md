@@ -8,6 +8,34 @@ The design goal is simple: create content with Data Assets, assign components/de
 
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
+## 2.12.2-alpha Inventory viewport hit-test ownership fix
+
+v2.12.2 fixes the actual cause of the Inventory panel being visible but completely unable to receive clicks while the Quick Access HUD remained interactive. The Quick Access HUD is intentionally layered above Inventory for Inventory -> hotbar drag/drop, but its top-level `UUserWidget` fills the viewport. Leaving that top-level widget `Visible` made the entire invisible full-screen Quick Access layer hit-testable, so pointer input never reached the lower-Z Inventory widget.
+
+The Quick Access **top-level widget** now uses `SelfHitTestInvisible` whenever it is shown. Its real hotbar slot children remain fully clickable/droppable, while empty parts of the full-screen Quick Access layer pass pointer input through to Inventory. The inner Quick Access Canvas keeps the same pass-through visibility as an additional guard. The v2.12.1 preview-input handling remains in place, but the root cause was the higher-Z viewport layer rather than the Inventory `ScrollBox`.
+
+## 2.12.1-alpha Inventory interaction / drag-and-drop input fix
+
+v2.12.1 fixes the native Inventory grid interaction path discovered during UE5.8.1 PIE testing. Inventory item tiles live beneath a `ScrollBox`, so the previous bubbling-only mouse handler could lose the press to the scrolling container even though the exact same slot widget worked correctly in the Quick Access bar. Inventory slots now arm selection, right-click equip/unequip and left-drag detection from the preview/tunneling pointer path before the `ScrollBox` can claim the gesture.
+
+The full-screen dim layer is explicitly hit-test invisible, decorative panel/grid/layout wrappers pass hit testing through to real controls, and Quick Access keeps its already-working interaction path. Inventory -> Quick Access drag/drop, Inventory item selection/details, right-click equipment toggle, Quick Access rearranging, and drag-out clearing all continue to use the existing authoritative Inventory/Equipment/Quick Access gameplay APIs.
+
+## 2.12.0-alpha complete ready-to-use Inventory + Quick Access UI
+
+**UE 5.8.1 compile-fix repackage:** removed unsupported `Units="px"` reflection metadata from the exposed Inventory and Quick Access slot-size floats. The editor clamps and runtime sizing behavior are unchanged.
+
+Every `AARPGCharacter` now includes an inherited **InventoryUI** component that supplies a complete local Inventory panel and an automatic Quick Access HUD with no project Widget Blueprint required. The native widgets present real runtime Inventory entries, Item Definition names/icons/descriptions, quantities, durability/equipped state, capacity, active Quick Access highlighting and consumable cooldowns directly from the existing replicated gameplay components.
+
+Drag/drop is functional out of the box: Inventory -> Quick Access assigns the exact owned runtime `InstanceId`; Quick Access -> Quick Access swaps slots; Quick Access -> Inventory clears the hotbar assignment while leaving the item owned; and dropping a Quick Access item away from a valid target clears it. When the dragged-away slot is the active equipped weapon/tool, the new atomic `Clear Slot And Unequip Active` authority path unequips it before clearing the slot. Right-clicking an equippable Inventory entry toggles normal Equipment equip/unequip. The hotbar is intentionally layered above the open Inventory panel so inventory-to-hotbar drops remain interactable.
+
+The default Quick Access bar auto-creates only for the locally controlled player after possession/client restart, is non-replicated, and refreshes from existing Inventory/Quick Access events. A short timer runs only while a visible slot actually has a cooldown; there is no permanent UI/component Tick. `Inventory Widget Class`, `Quick Access Widget Class`, both slot widget classes, layout sizing, Z-order, input/cursor handling and drag-out unequip policy are exposed on `InventoryUI`. Custom widgets can derive from the supplied native classes and use standard child names/events while keeping the framework interaction logic. See `Docs/INVENTORY_UI.md`.
+
+
+## 2.11.0-alpha complete ready-to-use JRPG Stats UI
+
+Every `AARPGCharacter` now includes an inherited **StatsUI** component for a complete local player stats panel. The default `ARPGStatsPanelWidget` works immediately with no Widget Blueprint: one `Toggle Stats UI` input call opens a polished panel containing Character Name, Level/XP, Health/Mana/Stamina, all six JRPG primary stats, per-stat allocations, unspent/earned Attribute Points and the complete derived combat-stat set. Native `+` buttons spend Attribute Points through the existing server-authoritative Stats RPC path, and the supplied **Close** button dismisses the panel cleanly.
+
+The panel is local-player only, non-replicated and has no permanent Tick. A lightweight refresh timer exists only while open. `Stats Widget Class`, Z Order, refresh interval and input/cursor handling are exposed on the inherited component. Custom Widget Blueprints can derive from `ARPGStatsPanelWidget`, consume the complete `ARPGStatsUISnapshot` event, or use the documented standard child names for zero-graph auto binding. See `Docs/JRPG_STATS_UI.md`.
 
 ## 2.10.1-alpha automatic proximity character / NPC info popups — runtime visibility fix
 

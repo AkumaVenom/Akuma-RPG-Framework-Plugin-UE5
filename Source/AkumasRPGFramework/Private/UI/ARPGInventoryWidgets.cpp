@@ -1,0 +1,730 @@
+#include "UI/ARPGInventoryWidgets.h"
+
+#include "Actors/ARPGCharacter.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/Button.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
+#include "Components/ProgressBar.h"
+#include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
+#include "Components/TextBlock.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Components/ARPGInventoryUIComponent.h"
+#include "Data/ARPGItemDefinition.h"
+#include "Engine/Texture2D.h"
+#include "InputCoreTypes.h"
+
+namespace
+{
+    void StyleInventoryText(UTextBlock* Text, int32 FontSize, const FLinearColor& Color = FLinearColor::White)
+    {
+        if (!Text) return;
+        FSlateFontInfo Font = Text->GetFont();
+        Font.Size = FontSize;
+        Text->SetFont(Font);
+        Text->SetColorAndOpacity(FSlateColor(Color));
+    }
+
+    FText RarityText(EARPGRarity Rarity)
+    {
+        switch (Rarity)
+        {
+            case EARPGRarity::Poor: return NSLOCTEXT("AkumasRPGFramework", "RarityPoor", "Poor");
+            case EARPGRarity::Common: return NSLOCTEXT("AkumasRPGFramework", "RarityCommon", "Common");
+            case EARPGRarity::Uncommon: return NSLOCTEXT("AkumasRPGFramework", "RarityUncommon", "Uncommon");
+            case EARPGRarity::Rare: return NSLOCTEXT("AkumasRPGFramework", "RarityRare", "Rare");
+            case EARPGRarity::Epic: return NSLOCTEXT("AkumasRPGFramework", "RarityEpic", "Epic");
+            case EARPGRarity::Legendary: return NSLOCTEXT("AkumasRPGFramework", "RarityLegendary", "Legendary");
+            case EARPGRarity::Mythic: return NSLOCTEXT("AkumasRPGFramework", "RarityMythic", "Mythic");
+            default: return FText::GetEmpty();
+        }
+    }
+}
+
+void UARPGInventoryItemSlotWidget::NativeOnInitialized()
+{
+    Super::NativeOnInitialized();
+    EnsureNativeLayoutOrBindings();
+    ApplyViewToStandardFields();
+}
+
+void UARPGInventoryItemSlotWidget::InitializeInventorySlot(UARPGInventoryUIComponent* InInventoryUI, EARPGInventoryUISlotSource InSource, int32 InSlotNumber)
+{
+    InventoryUI = InInventoryUI;
+    SlotView.Source = InSource;
+    SlotView.SlotNumber = InSlotNumber;
+    bDragVisualOnly = false;
+    EnsureNativeLayoutOrBindings();
+    ApplyViewToStandardFields();
+}
+
+void UARPGInventoryItemSlotWidget::InitializeAsDragVisual(const FARPGInventoryUISlotView& InView)
+{
+    InventoryUI = nullptr;
+    SlotView = InView;
+    bDragVisualOnly = true;
+    SetIsEnabled(false);
+    SetRenderOpacity(0.92f);
+    EnsureNativeLayoutOrBindings();
+    ApplyViewToStandardFields();
+}
+
+void UARPGInventoryItemSlotWidget::SetSlotView(const FARPGInventoryUISlotView& InView)
+{
+    SlotView = InView;
+    EnsureNativeLayoutOrBindings();
+    ApplyViewToStandardFields();
+    BP_OnInventorySlotUpdated(SlotView);
+}
+
+FLinearColor UARPGInventoryItemSlotWidget::ResolveRarityColor() const
+{
+    switch (SlotView.Rarity)
+    {
+        case EARPGRarity::Poor: return FLinearColor(0.25f, 0.25f, 0.25f, 0.96f);
+        case EARPGRarity::Common: return FLinearColor(0.12f, 0.13f, 0.16f, 0.96f);
+        case EARPGRarity::Uncommon: return FLinearColor(0.06f, 0.22f, 0.08f, 0.96f);
+        case EARPGRarity::Rare: return FLinearColor(0.04f, 0.12f, 0.30f, 0.96f);
+        case EARPGRarity::Epic: return FLinearColor(0.20f, 0.06f, 0.30f, 0.96f);
+        case EARPGRarity::Legendary: return FLinearColor(0.36f, 0.17f, 0.03f, 0.96f);
+        case EARPGRarity::Mythic: return FLinearColor(0.32f, 0.05f, 0.08f, 0.96f);
+        default: return FLinearColor(0.12f, 0.13f, 0.16f, 0.96f);
+    }
+}
+
+void UARPGInventoryItemSlotWidget::EnsureNativeLayoutOrBindings()
+{
+    if (!WidgetTree) return;
+
+    if (!WidgetTree->RootWidget)
+    {
+        USizeBox* RootSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("ItemSlotRoot"));
+        RootSize->SetWidthOverride(80.f);
+        RootSize->SetHeightOverride(80.f);
+        WidgetTree->RootWidget = RootSize;
+
+        SlotBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotBorder"));
+        SlotBorder->SetPadding(FMargin(4.f));
+        RootSize->SetContent(SlotBorder);
+
+        UOverlay* Overlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("ItemSlotOverlay"));
+        SlotBorder->SetContent(Overlay);
+
+        ItemIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("ItemIcon"));
+        if (UOverlaySlot* IconSlot = Overlay->AddChildToOverlay(ItemIcon))
+        {
+            IconSlot->SetHorizontalAlignment(HAlign_Fill);
+            IconSlot->SetVerticalAlignment(VAlign_Fill);
+            IconSlot->SetPadding(FMargin(7.f, 7.f, 7.f, 13.f));
+        }
+
+        SlotNumberText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SlotNumberText"));
+        StyleInventoryText(SlotNumberText, 11, FLinearColor(0.88f, 0.90f, 0.95f, 1.f));
+        if (UOverlaySlot* NumberSlot = Overlay->AddChildToOverlay(SlotNumberText))
+        {
+            NumberSlot->SetHorizontalAlignment(HAlign_Left);
+            NumberSlot->SetVerticalAlignment(VAlign_Top);
+            NumberSlot->SetPadding(FMargin(2.f));
+        }
+
+        QuantityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuantityText"));
+        StyleInventoryText(QuantityText, 12, FLinearColor(1.f, 0.95f, 0.72f, 1.f));
+        if (UOverlaySlot* QuantitySlot = Overlay->AddChildToOverlay(QuantityText))
+        {
+            QuantitySlot->SetHorizontalAlignment(HAlign_Right);
+            QuantitySlot->SetVerticalAlignment(VAlign_Bottom);
+            QuantitySlot->SetPadding(FMargin(2.f, 2.f, 3.f, 2.f));
+        }
+
+        EquippedText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("EquippedText"));
+        StyleInventoryText(EquippedText, 10, FLinearColor(0.45f, 0.95f, 0.45f, 1.f));
+        if (UOverlaySlot* EquippedSlot = Overlay->AddChildToOverlay(EquippedText))
+        {
+            EquippedSlot->SetHorizontalAlignment(HAlign_Left);
+            EquippedSlot->SetVerticalAlignment(VAlign_Bottom);
+            EquippedSlot->SetPadding(FMargin(3.f));
+        }
+
+        ItemNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ItemNameText"));
+        StyleInventoryText(ItemNameText, 9, FLinearColor(0.92f, 0.92f, 0.94f, 1.f));
+        ItemNameText->SetJustification(ETextJustify::Center);
+        if (UOverlaySlot* NameSlot = Overlay->AddChildToOverlay(ItemNameText))
+        {
+            NameSlot->SetHorizontalAlignment(HAlign_Fill);
+            NameSlot->SetVerticalAlignment(VAlign_Bottom);
+            NameSlot->SetPadding(FMargin(3.f, 0.f, 3.f, 1.f));
+        }
+
+        CooldownBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("CooldownBar"));
+        CooldownBar->SetFillColorAndOpacity(FLinearColor(0.25f, 0.60f, 1.f, 0.92f));
+        if (UOverlaySlot* CooldownSlot = Overlay->AddChildToOverlay(CooldownBar))
+        {
+            CooldownSlot->SetHorizontalAlignment(HAlign_Fill);
+            CooldownSlot->SetVerticalAlignment(VAlign_Bottom);
+            CooldownSlot->SetPadding(FMargin(4.f, 0.f, 4.f, 1.f));
+        }
+    }
+    else
+    {
+        if (!SlotBorder) SlotBorder = Cast<UBorder>(GetWidgetFromName(TEXT("SlotBorder")));
+        if (!ItemIcon) ItemIcon = Cast<UImage>(GetWidgetFromName(TEXT("ItemIcon")));
+        if (!QuantityText) QuantityText = Cast<UTextBlock>(GetWidgetFromName(TEXT("QuantityText")));
+        if (!SlotNumberText) SlotNumberText = Cast<UTextBlock>(GetWidgetFromName(TEXT("SlotNumberText")));
+        if (!ItemNameText) ItemNameText = Cast<UTextBlock>(GetWidgetFromName(TEXT("ItemNameText")));
+        if (!EquippedText) EquippedText = Cast<UTextBlock>(GetWidgetFromName(TEXT("EquippedText")));
+        if (!CooldownBar) CooldownBar = Cast<UProgressBar>(GetWidgetFromName(TEXT("CooldownBar")));
+    }
+}
+
+void UARPGInventoryItemSlotWidget::ApplyViewToStandardFields()
+{
+    if (SlotBorder)
+    {
+        FLinearColor Color = SlotView.bOccupied ? ResolveRarityColor() : FLinearColor(0.035f, 0.04f, 0.055f, 0.88f);
+        if (SlotView.bActive) Color = FLinearColor(0.56f, 0.40f, 0.07f, 0.98f);
+        else if (SlotView.bEquipped) Color = FLinearColor(0.07f, 0.30f, 0.12f, 0.96f);
+        SlotBorder->SetBrushColor(Color);
+    }
+
+    if (SlotNumberText)
+    {
+        SlotNumberText->SetText(SlotView.Source == EARPGInventoryUISlotSource::QuickAccess
+            ? FText::AsNumber(FMath::Max(1, SlotView.SlotNumber))
+            : FText::GetEmpty());
+        SlotNumberText->SetVisibility(SlotView.Source == EARPGInventoryUISlotSource::QuickAccess ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    }
+
+    if (ItemIcon)
+    {
+        UTexture2D* Texture = nullptr;
+        if (SlotView.ItemDefinition && !SlotView.ItemDefinition->Icon.IsNull()) Texture = SlotView.ItemDefinition->Icon.LoadSynchronous();
+        if (Texture)
+        {
+            ItemIcon->SetBrushFromTexture(Texture, false);
+            ItemIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
+        else
+        {
+            ItemIcon->SetVisibility(ESlateVisibility::Hidden);
+        }
+    }
+
+    if (QuantityText)
+    {
+        QuantityText->SetText(SlotView.bOccupied && SlotView.Quantity > 1 ? FText::AsNumber(SlotView.Quantity) : FText::GetEmpty());
+        QuantityText->SetVisibility(SlotView.bOccupied && SlotView.Quantity > 1 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    }
+
+    if (EquippedText)
+    {
+        EquippedText->SetText(SlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryEquippedMark", "E") : FText::GetEmpty());
+        EquippedText->SetVisibility(SlotView.bEquipped ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    }
+
+    if (ItemNameText)
+    {
+        const bool bShowName = SlotView.bOccupied && SlotView.Source == EARPGInventoryUISlotSource::Inventory;
+        ItemNameText->SetText(bShowName ? SlotView.DisplayName : FText::GetEmpty());
+        ItemNameText->SetVisibility(bShowName ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    }
+
+    if (CooldownBar)
+    {
+        const bool bCoolingDown = SlotView.Source == EARPGInventoryUISlotSource::QuickAccess && SlotView.CooldownRemaining > KINDA_SMALL_NUMBER;
+        CooldownBar->SetPercent(FMath::Clamp(SlotView.CooldownPercent, 0.f, 1.f));
+        CooldownBar->SetVisibility(bCoolingDown ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    }
+
+    if (SlotView.bOccupied)
+    {
+        const FText Tooltip = FText::Format(
+            NSLOCTEXT("AkumasRPGFramework", "InventorySlotTooltip", "{0}\n{1}\nQuantity: {2}\nDurability: {3}%{4}"),
+            SlotView.DisplayName,
+            SlotView.Description,
+            FText::AsNumber(FMath::Max(0, SlotView.Quantity)),
+            FText::AsNumber(FMath::RoundToInt(FMath::Clamp(SlotView.Durability, 0.f, 100.f))),
+            SlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryTooltipEquipped", "\nEquipped") : FText::GetEmpty());
+        SetToolTipText(Tooltip);
+    }
+    else
+    {
+        SetToolTipText(FText::GetEmpty());
+    }
+}
+
+FReply UARPGInventoryItemSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    // Inventory items are hosted beneath a ScrollBox. Use the tunneling/preview route for
+    // inventory presses so selection and drag detection are armed before the ScrollBox can
+    // claim the pointer gesture. Quick Access keeps its normal bubbling path.
+    if (bDragVisualOnly || !InventoryUI || SlotView.Source != EARPGInventoryUISlotSource::Inventory)
+        return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+
+    if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && SlotView.bOccupied)
+    {
+        InventoryUI->SelectInventorySlot(SlotView.SlotNumber);
+        InventoryUI->ToggleEquipInventoryItem(SlotView.ItemInstanceId);
+        return FReply::Handled();
+    }
+
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+    {
+        InventoryUI->SelectInventorySlot(SlotView.SlotNumber);
+        if (SlotView.bOccupied)
+            return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
+        return FReply::Handled();
+    }
+
+    return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply UARPGInventoryItemSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (bDragVisualOnly || !InventoryUI) return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+
+    if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && SlotView.Source == EARPGInventoryUISlotSource::Inventory && SlotView.bOccupied)
+    {
+        InventoryUI->SelectInventorySlot(SlotView.SlotNumber);
+        InventoryUI->ToggleEquipInventoryItem(SlotView.ItemInstanceId);
+        return FReply::Handled();
+    }
+
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+    {
+        if (SlotView.Source == EARPGInventoryUISlotSource::Inventory)
+            InventoryUI->SelectInventorySlot(SlotView.SlotNumber);
+
+        if (SlotView.bOccupied)
+        {
+            bPointerPressed = true;
+            return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
+        }
+        return FReply::Handled();
+    }
+
+    return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply UARPGInventoryItemSlotWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (bDragVisualOnly || !InventoryUI) return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bPointerPressed)
+    {
+        bPointerPressed = false;
+        if (SlotView.Source == EARPGInventoryUISlotSource::QuickAccess && SlotView.bOccupied)
+            InventoryUI->ActivateQuickAccessSlot(SlotView.SlotNumber);
+        else if (SlotView.Source == EARPGInventoryUISlotSource::Inventory)
+            InventoryUI->SelectInventorySlot(SlotView.SlotNumber);
+        return FReply::Handled();
+    }
+    return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+void UARPGInventoryItemSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
+{
+    Super::NativeOnDragDetected(InGeometry, InMouseEvent, OutOperation);
+    bPointerPressed = false;
+    if (bDragVisualOnly || !InventoryUI || !SlotView.bOccupied) return;
+
+    UARPGInventoryDragDropOperation* Operation = NewObject<UARPGInventoryDragDropOperation>(this);
+    if (!Operation) return;
+    Operation->Source = SlotView.Source;
+    Operation->SourceSlotNumber = SlotView.SlotNumber;
+    Operation->ItemInstanceId = SlotView.ItemInstanceId;
+    Operation->ItemId = SlotView.ItemId;
+    Operation->SourceView = SlotView;
+    Operation->InventoryUI = InventoryUI;
+    Operation->Pivot = EDragPivot::MouseDown;
+
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        if (UARPGInventoryItemSlotWidget* DragVisual = CreateWidget<UARPGInventoryItemSlotWidget>(PC, GetClass()))
+        {
+            DragVisual->InitializeAsDragVisual(SlotView);
+            Operation->DefaultDragVisual = DragVisual;
+        }
+    }
+    OutOperation = Operation;
+}
+
+bool UARPGInventoryItemSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+    UARPGInventoryDragDropOperation* Operation = Cast<UARPGInventoryDragDropOperation>(InOperation);
+    UARPGInventoryUIComponent* UI = InventoryUI ? InventoryUI.Get() : (Operation ? Operation->InventoryUI.Get() : nullptr);
+    if (!Operation || !UI || Operation->bDropHandled) return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+
+    bool bAccepted = false;
+    if (SlotView.Source == EARPGInventoryUISlotSource::QuickAccess)
+    {
+        if (Operation->Source == EARPGInventoryUISlotSource::Inventory)
+            bAccepted = UI->AssignInventoryItemToQuickAccess(Operation->ItemInstanceId, SlotView.SlotNumber);
+        else if (Operation->Source == EARPGInventoryUISlotSource::QuickAccess)
+            bAccepted = UI->SwapQuickAccessSlots(Operation->SourceSlotNumber, SlotView.SlotNumber);
+    }
+    else if (SlotView.Source == EARPGInventoryUISlotSource::Inventory && Operation->Source == EARPGInventoryUISlotSource::QuickAccess)
+    {
+        bAccepted = UI->ClearQuickAccessSlot(Operation->SourceSlotNumber, UI->bUnequipActiveItemWhenDraggedOff);
+    }
+
+    if (bAccepted)
+    {
+        Operation->bDropHandled = true;
+        return true;
+    }
+    return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+}
+
+void UARPGInventoryItemSlotWidget::NativeOnDragCancelled(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+    UARPGInventoryDragDropOperation* Operation = Cast<UARPGInventoryDragDropOperation>(InOperation);
+    if (Operation && !Operation->bDropHandled && Operation->Source == EARPGInventoryUISlotSource::QuickAccess && Operation->InventoryUI)
+    {
+        Operation->InventoryUI->ClearQuickAccessSlot(Operation->SourceSlotNumber, Operation->InventoryUI->bUnequipActiveItemWhenDraggedOff);
+        Operation->bDropHandled = true;
+    }
+    Super::NativeOnDragCancelled(InDragDropEvent, InOperation);
+}
+
+void UARPGInventoryPanelWidget::NativeOnInitialized()
+{
+    Super::NativeOnInitialized();
+    EnsureNativeLayoutOrBindings();
+    if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleCloseClicked);
+}
+
+void UARPGInventoryPanelWidget::InitializeInventoryUI(AARPGCharacter* InCharacter, UARPGInventoryUIComponent* InInventoryUIComponent)
+{
+    ObservedCharacter = InCharacter;
+    InventoryUI = InInventoryUIComponent;
+    EnsureNativeLayoutOrBindings();
+    if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleCloseClicked);
+    RebuildInventoryGrid();
+    RefreshInventoryUI();
+}
+
+void UARPGInventoryPanelWidget::EnsureNativeLayoutOrBindings()
+{
+    if (!WidgetTree) return;
+    if (!WidgetTree->RootWidget)
+    {
+        UOverlay* Root = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("InventoryUIRoot"));
+        WidgetTree->RootWidget = Root;
+
+        UBorder* ScreenDim = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryUIScreenDim"));
+        ScreenDim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.38f));
+        ScreenDim->SetVisibility(ESlateVisibility::HitTestInvisible);
+        if (UOverlaySlot* DimSlot = Root->AddChildToOverlay(ScreenDim))
+        {
+            DimSlot->SetHorizontalAlignment(HAlign_Fill);
+            DimSlot->SetVerticalAlignment(VAlign_Fill);
+        }
+
+        USizeBox* PanelSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("InventoryUIPanelSize"));
+        PanelSize->SetWidthOverride(880.f);
+        PanelSize->SetHeightOverride(650.f);
+        if (UOverlaySlot* PanelSlot = Root->AddChildToOverlay(PanelSize))
+        {
+            PanelSlot->SetHorizontalAlignment(HAlign_Center);
+            PanelSlot->SetVerticalAlignment(VAlign_Center);
+            PanelSlot->SetPadding(FMargin(24.f, 24.f, 24.f, 120.f));
+        }
+
+        UBorder* PanelBackground = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryUIPanelBackground"));
+        PanelBackground->SetPadding(FMargin(16.f));
+        PanelBackground->SetBrushColor(FLinearColor(0.012f, 0.015f, 0.024f, 0.97f));
+        PanelBackground->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        PanelSize->SetContent(PanelBackground);
+
+        UVerticalBox* MainStack = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("InventoryUIMainStack"));
+        PanelBackground->SetContent(MainStack);
+
+        UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("InventoryUIHeader"));
+        if (UVerticalBoxSlot* HeaderSlot = MainStack->AddChildToVerticalBox(Header)) HeaderSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+
+        USizeBox* TitleBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+        TitleBox->SetWidthOverride(420.f);
+        UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("InventoryTitleText"));
+        Title->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryTitle", "Inventory"));
+        StyleInventoryText(Title, 26, FLinearColor(0.95f, 0.78f, 0.28f, 1.f));
+        TitleBox->SetContent(Title);
+        Header->AddChildToHorizontalBox(TitleBox);
+
+        USizeBox* CapacityBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+        CapacityBox->SetWidthOverride(300.f);
+        CapacityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CapacityText"));
+        CapacityText->SetJustification(ETextJustify::Right);
+        StyleInventoryText(CapacityText, 14, FLinearColor(0.78f, 0.81f, 0.88f, 1.f));
+        CapacityBox->SetContent(CapacityText);
+        Header->AddChildToHorizontalBox(CapacityBox);
+
+        USizeBox* CloseBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+        CloseBox->SetWidthOverride(96.f);
+        CloseBox->SetHeightOverride(36.f);
+        CloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CloseButton"));
+        UTextBlock* CloseLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+        CloseLabel->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryClose", "Close"));
+        CloseLabel->SetJustification(ETextJustify::Center);
+        StyleInventoryText(CloseLabel, 13);
+        CloseButton->AddChild(CloseLabel);
+        CloseBox->SetContent(CloseButton);
+        Header->AddChildToHorizontalBox(CloseBox);
+
+        UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("InventoryScroll"));
+        if (UVerticalBoxSlot* ScrollSlot = MainStack->AddChildToVerticalBox(Scroll))
+        {
+            FSlateChildSize Fill;
+            Fill.SizeRule = ESlateSizeRule::Fill;
+            ScrollSlot->SetSize(Fill);
+        }
+
+        InventoryGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(), TEXT("InventoryGrid"));
+        InventoryGrid->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        Scroll->AddChild(InventoryGrid);
+
+        UBorder* DetailBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventorySelectionBorder"));
+        DetailBorder->SetPadding(FMargin(10.f));
+        DetailBorder->SetBrushColor(FLinearColor(0.025f, 0.03f, 0.045f, 0.96f));
+        if (UVerticalBoxSlot* DetailSlot = MainStack->AddChildToVerticalBox(DetailBorder)) DetailSlot->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+
+        UVerticalBox* DetailStack = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+        DetailBorder->SetContent(DetailStack);
+        SelectedItemNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SelectedItemNameText"));
+        StyleInventoryText(SelectedItemNameText, 16, FLinearColor(0.94f, 0.77f, 0.30f, 1.f));
+        DetailStack->AddChildToVerticalBox(SelectedItemNameText);
+        SelectedItemDetailsText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SelectedItemDetailsText"));
+        SelectedItemDetailsText->SetAutoWrapText(true);
+        StyleInventoryText(SelectedItemDetailsText, 11, FLinearColor(0.76f, 0.79f, 0.86f, 1.f));
+        DetailStack->AddChildToVerticalBox(SelectedItemDetailsText);
+
+        UTextBlock* HelpText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("InventoryHelpText"));
+        HelpText->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryHelp", "Drag an item to Quick Access to assign it. Drag Quick Access slots to rearrange them. Drag a Quick Access item away to clear it. Right-click an equippable inventory item to equip/unequip."));
+        HelpText->SetAutoWrapText(true);
+        StyleInventoryText(HelpText, 10, FLinearColor(0.58f, 0.62f, 0.70f, 1.f));
+        if (UVerticalBoxSlot* HelpSlot = MainStack->AddChildToVerticalBox(HelpText)) HelpSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+    }
+    else
+    {
+        if (!InventoryGrid) InventoryGrid = Cast<UUniformGridPanel>(GetWidgetFromName(TEXT("InventoryGrid")));
+        if (!CapacityText) CapacityText = Cast<UTextBlock>(GetWidgetFromName(TEXT("CapacityText")));
+        if (!SelectedItemNameText) SelectedItemNameText = Cast<UTextBlock>(GetWidgetFromName(TEXT("SelectedItemNameText")));
+        if (!SelectedItemDetailsText) SelectedItemDetailsText = Cast<UTextBlock>(GetWidgetFromName(TEXT("SelectedItemDetailsText")));
+        if (!CloseButton) CloseButton = Cast<UButton>(GetWidgetFromName(TEXT("CloseButton")));
+    }
+}
+
+void UARPGInventoryPanelWidget::RebuildInventoryGrid()
+{
+    if (!InventoryUI || !InventoryGrid || !WidgetTree) return;
+    InventoryGrid->ClearChildren();
+    RuntimeSlots.Reset();
+
+    const int32 Columns = FMath::Clamp(InventoryUI->InventoryColumns, 1, 12);
+    const int32 SlotCount = InventoryUI->GetInventoryDisplaySlotCount();
+    TSubclassOf<UARPGInventoryItemSlotWidget> SlotClass = InventoryUI->InventorySlotWidgetClass;
+    if (!SlotClass) SlotClass = UARPGInventoryItemSlotWidget::StaticClass();
+
+    for (int32 SlotNumber = 1; SlotNumber <= SlotCount; ++SlotNumber)
+    {
+        USizeBox* SlotSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("InventorySlotSize_%d"), SlotNumber)));
+        SlotSize->SetWidthOverride(FMath::Clamp(InventoryUI->InventorySlotSize, 48.f, 160.f));
+        SlotSize->SetHeightOverride(FMath::Clamp(InventoryUI->InventorySlotSize, 48.f, 160.f));
+        SlotSize->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+        UARPGInventoryItemSlotWidget* SlotWidget = WidgetTree->ConstructWidget<UARPGInventoryItemSlotWidget>(SlotClass, FName(*FString::Printf(TEXT("InventorySlot_%d"), SlotNumber)));
+        SlotWidget->InitializeInventorySlot(InventoryUI, EARPGInventoryUISlotSource::Inventory, SlotNumber);
+        SlotSize->SetContent(SlotWidget);
+
+        const int32 Index = SlotNumber - 1;
+        if (UUniformGridSlot* GridSlot = InventoryGrid->AddChildToUniformGrid(SlotSize, Index / Columns, Index % Columns))
+            GridSlot->SetHorizontalAlignment(HAlign_Center);
+        RuntimeSlots.Add(SlotWidget);
+    }
+}
+
+void UARPGInventoryPanelWidget::RefreshInventoryUI()
+{
+    if (!InventoryUI) return;
+    EnsureNativeLayoutOrBindings();
+    if (RuntimeSlots.Num() != InventoryUI->GetInventoryDisplaySlotCount()) RebuildInventoryGrid();
+
+    int32 UsedSlots = 0;
+    for (int32 Index = 0; Index < RuntimeSlots.Num(); ++Index)
+    {
+        FARPGInventoryUISlotView View;
+        if (InventoryUI->GetInventorySlotView(Index + 1, View))
+        {
+            RuntimeSlots[Index]->SetSlotView(View);
+            if (View.bOccupied) ++UsedSlots;
+        }
+    }
+
+    if (CapacityText)
+    {
+        CapacityText->SetText(FText::Format(NSLOCTEXT("AkumasRPGFramework", "InventoryCapacity", "Slots: {0} / {1}"),
+            FText::AsNumber(UsedSlots), FText::AsNumber(InventoryUI->GetInventoryDisplaySlotCount())));
+    }
+
+    if (SelectedSlotView.SlotNumber > 0)
+    {
+        FARPGInventoryUISlotView RefreshedSelection;
+        if (InventoryUI->GetInventorySlotView(SelectedSlotView.SlotNumber, RefreshedSelection)) SelectedSlotView = RefreshedSelection;
+    }
+    UpdateSelectionText();
+    BP_OnInventoryUIRefreshed();
+}
+
+void UARPGInventoryPanelWidget::SetSelectedSlotView(const FARPGInventoryUISlotView& InView)
+{
+    SelectedSlotView = InView;
+    UpdateSelectionText();
+    BP_OnInventorySelectionChanged(SelectedSlotView);
+}
+
+void UARPGInventoryPanelWidget::UpdateSelectionText()
+{
+    if (SelectedItemNameText)
+        SelectedItemNameText->SetText(SelectedSlotView.bOccupied ? SelectedSlotView.DisplayName : NSLOCTEXT("AkumasRPGFramework", "InventoryNoSelection", "Select an item"));
+
+    if (SelectedItemDetailsText)
+    {
+        if (!SelectedSlotView.bOccupied)
+        {
+            SelectedItemDetailsText->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryNoSelectionDetail", "Item details will appear here."));
+            return;
+        }
+
+        SelectedItemDetailsText->SetText(FText::Format(
+            NSLOCTEXT("AkumasRPGFramework", "InventorySelectedDetail", "{0}\nRarity: {1}   Quantity: {2}   Durability: {3}%{4}{5}"),
+            SelectedSlotView.Description,
+            RarityText(SelectedSlotView.Rarity),
+            FText::AsNumber(FMath::Max(0, SelectedSlotView.Quantity)),
+            FText::AsNumber(FMath::RoundToInt(FMath::Clamp(SelectedSlotView.Durability, 0.f, 100.f))),
+            SelectedSlotView.bBound ? NSLOCTEXT("AkumasRPGFramework", "InventoryBoundDetail", "   Bound") : FText::GetEmpty(),
+            SelectedSlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryEquippedDetail", "   Equipped") : FText::GetEmpty()));
+    }
+}
+
+void UARPGInventoryPanelWidget::RequestCloseInventoryUI()
+{
+    if (InventoryUI) InventoryUI->CloseInventoryUI();
+    else RemoveFromParent();
+}
+
+void UARPGInventoryPanelWidget::HandleCloseClicked()
+{
+    RequestCloseInventoryUI();
+}
+
+bool UARPGInventoryPanelWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+    UARPGInventoryDragDropOperation* Operation = Cast<UARPGInventoryDragDropOperation>(InOperation);
+    if (Operation && InventoryUI && !Operation->bDropHandled && Operation->Source == EARPGInventoryUISlotSource::QuickAccess)
+    {
+        if (InventoryUI->ClearQuickAccessSlot(Operation->SourceSlotNumber, InventoryUI->bUnequipActiveItemWhenDraggedOff))
+        {
+            Operation->bDropHandled = true;
+            return true;
+        }
+    }
+    return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+}
+
+void UARPGQuickAccessBarWidget::NativeOnInitialized()
+{
+    Super::NativeOnInitialized();
+    // The hotbar is a full-screen viewport widget layered above Inventory. The top-level
+    // UUserWidget itself must not be a full-screen hit target, otherwise it blocks every
+    // lower-Z Inventory control. SelfHitTestInvisible keeps the hotbar's child slots fully
+    // interactive while allowing pointer hits to pass through everywhere else.
+    SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    EnsureNativeLayoutOrBindings();
+}
+
+void UARPGQuickAccessBarWidget::InitializeQuickAccessUI(AARPGCharacter* InCharacter, UARPGInventoryUIComponent* InInventoryUIComponent)
+{
+    ObservedCharacter = InCharacter;
+    InventoryUI = InInventoryUIComponent;
+    EnsureNativeLayoutOrBindings();
+    RebuildQuickAccessSlots();
+    RefreshQuickAccessUI();
+}
+
+void UARPGQuickAccessBarWidget::EnsureNativeLayoutOrBindings()
+{
+    if (!WidgetTree) return;
+    if (!WidgetTree->RootWidget)
+    {
+        UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("QuickAccessRoot"));
+        Root->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        WidgetTree->RootWidget = Root;
+
+        UBorder* BarBackground = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("QuickAccessBackground"));
+        BarBackground->SetPadding(FMargin(7.f));
+        BarBackground->SetBrushColor(FLinearColor(0.008f, 0.010f, 0.016f, 0.92f));
+        UCanvasPanelSlot* CanvasSlot = Root->AddChildToCanvas(BarBackground);
+        if (CanvasSlot)
+        {
+            CanvasSlot->SetAnchors(FAnchors(0.5f, 1.f));
+            CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+            CanvasSlot->SetPosition(FVector2D(0.f, -24.f));
+            CanvasSlot->SetAutoSize(true);
+        }
+
+        QuickAccessBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("QuickAccessBox"));
+        BarBackground->SetContent(QuickAccessBox);
+    }
+    else
+    {
+        if (!QuickAccessBox) QuickAccessBox = Cast<UHorizontalBox>(GetWidgetFromName(TEXT("QuickAccessBox")));
+    }
+}
+
+void UARPGQuickAccessBarWidget::RebuildQuickAccessSlots()
+{
+    if (!InventoryUI || !QuickAccessBox || !WidgetTree) return;
+    QuickAccessBox->ClearChildren();
+    RuntimeSlots.Reset();
+
+    const int32 SlotCount = InventoryUI->GetQuickAccessDisplaySlotCount();
+    TSubclassOf<UARPGInventoryItemSlotWidget> SlotClass = InventoryUI->QuickAccessSlotWidgetClass;
+    if (!SlotClass) SlotClass = UARPGInventoryItemSlotWidget::StaticClass();
+
+    for (int32 SlotNumber = 1; SlotNumber <= SlotCount; ++SlotNumber)
+    {
+        USizeBox* SlotSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("QuickAccessSlotSize_%d"), SlotNumber)));
+        const float Size = FMath::Clamp(InventoryUI->QuickAccessSlotSize, 48.f, 160.f);
+        SlotSize->SetWidthOverride(Size);
+        SlotSize->SetHeightOverride(Size);
+
+        UARPGInventoryItemSlotWidget* SlotWidget = WidgetTree->ConstructWidget<UARPGInventoryItemSlotWidget>(SlotClass, FName(*FString::Printf(TEXT("QuickAccessSlot_%d"), SlotNumber)));
+        SlotWidget->InitializeInventorySlot(InventoryUI, EARPGInventoryUISlotSource::QuickAccess, SlotNumber);
+        SlotSize->SetContent(SlotWidget);
+        if (UHorizontalBoxSlot* BoxSlot = QuickAccessBox->AddChildToHorizontalBox(SlotSize)) BoxSlot->SetPadding(FMargin(3.f));
+        RuntimeSlots.Add(SlotWidget);
+    }
+}
+
+void UARPGQuickAccessBarWidget::RefreshQuickAccessUI()
+{
+    if (!InventoryUI) return;
+    EnsureNativeLayoutOrBindings();
+    if (RuntimeSlots.Num() != InventoryUI->GetQuickAccessDisplaySlotCount()) RebuildQuickAccessSlots();
+
+    for (int32 Index = 0; Index < RuntimeSlots.Num(); ++Index)
+    {
+        FARPGInventoryUISlotView View;
+        if (InventoryUI->GetQuickAccessSlotView(Index + 1, View)) RuntimeSlots[Index]->SetSlotView(View);
+    }
+    BP_OnQuickAccessUIRefreshed();
+}

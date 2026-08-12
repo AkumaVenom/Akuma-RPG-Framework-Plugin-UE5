@@ -1010,8 +1010,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21001 or descriptor.get("VersionName") != "2.10.1-alpha":
-        issues.append("package descriptor must identify v2.10.1-alpha")
+    if descriptor.get("Version") != 21202 or descriptor.get("VersionName") != "2.12.2-alpha":
+        issues.append("package descriptor must identify v2.12.2-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1301,6 +1301,169 @@ if character_header_210.exists() and character_cpp_210.exists():
     if 'CreateDefaultSubobject<UARPGCharacterInfoComponent>(TEXT("CharacterInfo"))' not in cc210 or "CharacterInfo->SetupAttachment(GetRootComponent())" not in cc210:
         issues.append("v2.10 AARPGCharacter must construct and attach CharacterInfo component")
 
+# v2.11 complete local JRPG Stats UI requirements.
+stats_ui_header = root / "Public" / "Components" / "ARPGStatsUIComponent.h"
+stats_ui_cpp = root / "Private" / "Components" / "ARPGStatsUIComponent.cpp"
+stats_panel_header = root / "Public" / "UI" / "ARPGStatsPanelWidget.h"
+stats_panel_cpp = root / "Private" / "UI" / "ARPGStatsPanelWidget.cpp"
+if not all(p.exists() for p in (stats_ui_header, stats_ui_cpp, stats_panel_header, stats_panel_cpp)):
+    issues.append("v2.11 requires first-class complete JRPG Stats UI component/widget")
+else:
+    suh = stats_ui_header.read_text(errors="replace")
+    suc = stats_ui_cpp.read_text(errors="replace")
+    swh = stats_panel_header.read_text(errors="replace")
+    swc = stats_panel_cpp.read_text(errors="replace")
+    for required in ("Stats Widget Class", "OpenStatsUI", "CloseStatsUI", "ToggleStatsUI", "GetStatsUISnapshot"):
+        if required not in suh:
+            issues.append(f"v2.11 StatsUI component missing API/config: {required}")
+    for required in ("SetIsReplicatedByDefault(false)", "IsLocallyControlled()", "NM_DedicatedServer", "AddToPlayerScreen", "SetTimer(RefreshTimerHandle"):
+        if required not in suc:
+            issues.append(f"v2.11 StatsUI runtime missing local/performance path: {required}")
+    if "PrimaryComponentTick.bCanEverTick = false" not in suc:
+        issues.append("v2.11 StatsUI component must remain no-Tick")
+    for required in ("FARPGStatsUISnapshot", "BP_OnStatsUIUpdated", "CloseButton", "StrengthPlusButton", "LuckPlusButton"):
+        if required not in swh:
+            issues.append(f"v2.11 Stats panel missing ready/custom binding: {required}")
+    for required in ("SpendAttributePoints(Stat, 1)", "AddUniqueDynamic", "RequestCloseStatsUI", "MeleeAttackPowerText", "MovementSpeedText"):
+        if required not in swc:
+            issues.append(f"v2.11 Stats panel runtime missing: {required}")
+
+character_header_211 = root / "Public" / "Actors" / "ARPGCharacter.h"
+character_cpp_211 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+if character_header_211.exists() and character_cpp_211.exists():
+    ch211 = character_header_211.read_text(errors="replace")
+    cc211 = character_cpp_211.read_text(errors="replace")
+    if "TObjectPtr<UARPGStatsUIComponent> StatsUI" not in ch211:
+        issues.append("v2.11 AARPGCharacter must expose inherited StatsUI component")
+    if 'CreateDefaultSubobject<UARPGStatsUIComponent>(TEXT("StatsUI"))' not in cc211:
+        issues.append("v2.11 AARPGCharacter must construct StatsUI component")
+
+readme_path = plugin_root / "README.md"
+if readme_path.exists():
+    readme_lines = readme_path.read_text(errors="replace").splitlines()
+    splash = '<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/42618c54-4728-4a36-9d18-9e2b8181c455" />'
+    if splash not in readme_lines[:6]:
+        issues.append("README GitHub splash image must remain at the top")
+
+# v2.12 complete ready-to-use Inventory + Quick Access UI requirements.
+inventory_ui_header = root / "Public" / "Components" / "ARPGInventoryUIComponent.h"
+inventory_ui_cpp = root / "Private" / "Components" / "ARPGInventoryUIComponent.cpp"
+inventory_widgets_header = root / "Public" / "UI" / "ARPGInventoryWidgets.h"
+inventory_widgets_cpp = root / "Private" / "UI" / "ARPGInventoryWidgets.cpp"
+if not all(p.exists() for p in (inventory_ui_header, inventory_ui_cpp, inventory_widgets_header, inventory_widgets_cpp)):
+    issues.append("v2.12 requires first-class ready Inventory + Quick Access UI component/widgets")
+else:
+    iuh = inventory_ui_header.read_text(errors="replace")
+    iuc = inventory_ui_cpp.read_text(errors="replace")
+    iwh = inventory_widgets_header.read_text(errors="replace")
+    iwc = inventory_widgets_cpp.read_text(errors="replace")
+    for required in (
+        "Inventory Widget Class",
+        "Quick Access Widget Class",
+        "Inventory Slot Widget Class",
+        "Quick Access Slot Widget Class",
+        "OpenInventoryUI",
+        "CloseInventoryUI",
+        "ToggleInventoryUI",
+        "AssignInventoryItemToQuickAccess",
+        "ClearQuickAccessSlot",
+    ):
+        if required not in iuh:
+            issues.append(f"v2.12 InventoryUI API/config missing: {required}")
+    for required in (
+        "PrimaryComponentTick.bCanEverTick = false",
+        "SetIsReplicatedByDefault(false)",
+        "IsLocallyControlled()",
+        "NM_DedicatedServer",
+        "OnInventoryChanged.AddUniqueDynamic",
+        "OnQuickAccessChanged.AddUniqueDynamic",
+        "SetTimer(CooldownRefreshTimer",
+        "ClearTimer(CooldownRefreshTimer)",
+    ):
+        if required not in iuc:
+            issues.append(f"v2.12 InventoryUI runtime missing local/event-driven path: {required}")
+    if "DOREPLIFETIME" in iuc:
+        issues.append("v2.12 InventoryUI presentation component must remain local-only and non-replicated")
+    for required in (
+        "FARPGInventoryUISlotView",
+        "UARPGInventoryDragDropOperation",
+        "UARPGInventoryItemSlotWidget",
+        "UARPGInventoryPanelWidget",
+        "UARPGQuickAccessBarWidget",
+        "NativeOnDragDetected",
+        "NativeOnDrop",
+        "NativeOnDragCancelled",
+        "BP_OnInventorySlotUpdated",
+    ):
+        if required not in iwh:
+            issues.append(f"v2.12 Inventory UI widget API missing: {required}")
+    for required in (
+        "DetectDragIfPressed",
+        "AssignInventoryItemToQuickAccess(Operation->ItemInstanceId",
+        "SwapQuickAccessSlots(Operation->SourceSlotNumber",
+        "ClearQuickAccessSlot(Operation->SourceSlotNumber",
+        "Root->SetVisibility(ESlateVisibility::SelfHitTestInvisible)",
+        "CreateWidget<UARPGInventoryItemSlotWidget>(PC, GetClass())",
+    ):
+        if required not in iwc:
+            issues.append(f"v2.12 Inventory UI drag/drop/runtime missing: {required}")
+    for required in (
+        "UARPGInventoryItemSlotWidget::NativeOnPreviewMouseButtonDown",
+        "SlotView.Source != EARPGInventoryUISlotSource::Inventory",
+        "ScreenDim->SetVisibility(ESlateVisibility::HitTestInvisible)",
+        "InventoryGrid->SetVisibility(ESlateVisibility::SelfHitTestInvisible)",
+        "SlotSize->SetVisibility(ESlateVisibility::SelfHitTestInvisible)",
+    ):
+        if required not in iwc:
+            issues.append(f"v2.12.2 Inventory interaction fix missing: {required}")
+    for required in (
+        "SetVisibility(ESlateVisibility::SelfHitTestInvisible);",
+    ):
+        if required not in iwc:
+            issues.append(f"v2.12.2 Quick Access top-level hit-test fix missing from widget: {required}")
+    for required in (
+        "ActiveQuickAccessWidget->SetVisibility(bShowQuickAccessHUD ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed)",
+        "ActiveQuickAccessWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible)",
+    ):
+        if required not in iuc:
+            issues.append(f"v2.12.2 Quick Access top-level hit-test fix missing from component: {required}")
+    if "ActiveQuickAccessWidget->SetVisibility(bShowQuickAccessHUD ? ESlateVisibility::Visible" in iuc:
+        issues.append("v2.12.2 Quick Access top-level viewport widget must not be Visible/hit-testable while shown")
+
+quick_access_header_212 = root / "Public" / "Components" / "ARPGQuickAccessComponent.h"
+quick_access_cpp_212 = root / "Private" / "Components" / "ARPGQuickAccessComponent.cpp"
+if quick_access_header_212.exists() and quick_access_cpp_212.exists():
+    qh212 = quick_access_header_212.read_text(errors="replace")
+    qc212 = quick_access_cpp_212.read_text(errors="replace")
+    for required in ("ClearSlotAndUnequipActive", "ServerClearSlotAndUnequipActive", "ClearSlotAndUnequipActiveAuthority"):
+        if required not in qh212:
+            issues.append(f"v2.12 atomic Quick Access clear API missing: {required}")
+    for required in ("Equipment->UnequipItem(EquippedInstanceId)", "return ClearSlotAuthority(SlotNumber);", "ServerClearSlotAndUnequipActive_Implementation"):
+        if required not in qc212:
+            issues.append(f"v2.12 atomic Quick Access clear runtime missing: {required}")
+
+character_header_212 = root / "Public" / "Actors" / "ARPGCharacter.h"
+character_cpp_212 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+if character_header_212.exists() and character_cpp_212.exists():
+    ch212 = character_header_212.read_text(errors="replace")
+    cc212 = character_cpp_212.read_text(errors="replace")
+    if "TObjectPtr<UARPGInventoryUIComponent> InventoryUI" not in ch212:
+        issues.append("v2.12 AARPGCharacter must expose inherited InventoryUI component")
+    if 'CreateDefaultSubobject<UARPGInventoryUIComponent>(TEXT("InventoryUI"))' not in cc212:
+        issues.append("v2.12 AARPGCharacter must construct InventoryUI component")
+    for required in ("OpenInventoryUI", "CloseInventoryUI", "ToggleInventoryUI", "IsInventoryUIOpen"):
+        if required not in ch212 or f"AARPGCharacter::{required}" not in cc212:
+            issues.append(f"v2.12 AARPGCharacter Inventory UI wrapper missing: {required}")
+
+inventory_ui_doc = plugin_root / "Docs" / "INVENTORY_UI.md"
+if not inventory_ui_doc.exists():
+    issues.append("v2.12 Inventory UI documentation is missing")
+else:
+    inv_doc = inventory_ui_doc.read_text(errors="replace")
+    for required in ("Inventory item -> Quick Access slot", "Quick Access slot -> Quick Access slot", "Clear Slot And Unequip Active", "No permanent UI/component Tick"):
+        if required not in inv_doc:
+            issues.append(f"v2.12 Inventory UI documentation missing behavior: {required}")
+
 markers = []
 for p in source_files:
     for line_no, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
@@ -1319,3 +1482,4 @@ result = {
 }
 print(json.dumps(result, indent=2))
 sys.exit(1 if issues else 0)
+

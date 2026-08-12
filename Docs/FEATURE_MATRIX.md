@@ -1,3 +1,16 @@
+## Ready Inventory + Quick Access UI (v2.12.2)
+
+| System | Status | Notes |
+|---|---|---|
+| Inherited InventoryUI component | Implemented | Present on every `AARPGCharacter`; local player only, non-replicated, dedicated-server UI suppressed. |
+| Native Inventory panel | Implemented | Runtime items, Item Definition icons/names/descriptions, quantity, rarity, durability, bound/equipped state, capacity, selection detail and Close button. |
+| Native Quick Access HUD | Implemented | Auto-created after local possession; slot numbers, icons, owned quantity, active/equipped highlighting and live cooldown display. |
+| Inventory -> Quick Access drag/drop | Implemented | Assigns the exact owned runtime Inventory `InstanceId`; existing Quick Access duplicate/ownership validation remains authoritative. |
+| Quick Access rearrange | Implemented | Slot-to-slot drag uses existing server-authoritative `SwapSlots`. |
+| Drag-away clear / unequip | Implemented | Quick Access -> Inventory/outside clears the assignment; optional atomic authority path unequips the active held item first while preserving Inventory ownership. |
+| Custom Widget Blueprint support | Implemented | Exposed panel/bar/slot Widget Classes plus standard child-name bindings and update events. |
+| Performance | Implemented | Event-driven refresh, no permanent Tick; short local timer only while a visible consumable cooldown is active. |
+
 ## Automatic proximity character / NPC info popups (v2.10.1)
 
 | System | Status | Notes |
@@ -120,3 +133,14 @@ Legend:
 - Social ↔ Stay-Together cohesion ownership arbitration: **Implemented**
 - Cohesion hysteresis recovery reissue until recovery radius: **Implemented**
 - Wanderer yields to active Spline route: **Implemented**
+
+## v2.11 Player Stats UI
+
+- Inherited local-player `StatsUI` component: **Implemented**
+- Ready-to-use native complete JRPG stats panel: **Implemented**
+- One-call Open / Close / Toggle Blueprint API: **Implemented**
+- Built-in Close button: **Implemented**
+- Server-authoritative Attribute Point `+` buttons: **Implemented**
+- Complete primary / allocation / derived / vitals / XP snapshot: **Implemented**
+- Custom Widget Blueprint subclass + standard-name auto binding: **Implemented**
+- No permanent UI/component Tick and no replicated UI state: **Implemented**

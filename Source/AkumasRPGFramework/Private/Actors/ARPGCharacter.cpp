@@ -28,6 +28,8 @@
 #include "Components/ARPGWoodcuttingComponent.h"
 #include "Components/ARPGFootstepComponent.h"
 #include "Components/ARPGCharacterInfoComponent.h"
+#include "Components/ARPGStatsUIComponent.h"
+#include "Components/ARPGInventoryUIComponent.h"
 #include "Gathering/ARPGTree.h"
 #include "Net/UnrealNetwork.h"
 
@@ -65,6 +67,8 @@ AARPGCharacter::AARPGCharacter()
     Footsteps = CreateDefaultSubobject<UARPGFootstepComponent>(TEXT("Footsteps"));
     CharacterInfo = CreateDefaultSubobject<UARPGCharacterInfoComponent>(TEXT("CharacterInfo"));
     CharacterInfo->SetupAttachment(GetRootComponent());
+    StatsUI = CreateDefaultSubobject<UARPGStatsUIComponent>(TEXT("StatsUI"));
+    InventoryUI = CreateDefaultSubobject<UARPGInventoryUIComponent>(TEXT("InventoryUI"));
 }
 
 void AARPGCharacter::BeginPlay()
@@ -89,6 +93,7 @@ void AARPGCharacter::PossessedBy(AController* NewController)
     Super::PossessedBy(NewController);
     if (AbilitySystem) AbilitySystem->InitAbilityActorInfo(this, this);
     if (Footsteps) Footsteps->RefreshFootstepRuntime();
+    if (InventoryUI) InventoryUI->HandleOwnerControlChanged();
     if (HasAuthority() && NewController && NewController->IsPlayerController())
     {
         const UARPGDeveloperSettings* Settings = GetDefault<UARPGDeveloperSettings>();
@@ -109,6 +114,7 @@ void AARPGCharacter::PawnClientRestart()
 {
     Super::PawnClientRestart();
     if (Footsteps) Footsteps->RefreshFootstepRuntime();
+    if (InventoryUI) InventoryUI->HandleOwnerControlChanged();
 }
 
 void AARPGCharacter::EnsureCharacterId()
@@ -206,4 +212,45 @@ bool AARPGCharacter::ChopTreeOnce(AARPGTree* Tree)
 void AARPGCharacter::StopWoodcutting()
 {
     if (Woodcutting) Woodcutting->StopWoodcutting();
+}
+
+
+bool AARPGCharacter::OpenStatsUI()
+{
+    return StatsUI ? StatsUI->OpenStatsUI() : false;
+}
+
+bool AARPGCharacter::CloseStatsUI()
+{
+    return StatsUI ? StatsUI->CloseStatsUI() : false;
+}
+
+bool AARPGCharacter::ToggleStatsUI()
+{
+    return StatsUI ? StatsUI->ToggleStatsUI() : false;
+}
+
+bool AARPGCharacter::IsStatsUIOpen() const
+{
+    return StatsUI ? StatsUI->IsStatsUIOpen() : false;
+}
+
+bool AARPGCharacter::OpenInventoryUI()
+{
+    return InventoryUI ? InventoryUI->OpenInventoryUI() : false;
+}
+
+bool AARPGCharacter::CloseInventoryUI()
+{
+    return InventoryUI ? InventoryUI->CloseInventoryUI() : false;
+}
+
+bool AARPGCharacter::ToggleInventoryUI()
+{
+    return InventoryUI ? InventoryUI->ToggleInventoryUI() : false;
+}
+
+bool AARPGCharacter::IsInventoryUIOpen() const
+{
+    return InventoryUI ? InventoryUI->IsInventoryUIOpen() : false;
 }
