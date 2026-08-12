@@ -1,5 +1,7 @@
 # Akuma's RPG Framework — UE 5.8
 
+<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/42618c54-4728-4a36-9d18-9e2b8181c455" />
+
 **Akuma's RPG Framework** is a source-first Unreal Engine 5.8 gameplay framework for building large single-player RPGs while keeping authoritative multiplayer paths available from day one.
 
 The design goal is simple: create content with Data Assets, assign components/definitions in the editor, and let shared C++ systems handle the repetitive RPG plumbing—saving, replication, item movement, quest progress, factions, crafting, spawning, death/respawn, chat routing, and cross-system events.
