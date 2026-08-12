@@ -1,5 +1,30 @@
 # Akuma RPG Framework Changelog
 
+## v2.10.1-alpha — NPC Info Popup Runtime Visibility Fix
+- Fixed a runtime blocker where `UARPGCharacterInfoComponent` permanently set `PrimaryComponentTick.bCanEverTick = false`. Because the component derives from `UWidgetComponent`, this also disabled Unreal's own screen-space projection/rendering TickComponent path, allowing proximity state to become visible internally while nothing could appear on screen.
+- CharacterInfo now keeps WidgetComponent ticking available but starts disabled, enables native component ticking only while an overhead popup is visible, and disables it again after hiding. Proximity decisions remain on the existing staggered timer and do not move into Tick.
+- Preserves the Widget Class selected on the inherited CharacterInfo component instead of clearing it during lazy/far release. Runtime widget instances can still be retired and recreated without destroying the authored class or screen-space lifecycle.
+- Explicitly requests a render update when showing and removes the screen widget immediately when hiding. Added a non-zero fallback draw size while retaining Draw At Desired Size for custom widgets.
+- Added static regression guards preventing permanent WidgetComponent tick disablement and far-release WidgetClass destruction.
+- No spawn, locomotion, footstep, combat or replication behavior changed.
+
+## v2.10.0-alpha — Automatic Proximity NPC Info Popup
+
+- Compile-fix repackage: renamed the private CharacterInfo visibility parameter from `bVisible` to `bShouldBeVisible` so it does not shadow `USceneComponent::bVisible` under UE5.8/MSVC C4458 warning-as-error builds.
+
+- Added inherited `CharacterInfo` screen-space WidgetComponent to every `AARPGCharacter`.
+- Exposed Widget Class selection directly on the inherited component for player/NPC Blueprint archetypes.
+- Added automatic replicated-data presentation for RPG character name, effective level, current/max health and health percent.
+- Added `ARPGCharacterInfoWidget` native fallback/base widget with standard Name/Level/Health fields plus `On ARPG Character Info Updated` for custom Blueprint presentation.
+- Added zero-graph binding for ordinary UserWidgets through exposed child-widget name mapping.
+- Added NPC-oriented defaults: AI shown, player-controlled characters hidden, local self hidden.
+- Added local proximity show/hide with 1100/1350 cm hysteresis, optional line-of-sight requirement and no replicated UI/proximity state.
+- Added capsule-size-aware automatic overhead placement and manual height override.
+- Added v2.9 ground-rise integration so popups stay hidden until the NPC has finished emerging.
+- Added dead-character hiding and correct effective-level presentation for NPC player-level scaling.
+- Added staggered timer sampling, dedicated-server UI suppression, lazy widget creation and optional delayed far-widget release.
+- Preserved v2.9 ground-rise movement ownership/collision-safe spawn behavior and v2.8 automatic replicated footsteps.
+
 ## v2.9.0-alpha — Polished Replicated Spawner Ground-Rise Entrances
 
 - Added an automatic `Ground Rise Entrance` section to `ARPGAISpawner`, enabled by default for framework NPCs. Every `SpawnOne()` path now applies the same entrance, covering BeginPlay populations, individual/whole-group respawns, distance-stream reloads and Day/Night population swaps.

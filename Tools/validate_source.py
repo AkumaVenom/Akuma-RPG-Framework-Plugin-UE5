@@ -1010,8 +1010,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 2900 or descriptor.get("VersionName") != "2.9.0-alpha":
-        issues.append("package descriptor must identify v2.9.0-alpha")
+    if descriptor.get("Version") != 21001 or descriptor.get("VersionName") != "2.10.1-alpha":
+        issues.append("package descriptor must identify v2.10.1-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1228,6 +1228,78 @@ if ai_character_cpp.exists():
     aic29 = ai_character_cpp.read_text(errors="replace")
     if 'CreateDefaultSubobject<UARPGSpawnEntranceComponent>(TEXT("SpawnEntrance"))' not in aic29:
         issues.append("v2.9 ARPGAICharacter must include the replicated SpawnEntrance component by default")
+
+
+# v2.10 automatic local proximity character/NPC info popups.
+character_info_header = root / "Public" / "Components" / "ARPGCharacterInfoComponent.h"
+character_info_cpp = root / "Private" / "Components" / "ARPGCharacterInfoComponent.cpp"
+character_info_widget_header = root / "Public" / "UI" / "ARPGCharacterInfoWidget.h"
+character_info_widget_cpp = root / "Private" / "UI" / "ARPGCharacterInfoWidget.cpp"
+if not character_info_header.exists() or not character_info_cpp.exists() or not character_info_widget_header.exists() or not character_info_widget_cpp.exists():
+    issues.append("v2.10 character info popup source files are missing")
+else:
+    cih210 = character_info_header.read_text(errors="replace")
+    cic210 = character_info_cpp.read_text(errors="replace")
+    ciwh210 = character_info_widget_header.read_text(errors="replace")
+    ciwc210 = character_info_widget_cpp.read_text(errors="replace")
+    for required in (
+        "bEnableInfoPopup = true",
+        "bShowOnAICharacters = true",
+        "bShowOnPlayerControlledCharacters = false",
+        "ShowDistance = 1100.f",
+        "HideDistance = 1350.f",
+        "bHideDuringSpawnEntrance = true",
+        "bLazyCreateWidget = true",
+        "NameTextWidgetName",
+        "HealthBarWidgetName",
+    ):
+        if required not in cih210:
+            issues.append(f"v2.10 character info authoring missing: {required}")
+    for required in (
+        "PrimaryComponentTick.bCanEverTick = true",
+        "PrimaryComponentTick.bStartWithTickEnabled = false",
+        "SetComponentTickEnabled(true)",
+        "SetComponentTickEnabled(false)",
+        "SetTickMode(ETickMode::Automatic)",
+        "RequestRenderUpdate()",
+        "RemoveWidgetFromScreen()",
+        "SetIsReplicatedByDefault(false)",
+        "SetWidgetSpace(EWidgetSpace::Screen)",
+        "GameInstance->GetLocalPlayers()",
+        "Character->Stats->GetEffectiveLevel()",
+        "Entrance->IsGroundRiseActive()",
+        "ActiveDistance = bPopupVisible ? SafeHideDistance : SafeShowDistance",
+        "SetOwnerPlayer(LocalPlayer)",
+        "InitWidget()",
+        "GetWidgetFromName(NameTextWidgetName)",
+        "GetWidgetFromName(HealthBarWidgetName)",
+    ):
+        if required not in cic210:
+            issues.append(f"v2.10 character info runtime missing: {required}")
+    if "PrimaryComponentTick.bCanEverTick = false" in cic210:
+        issues.append("v2.10.1 screen-space CharacterInfo must not permanently disable UWidgetComponent TickComponent")
+    release_marker = "void UARPGCharacterInfoComponent::ReleaseWidgetInstance()"
+    apply_marker = "void UARPGCharacterInfoComponent::ApplySnapshotToWidget"
+    if release_marker in cic210 and apply_marker in cic210:
+        release_body = cic210.split(release_marker, 1)[1].split(apply_marker, 1)[0]
+        if "SetWidgetClass(nullptr)" in release_body:
+            issues.append("v2.10.1 far-widget release must preserve the configured WidgetClass")
+
+    for required in ("FARPGCharacterInfoSnapshot", "BP_OnCharacterInfoUpdated", "CharacterNameText", "LevelText", "HealthBar", "HealthText"):
+        if required not in ciwh210:
+            issues.append(f"v2.10 native info widget API missing: {required}")
+    if "DOREPLIFETIME" in cic210:
+        issues.append("v2.10 character info proximity/UI state must remain local-only and not add replication")
+
+character_header_210 = root / "Public" / "Actors" / "ARPGCharacter.h"
+character_cpp_210 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+if character_header_210.exists() and character_cpp_210.exists():
+    ch210 = character_header_210.read_text(errors="replace")
+    cc210 = character_cpp_210.read_text(errors="replace")
+    if "TObjectPtr<UARPGCharacterInfoComponent> CharacterInfo" not in ch210:
+        issues.append("v2.10 AARPGCharacter must expose inherited CharacterInfo component")
+    if 'CreateDefaultSubobject<UARPGCharacterInfoComponent>(TEXT("CharacterInfo"))' not in cc210 or "CharacterInfo->SetupAttachment(GetRootComponent())" not in cc210:
+        issues.append("v2.10 AARPGCharacter must construct and attach CharacterInfo component")
 
 markers = []
 for p in source_files:

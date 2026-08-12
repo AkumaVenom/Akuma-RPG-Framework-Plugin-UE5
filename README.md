@@ -6,6 +6,13 @@ The design goal is simple: create content with Data Assets, assign components/de
 
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
+
+## 2.10.1-alpha automatic proximity character / NPC info popups — runtime visibility fix
+
+Every `AARPGCharacter` now includes an inherited **CharacterInfo** component. Select it in any player/NPC Character Blueprint, choose a **Widget Class**, and the framework automatically presents replicated character name, effective level and health above the character only while a local player is nearby.
+
+The system defaults to NPC-only visibility, automatically positions from capsule height, hides during the v2.9 ground-rise entrance, uses show/hide distance hysteresis, and keeps proximity decisions on staggered local timers. v2.10.1 fixes screen-space rendering by preserving UWidgetComponent's native TickComponent capability and enabling it only while a popup is visible; distant popups disable that component tick. Dedicated-server UI work is skipped, and far-away widget instances can still be retired. Custom widgets can either derive from `ARPGCharacterInfoWidget` or use the exposed standard child-name mapping for zero-graph Name/Level/Health binding. See `Docs/NPC_INFO_POPUP.md`.
+
 ## 2.9.0-alpha polished AI spawner ground-rise entrances
 
 `ARPGAISpawner` now gives every spawned framework AI an automatic replicated **Ground Rise Entrance** by default. The accepted collision-safe pawn/capsule remains at its final NavMesh position while only the skeletal mesh starts below the floor and eases upward, preserving the v2.7.2 spawn-collision proof instead of physically spawning capsules underground. During the short reveal, CharacterMovement, AIController pathing, Free Roam, Spline travel, combat AI and ambient social behaviour are held; each owner is restored independently afterward. The entrance runs for initial groups, respawns, distance reloads and Day/Night population swaps. Depth can auto-scale from capsule height and duration/delay/easing/behaviour locking are exposed directly on each spawner. See `Docs/AI_SPAWNER_GROUND_RISE.md`.

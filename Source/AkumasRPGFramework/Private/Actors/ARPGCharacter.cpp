@@ -27,6 +27,7 @@
 #include "Components/ARPGTargetingComponent.h"
 #include "Components/ARPGWoodcuttingComponent.h"
 #include "Components/ARPGFootstepComponent.h"
+#include "Components/ARPGCharacterInfoComponent.h"
 #include "Gathering/ARPGTree.h"
 #include "Net/UnrealNetwork.h"
 
@@ -62,6 +63,8 @@ AARPGCharacter::AARPGCharacter()
     Targeting = CreateDefaultSubobject<UARPGTargetingComponent>(TEXT("Targeting"));
     Woodcutting = CreateDefaultSubobject<UARPGWoodcuttingComponent>(TEXT("Woodcutting"));
     Footsteps = CreateDefaultSubobject<UARPGFootstepComponent>(TEXT("Footsteps"));
+    CharacterInfo = CreateDefaultSubobject<UARPGCharacterInfoComponent>(TEXT("CharacterInfo"));
+    CharacterInfo->SetupAttachment(GetRootComponent());
 }
 
 void AARPGCharacter::BeginPlay()

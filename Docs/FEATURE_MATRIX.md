@@ -1,3 +1,14 @@
+## Automatic proximity character / NPC info popups (v2.10.1)
+
+| System | Status | Notes |
+|---|---|---|
+| Inherited CharacterInfo component | Implemented | Present on every `AARPGCharacter`; select the component and assign a Widget Class directly in the Character Blueprint. |
+| Automatic Name / Level / Health | Implemented | Reads replicated `RPGCharacterName`, effective runtime level, current/max health and health percent. |
+| Custom Widget Blueprint support | Implemented | `ARPGCharacterInfoWidget` base/event path plus zero-graph TextBlock/ProgressBar child-name mapping for ordinary UserWidgets. |
+| Local proximity visibility | Implemented | Per-client show/hide distances with hysteresis, optional line of sight, local-player self hiding, dead hiding and NPC/player filters. |
+| Spawn presentation integration | Implemented | Popup remains hidden through the v2.9 replicated ground-rise entrance by default. |
+| Performance | Implemented | No permanent component Tick, staggered local timers, no dedicated-server UI, lazy widget construction and delayed far-widget release. |
+
 ## Polished AI spawner entrances (v2.9.0)
 
 | System | Status | Notes |

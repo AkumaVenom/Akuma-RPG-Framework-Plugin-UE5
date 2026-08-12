@@ -33,6 +33,7 @@ class UARPGAICombatComponent;
 class UARPGTargetingComponent;
 class UARPGWoodcuttingComponent;
 class UARPGFootstepComponent;
+class UARPGCharacterInfoComponent;
 class AARPGTree;
 
 UCLASS(BlueprintType, Blueprintable)
@@ -74,6 +75,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGWoodcuttingComponent> Woodcutting;
     /** Automatic physical-surface footsteps for players and NPCs. Select this inherited component to author audio/stride settings. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGFootstepComponent> Footsteps;
+    /** Automatic local overhead name/level/health popup. Select this inherited component and assign a Widget Class. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGCharacterInfoComponent> CharacterInfo;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool BasicAttack(AActor* OptionalTarget = nullptr);
     UFUNCTION(BlueprintCallable, Category="ARPG|Combat|Input") bool Dodge(EARPGDodgeDirection Direction = EARPGDodgeDirection::Auto);
