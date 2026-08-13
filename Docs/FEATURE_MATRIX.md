@@ -1,11 +1,11 @@
-## Settlement Building, Storage & Production (v2.15.5)
+## Settlement Building, Storage & Production (v2.15.6)
 
 | Feature | Status | Notes |
 |---|---|---|
 | Player build mode | Implemented | Inherited Building + local BuildingUI, ready catalog, local ghost, live validation, rotate/next/previous/confirm/cancel. |
 | Pivot-aware ground placement | Implemented | v2.15.2 anchors the real Build Mesh bounds to the traced surface so bottom/center/corner pivots place flush; validation/support/vertical snaps use the same mesh-aware anchor. |
 | Data-driven mesh orientation | Implemented | v2.15.3 exposes per-piece `Mesh Relative Transform` so imported art can be rotated/offset/scaled inside the native build actor without reimporting meshes; ghost/final presentation and transformed bounds stay in parity while structural snapping retains stable logical actor axes. |
-| Structural snapping | Implemented | Standard modular snaps for foundations, walls/window walls/doorways, straight/stacked/90-degree wall corners, window/door inserts, floors/ceilings/roofs, roof continuation, stairs/pillars; custom snap transforms supported. v2.15.4 selectively permits authored overlap only at transforms advertised by the structural snap graph; v2.15.5 enforces consistent directional wall facing on all support edges and same-slot support ownership. |
+| Structural snapping | Implemented | Standard modular snaps for foundations, walls/window walls/doorways, straight/stacked/90-degree wall corners, window/door inserts, floors/ceilings/roofs, roof continuation, stairs/pillars; custom snap transforms supported. v2.15.4 selectively permits authored overlap only at transforms advertised by the structural snap graph; v2.15.5 enforces consistent directional wall facing on all support edges and first-story same-slot support ownership; v2.15.6 makes upper-story vertical Wall-family stacks own their shared slot and inherit the supporting wall's facing deterministically. |
 | Authoritative placement | Implemented | Server re-resolves transform/snap and validates catalog membership, snap-target modification access, resources, range, collision, support/slope, faction and territory before spawn. |
 | Timed construction | Implemented | Instant or synchronized timed builds, upward reveal, material progress parameters, audio, construction collision policy, persistence. |
 | Functional doors | Implemented | Replicated animated open/close, access policy, optional auto-close and world-save state. |

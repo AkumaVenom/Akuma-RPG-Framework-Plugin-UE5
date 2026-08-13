@@ -48,21 +48,63 @@ static bool ARPGIsHorizontalStructuralKind(EARPGBuildPieceKind Kind)
 }
 
 /**
- * Multiple completed structures can advertise the same geometric snap slot. This is common at a
- * foundation corner after the first wall exists: both the horizontal support and that wall can
- * produce an incoming-wall transform at essentially the same location. The support edge owns the
- * unambiguous outward-facing orientation, while the wall corner deliberately exposes both turn
- * facings for wall-only construction. Prefer the support only when candidates are the same slot;
- * ordinary distance/yaw scoring remains unchanged everywhere else.
+ * Multiple completed structures can advertise the same geometric snap slot. Two important wall
+ * cases need deterministic ownership:
+ *
+ *  1) On the first story, a horizontal support edge owns wall exterior facing over a neighbouring
+ *     wall-corner candidate at the same slot.
+ *  2) On upper stories, the wall-family piece directly below owns the vertical stack slot over a
+ *     lateral/corner candidate advertised by a neighbouring wall. The vertical candidate already
+ *     inherits the lower piece's actor rotation, so preserving that ownership also preserves the
+ *     established front/exterior facing for asymmetric wall art.
+ *
+ * Priority is therefore candidate-aware rather than merely target-kind-aware. It is consulted only
+ * for same-physical-slot ties; ordinary distance/yaw scoring remains unchanged for different slots.
  */
-static int32 ARPGGetSnapTargetSemanticPriority(const AARPGBuildPieceActor* Target, const UARPGBuildPieceDefinition* IncomingPiece)
+static int32 ARPGGetSnapCandidateSemanticPriority(
+    const AARPGBuildPieceActor* Target,
+    const UARPGBuildPieceDefinition* IncomingPiece,
+    const FTransform& Candidate)
 {
     if (!Target || !Target->Definition || !IncomingPiece) return 0;
     if (!ARPGIsWallLikeKind(IncomingPiece->PieceKind)) return 0;
 
     const EARPGBuildPieceKind TargetKind = Target->Definition->PieceKind;
-    if (ARPGIsHorizontalStructuralKind(TargetKind)) return 0;
-    if (ARPGIsWallLikeKind(TargetKind)) return 1;
+    if (ARPGIsHorizontalStructuralKind(TargetKind))
+    {
+        // Horizontal supports define the canonical outward normal for first-story/edge placement.
+        return 0;
+    }
+
+    if (ARPGIsWallLikeKind(TargetKind))
+    {
+        // Standard vertical Wall-family -> Wall-family stacking is generated at local XY = 0,
+        // above the target, with zero relative yaw. Recognize that structural relationship from the
+        // authoritative candidate transform instead of relying on overlap iteration order or view yaw.
+        const FVector TargetLocalLocation = Target->GetActorTransform().InverseTransformPosition(Candidate.GetLocation());
+        const float StackColumnTolerance = FMath::Max(1.f, IncomingPiece->PlacementCollisionClearance + 0.5f);
+        const float StackColumnToleranceSq = FMath::Square(StackColumnTolerance);
+        const float HorizontalOffsetSq = FMath::Square(TargetLocalLocation.X) + FMath::Square(TargetLocalLocation.Y);
+        const float RelativeYawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(Target->GetActorRotation().Yaw, Candidate.Rotator().Yaw));
+        constexpr float StackFacingToleranceDegrees = 1.f;
+
+        const bool bVerticalStackCandidate =
+            HorizontalOffsetSq <= StackColumnToleranceSq &&
+            TargetLocalLocation.Z > StackColumnTolerance &&
+            RelativeYawDelta <= StackFacingToleranceDegrees;
+
+        if (bVerticalStackCandidate)
+        {
+            // The supporting wall below owns this exact column and facing. This prevents a nearby
+            // second-story lateral/corner candidate from flipping asymmetric wall art by 180 degrees.
+            return 0;
+        }
+
+        // Side continuation and +/-90 corner turns remain fully available when they are not
+        // competing with a direct vertical support candidate for the same physical slot.
+        return 1;
+    }
+
     return 2;
 }
 
@@ -363,11 +405,11 @@ bool UARPGBuildingComponent::FindBestSnapTransform(const UARPGBuildPieceDefiniti
         AARPGBuildPieceActor* Target = Cast<AARPGBuildPieceActor>(Overlap.GetActor());
         if (!Target || Seen.Contains(Target) || !Target->IsConstructionComplete()) continue;
         Seen.Add(Target);
-        const int32 SemanticPriority = ARPGGetSnapTargetSemanticPriority(Target, Piece);
         TArray<FTransform> Candidates;
         Target->GetSnapTransformsFor(Piece, Candidates);
         for (const FTransform& Candidate : Candidates)
         {
+            const int32 SemanticPriority = ARPGGetSnapCandidateSemanticPriority(Target, Piece, Candidate);
             const float DistSq = FVector::DistSquared(Candidate.GetLocation(), DesiredTransform.GetLocation());
             if (DistSq > CaptureSq) continue;
             const float YawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(Candidate.Rotator().Yaw, DesiredTransform.Rotator().Yaw));

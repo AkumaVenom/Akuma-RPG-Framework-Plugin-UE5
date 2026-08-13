@@ -137,9 +137,33 @@ for outward, yaw in edge_yaws.items():
 assert (150.0, -150.0, -90.0) in corner_candidates
 # If a foundation edge and an already-built wall corner advertise that same physical slot, the
 # horizontal support owns orientation. Wall-only corners still keep both variants when no support ties.
-require(build_cpp, 'ARPGGetSnapTargetSemanticPriority', 'ARPGIsHorizontalStructuralKind',
+require(build_cpp, 'ARPGGetSnapCandidateSemanticPriority', 'ARPGIsHorizontalStructuralKind',
         'SameSlotTolerance', 'bSamePhysicalSlot', 'bBetterSemanticOwner',
         'SemanticPriority < BestSemanticPriority')
+# v2.15.6 vertical-stack facing regression: candidate ownership is relationship-aware, not merely
+# target-kind-aware. The wall directly below owns local-XY-zero, above-target, zero-relative-yaw
+# stack candidates; lateral/corner wall candidates remain lower priority at the same world slot.
+require(build_cpp, 'TargetLocalLocation', 'HorizontalOffsetSq', 'RelativeYawDelta',
+        'bVerticalStackCandidate', 'StackFacingToleranceDegrees',
+        'supporting wall below owns this exact column and facing')
+require(actor_cpp, "inherits the supporting wall's world facing as well as its structural column")
+def wall_candidate_priority(local_x, local_y, local_z, relative_yaw, clearance=2.0):
+    tol=max(1.0, clearance+0.5)
+    horizontal_sq=local_x*local_x + local_y*local_y
+    # Match FindDeltaAngleDegrees semantics closely enough for the cardinal snap yaws used here.
+    yaw=((relative_yaw + 180.0) % 360.0) - 180.0
+    vertical=(horizontal_sq <= tol*tol and local_z > tol and abs(yaw) <= 1.0)
+    return 0 if vertical else 1
+assert wall_candidate_priority(0.0, 0.0, 271.0, 0.0) == 0      # direct stack: owns facing
+assert wall_candidate_priority(300.0, 0.0, 0.0, 0.0) == 1       # straight continuation
+assert wall_candidate_priority(150.0, 150.0, 0.0, 90.0) == 1    # L-corner
+assert wall_candidate_priority(0.0, 0.0, 271.0, 180.0) == 1     # flipped custom candidate is not stack owner
+# Same-slot semantic ownership must beat raw camera-yaw scoring. This models the observed second-story
+# case where a neighbouring lateral candidate can have a lower yaw score but must not flip the stack.
+vertical_priority=wall_candidate_priority(0.0, 0.0, 271.0, 0.0)
+lateral_priority=wall_candidate_priority(300.0, 0.0, 0.0, 0.0)
+assert vertical_priority < lateral_priority
+
 # Timed construction uses synchronized server time, visible reveal and tick-only-while-building.
 require(actor_h, 'bConstructionComplete', 'ConstructionStartServerTime', 'ConstructionDuration', 'GetConstructionProgress01')
 require(actor_cpp, 'GetServerWorldTimeSeconds', 'ConstructionStartScaleZ', 'SetScalarParameterValueOnMaterials',

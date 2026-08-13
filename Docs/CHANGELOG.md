@@ -1,3 +1,13 @@
+## v2.15.6-alpha — Deterministic Vertical Wall Stack Facing Fix
+
+- Fixed an upper-story Wall-family rotation bug where a neighbouring lateral/corner snap candidate could occupy the same world slot as the direct vertical stack candidate and win through normal distance/view-yaw scoring, causing asymmetric wall art to flip 180 degrees.
+- Replaced target-kind-only same-slot ownership with candidate-aware semantic ownership for incoming Wall/WindowWall/Doorway pieces.
+- A Wall-family candidate is now recognized as the direct vertical stack owner only when it is above its target at target-local XY zero and preserves zero relative yaw; this makes the supporting wall below authoritative for the new piece's structural column and facing.
+- Preserved first-story horizontal-support ownership from v2.15.5, so Foundation/Floor/Ceiling/Roof edges still define canonical outward-facing orientation when they share a slot with a wall corner.
+- Preserved straight Wall-family continuation and both ±90° corner variants when they are not competing with a direct vertical support candidate.
+- Added regression/model and source-validator coverage for vertical-stack candidate ownership, including guards that a 180°-flipped custom candidate is not misclassified as the native stack owner.
+- No reflected Blueprint API, save format or Build Piece Data Asset migration is required; v2.15.5 directional facing, v2.15.4 seam collision, v2.15.3 mesh transforms and multiplayer authority are preserved.
+
 ## v2.15.5-alpha — Directional Wall Facing & Snap Ownership Fix
 
 - Fixed the root support-edge yaw-sign error that made wall-family pieces on horizontal supports face correctly on +Y/-Y edges but inside-out on +X/-X edges.

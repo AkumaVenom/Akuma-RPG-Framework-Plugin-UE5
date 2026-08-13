@@ -1,4 +1,4 @@
-# Settlement Building, Storage & Production — v2.15.5
+# Settlement Building, Storage & Production — v2.15.6
 
 v2.15 promotes the framework's original low-level build actors into a complete player-facing settlement workflow. The gameplay state is authoritative; the placement ghost and menus are local presentation.
 
@@ -112,6 +112,14 @@ Wall art is often asymmetric: the exterior can use finished horizontal boards wh
 Horizontal structural supports (`Foundation`, `Floor`, `Ceiling`, `Roof`) orient that logical +Y side toward the selected edge's **outward normal**. The four standard edge mappings are therefore `+Y edge → yaw 0`, `-Y edge → yaw 180`, `+X edge → yaw -90`, and `-X edge → yaw +90`. This fixes the previous +X/-X sign inversion that could make exactly two opposite walls display their back face.
 
 At a built corner, a Foundation edge and a neighbouring Wall can both advertise the same geometric incoming-wall slot. v2.15.5 resolves that ambiguity semantically: when the transforms occupy the same physical slot, the horizontal support edge has priority because it uniquely defines exterior direction. Direct Wall → Wall corner construction still keeps both ±90° turn variants, so unsupported/custom wall-only shapes remain flexible. This priority is only a same-slot tie-breaker; normal distance/yaw snap selection elsewhere is unchanged.
+
+### Deterministic upper-story wall facing (v2.15.6+)
+
+Upper-story construction adds another same-slot case: the Wall-family piece directly below can advertise a vertical stack transform at the exact location where a neighbouring upper wall advertises a lateral or corner transform. Because asymmetric wall art distinguishes front from back, treating those candidates as equal can allow camera/view yaw to select the neighbouring candidate and reverse the new wall by 180 degrees.
+
+v2.15.6 makes semantic ownership **candidate-aware**. For an incoming `Wall`, `WindowWall` or `Doorway`, a Wall-family candidate at target-local XY zero, above the target, with zero relative yaw is recognized as the direct vertical stack relationship and owns that physical slot. Its transform already inherits the supporting actor's rotation, so the new piece preserves the lower wall's logical +Y front/exterior direction. Lateral continuation and both ±90-degree corner variants remain unchanged when they describe different slots.
+
+This is automatic framework behavior. Do not compensate upper-story pieces with `Mesh Relative Transform`, manual 180-degree rotation, custom snap points or alternate meshes; configure each wall-family asset's mesh transform once for its authored orientation and let the structural stack inherit actor facing.
 
 ### Construction
 

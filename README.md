@@ -8,9 +8,9 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.15.5-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.15.6-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest:** v2.15 adds the complete player-facing Settlement Building layer. v2.15.2 added pivot-aware placement; v2.15.3 added data-driven mesh orientation; v2.15.4 fixed modular wall seam/corner collision; v2.15.5 fixes directional wall-facing consistency on all support edges and resolves same-slot snap-target ambiguity.
+> **Latest:** v2.15 adds the complete player-facing Settlement Building layer. v2.15.2 added pivot-aware placement; v2.15.3 added data-driven mesh orientation; v2.15.4 fixed modular wall seam/corner collision; v2.15.5 fixed support-edge wall facing; v2.15.6 makes upper-story wall stacks inherit the supporting wall's facing deterministically when neighbouring snap candidates share the same slot.
 
 ## Start here
 
@@ -299,9 +299,17 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.15.5-alpha
+## Current release — v2.15.6-alpha
 
 The current release focuses on the Settlement Building system introduced in v2.15.
+
+**v2.15.6**
+
+- Fixed an upper-story wall-facing race where a neighbouring lateral/corner Wall-family snap candidate could share the same physical slot as the true vertical stack candidate and win based on view-yaw scoring.
+- Same-slot snap ownership is now candidate-aware: a Wall/WindowWall/Doorway directly below owns the vertical stack column when the candidate is above it at local XY zero with inherited facing.
+- Vertical Wall-family stacks therefore preserve the lower piece's actor rotation/front-exterior direction deterministically, including Wall over Wall, Wall over Doorway and Doorway/WindowWall-family combinations.
+- Straight continuation and ±90-degree corner candidates remain fully available when they are not competing for the same vertical stack slot.
+- No reflected Blueprint API or Build Piece Data Asset migration is required; v2.15.5 support-edge facing, v2.15.4 seam collision, v2.15.3 mesh transforms, replication and saves are preserved.
 
 **v2.15.5**
 
@@ -407,6 +415,10 @@ A production game still requires project-specific UE compilation, multiplayer QA
 - [`Docs/DAY_NIGHT.md`](Docs/DAY_NIGHT.md) — world time.
 - [`Docs/DYNAMIC_STREET_LIGHTS.md`](Docs/DYNAMIC_STREET_LIGHTS.md) — automatic street lights.
 - [`Docs/NETWORK_AND_AUTH.md`](Docs/NETWORK_AND_AUTH.md) — profiles, networking and authority boundaries.
+
+## License
+
+Akuma's RPG Framework is distributed under the **MIT License**. See [`LICENSE`](LICENSE) for the full license text.
 
 ---
 

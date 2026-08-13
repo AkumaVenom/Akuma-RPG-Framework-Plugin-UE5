@@ -348,7 +348,9 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
         {
             if (ARPGIsWallLike(IncomingKind))
             {
-                // Side continuation aligns wall bottoms; stacking aligns the next wall bottom to this wall top.
+                // Side continuation aligns wall bottoms. The vertical stack candidate uses zero local
+                // rotation and XY offset, so composition with the target actor transform explicitly
+                // inherits the supporting wall's world facing as well as its structural column.
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(Grid, 0.f, AlignBottomPlaneZ)));
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(-Grid, 0.f, AlignBottomPlaneZ)));
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, 0.f, IncomingAboveTargetZ)));

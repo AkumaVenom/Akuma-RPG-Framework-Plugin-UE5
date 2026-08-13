@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21505 or descriptor.get("VersionName") != "2.15.5-alpha":
-        issues.append("package descriptor must identify v2.15.5-alpha")
+    if descriptor.get("Version") != 21506 or descriptor.get("VersionName") != "2.15.6-alpha":
+        issues.append("package descriptor must identify v2.15.6-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1855,8 +1855,12 @@ if all(p.exists() for p in paths_2150):
         if required not in bc: issues.append(f"v2.15.4 selective snapped-neighbour overlap validation missing: {required}")
     for required in ("FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingOnTargetTopZ)", "FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingOnTargetTopZ)", "actor local +Y is the", "front/exterior side"):
         if required not in bac: issues.append(f"v2.15.5 directional support-edge wall facing fix missing: {required}")
-    for required in ("ARPGGetSnapTargetSemanticPriority", "ARPGIsHorizontalStructuralKind", "SameSlotTolerance", "bSamePhysicalSlot", "bBetterSemanticOwner", "SemanticPriority < BestSemanticPriority"):
-        if required not in bc: issues.append(f"v2.15.5 same-slot snap semantic priority missing: {required}")
+    for required in ("ARPGGetSnapCandidateSemanticPriority", "ARPGIsHorizontalStructuralKind", "SameSlotTolerance", "bSamePhysicalSlot", "bBetterSemanticOwner", "SemanticPriority < BestSemanticPriority"):
+        if required not in bc: issues.append(f"v2.15.5+ same-slot snap semantic priority missing: {required}")
+    for required in ("TargetLocalLocation", "HorizontalOffsetSq", "RelativeYawDelta", "bVerticalStackCandidate", "StackFacingToleranceDegrees", "supporting wall below owns this exact column and facing"):
+        if required not in bc: issues.append(f"v2.15.6 vertical wall-stack facing ownership missing: {required}")
+    if "inherits the supporting wall's world facing as well as its structural column" not in bac:
+        issues.append("v2.15.6 vertical wall stack must explicitly inherit the support wall facing")
     for required in ("GetSnapTransformsFor", "WindowWall", "Doorway", "EARPGBuildPieceKind::Roof && IncomingKind == EARPGBuildPieceKind::Roof", "IncomingKind == EARPGBuildPieceKind::Stair"):
         if required not in bac: issues.append(f"v2.15.0 structural snapping missing: {required}")
     for required in ("ConstructionStartServerTime", "ConstructionDuration", "GetConstructionProgress01"):
