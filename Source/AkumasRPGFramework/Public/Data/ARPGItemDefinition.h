@@ -4,6 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "ARPGTypes.h"
 #include "Data/ARPGDefinitionBase.h"
+#include "Data/ARPGRecipeDefinition.h"
 #include "Equipment/ARPGEquipmentVisualActor.h"
 #include "Stats/ARPGStatTypes.h"
 #include "ARPGItemDefinition.generated.h"
@@ -61,6 +62,23 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Gathering") FGameplayTagContainer GatheringToolTags;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Gathering", meta=(ClampMin="0.01")) float GatheringPower = 1.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Gathering", meta=(ClampMin="0")) int32 GatheringToolTier = 0;
+    // Runtime durability. Durability belongs to the exact inventory InstanceId, not the Data Asset.
+    // Wear is authority-only and is applied only after a successful gameplay action.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability", meta=(DisplayName="Uses Durability")) bool bUsesDurability = false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability", meta=(EditCondition="bUsesDurability", ClampMin="1.0")) float MaxDurability = 100.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Wear", meta=(EditCondition="bUsesDurability", DisplayName="Lose Durability On Combat Hit")) bool bLoseDurabilityOnCombatHit = false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Wear", meta=(EditCondition="bUsesDurability && bLoseDurabilityOnCombatHit", ClampMin="0.0", DisplayName="Combat Wear Per Successful Hit")) float CombatDurabilityLossPerSuccessfulHit = 1.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Wear", meta=(EditCondition="bUsesDurability", DisplayName="Lose Durability On Gathering Hit")) bool bLoseDurabilityOnGatheringHit = false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Wear", meta=(EditCondition="bUsesDurability && bLoseDurabilityOnGatheringHit", ClampMin="0.0", DisplayName="Gathering Wear Per Successful Hit")) float GatheringDurabilityLossPerSuccessfulHit = 1.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Broken", meta=(EditCondition="bUsesDurability", DisplayName="Unequip When Broken")) bool bUnequipWhenBroken = true;
+
+    // Repair ingredient quantities represent the cost to repair from fully broken to full durability.
+    // With proportional scaling enabled, a 25%-damaged item consumes roughly 25% of each authored full-repair cost.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Repair", meta=(EditCondition="bUsesDurability", DisplayName="Can Be Repaired")) bool bCanBeRepaired = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Repair", meta=(EditCondition="bUsesDurability && bCanBeRepaired")) TArray<FARPGItemAmount> RepairInputs;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Repair", meta=(EditCondition="bUsesDurability && bCanBeRepaired", DisplayName="Allow Free Repair")) bool bAllowFreeRepair = false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Durability|Repair", meta=(EditCondition="bUsesDurability && bCanBeRepaired", DisplayName="Scale Repair Cost By Missing Durability")) bool bScaleRepairCostByMissingDurability = true;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment") bool bEquippable = false;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment") FGameplayTag EquipmentSlot;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Equipment") int32 RequiredLevel = 1;

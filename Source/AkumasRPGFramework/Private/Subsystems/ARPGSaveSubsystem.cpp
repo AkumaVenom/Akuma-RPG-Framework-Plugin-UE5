@@ -11,6 +11,7 @@
 #include "Components/ARPGCombatComponent.h"
 #include "Components/ARPGProgressionComponent.h"
 #include "Components/ARPGInventoryComponent.h"
+#include "Components/ARPGCraftingComponent.h"
 #include "Components/ARPGQuickAccessComponent.h"
 #include "Components/ARPGQuestComponent.h"
 #include "Components/ARPGSkillComponent.h"
@@ -23,11 +24,33 @@
 #include "Social/ARPGGroupComponent.h"
 #include "Data/ARPGClassDefinition.h"
 #include "Data/ARPGBuildPieceDefinition.h"
+#include "Data/ARPGItemDefinition.h"
 #include "Data/ARPGDungeonDefinition.h"
 #include "Utilities/ARPGAssetLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
+
+namespace
+{
+    /**
+     * Saves written before v2.14 had no serialized durability field. Initialize only those legacy
+     * entries from the authored Item Definition. New-schema saves never pass through this path,
+     * so a real damaged/broken runtime value (including zero) is preserved exactly.
+     */
+    void ARPGMigrateLegacyInventoryDurability(UARPGInventoryComponent* Inventory, TArray<FARPGInventoryEntry>& Entries)
+    {
+        if (!Inventory) return;
+        for (FARPGInventoryEntry& Entry : Entries)
+        {
+            if (const UARPGItemDefinition* Definition = Inventory->ResolveItemDefinition(Entry))
+            {
+                if (Definition->bUsesDurability)
+                    Entry.Durability = FMath::Max(1.f, Definition->MaxDurability);
+            }
+        }
+    }
+}
 
 FString UARPGSaveSubsystem::MakeCharacterSlotName(const FGuid& CharacterId) const
 {
@@ -59,6 +82,7 @@ bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverr
     if (Character->Stats) { D.Health=Character->Stats->Health; D.Mana=Character->Stats->Mana; D.Stamina=Character->Stats->Stamina; D.StatProgression=Character->Stats->MakeStatProgressionSaveState(); }
     if (Character->Progression) { D.Level = Character->Progression->Level; D.XP = Character->Progression->XP; }
     if (Character->Inventory) D.Inventory = Character->Inventory->Items;
+    if (Character->Crafting) D.PersonalCraftingState = Character->Crafting->MakeCraftingSaveState();
     if (Character->QuickAccess) { D.QuickAccessSlots = Character->QuickAccess->QuickAccessSlots; D.ActiveQuickAccessSlotNumber = Character->QuickAccess->ActiveSlotNumber; }
     if (Character->Quests) D.Quests = Character->Quests->Quests;
     if (Character->Skills) D.Skills = Character->Skills->Skills;
@@ -92,7 +116,12 @@ bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverr
     // clamping a saved current value against the unequipped maximum would permanently lose health/mana
     // from the save before those equipment bonuses were restored. ReplaceInventory triggers one stats
     // recalculation, then current vitals are clamped against the final equipped maxima.
-    if (Character->Inventory) Character->Inventory->ReplaceInventory(D.Inventory);
+    if (Character->Inventory)
+    {
+        TArray<FARPGInventoryEntry> InventoryToRestore = D.Inventory;
+        if (Save->SaveVersion < 5) ARPGMigrateLegacyInventoryDurability(Character->Inventory, InventoryToRestore);
+        Character->Inventory->ReplaceInventory(InventoryToRestore);
+    }
     if (Character->Stats)
     {
         Character->Stats->Health=FMath::Clamp(D.Health,0.f,Character->Stats->MaxHealth);
@@ -102,6 +131,7 @@ bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverr
     if (Character->QuickAccess) Character->QuickAccess->ReplaceQuickAccessState(D.QuickAccessSlots, D.ActiveQuickAccessSlotNumber);
     if (Character->Quests) Character->Quests->ReplaceQuests(D.Quests);
     if (Character->Skills) Character->Skills->ReplaceSkills(D.Skills);
+    if (Character->Crafting) Character->Crafting->RestoreCraftingSaveState(D.PersonalCraftingState);
     if (Character->Slayer) Character->Slayer->RestoreSlayerState(D.SlayerTask, D.SlayerPoints, D.SlayerStreak);
     if (Character->Faction) { Character->Faction->SetPrimaryFactionId(D.PrimaryFactionId); Character->Faction->ReplaceReputation(D.Reputation); }
     if (Character->Currencies) Character->Currencies->ReplaceBalances(D.Currencies);
@@ -166,8 +196,25 @@ bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
         AARPGStorageActor* S=nullptr;
         for(TActorIterator<AARPGStorageActor> It(W);It;++It) if((R.LinkedBuildingId.IsValid()&&It->BuildingId==R.LinkedBuildingId)||It->ContainerId==R.ContainerId){S=*It;break;}
         if(!S)continue;
-        S->ContainerId=R.ContainerId; if(S->Inventory)S->Inventory->ReplaceInventory(R.Items); if(S->Ownership)S->Ownership->SetOwnership(R.OwnerAccountId,R.OwnerCharacterId,R.OwnerFactionId);
-        if(AARPGCraftingStationActor* C=Cast<AARPGCraftingStationActor>(S)){C->CraftQueue=R.CraftQueue;if(C->OutputInventory)C->OutputInventory->ReplaceInventory(R.OutputItems);C->ProcessOfflineElapsed();}
+        S->ContainerId=R.ContainerId;
+        if(S->Inventory)
+        {
+            TArray<FARPGInventoryEntry> ItemsToRestore=R.Items;
+            if(Save->SaveVersion<4) ARPGMigrateLegacyInventoryDurability(S->Inventory,ItemsToRestore);
+            S->Inventory->ReplaceInventory(ItemsToRestore);
+        }
+        if(S->Ownership)S->Ownership->SetOwnership(R.OwnerAccountId,R.OwnerCharacterId,R.OwnerFactionId);
+        if(AARPGCraftingStationActor* C=Cast<AARPGCraftingStationActor>(S))
+        {
+            C->CraftQueue=R.CraftQueue;
+            if(C->OutputInventory)
+            {
+                TArray<FARPGInventoryEntry> OutputsToRestore=R.OutputItems;
+                if(Save->SaveVersion<4) ARPGMigrateLegacyInventoryDurability(C->OutputInventory,OutputsToRestore);
+                C->OutputInventory->ReplaceInventory(OutputsToRestore);
+            }
+            C->ProcessOfflineElapsed();
+        }
     }
     for(const FARPGDungeonSaveState& R:Save->World.Dungeons)
         for(TActorIterator<AARPGDungeonManager> It(W);It;++It) if(It->Definition&&It->Definition->DefinitionId==R.DungeonId){It->RestoreEncounterProgress(R.Encounters);It->CurrentCheckpoint=R.Checkpoint;It->bDungeonComplete=R.bComplete;break;}

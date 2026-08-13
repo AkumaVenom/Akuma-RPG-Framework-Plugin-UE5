@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 21303,
-  "VersionName": "2.13.3-alpha",
+  "Version": 21400,
+  "VersionName": "2.14.0-alpha",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with physically exclusive equipment attachment handoff, server-authoritative generic/custom Blueprint item use, ready native Inventory + Quick Access drag/drop UI, complete JRPG player stats panel, automatic local proximity NPC name/level/health popups, polished replicated ground-rise AI spawning, automatic replicated physical-surface footsteps, collision-safe spawned AI plus translation-proven Free-Roam recovery, dynamic Day/Night-driven street lights, ambient NPC social interactions, JRPG progression, equipment, distance-streamed AI, combat, factions, saves and networking.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with server-authoritative player crafting, functional instance durability and equipment repair, extensible tabbed Item Management UI, physical-socket-exclusive equipment, generic/custom Blueprint item use, Inventory + Quick Access drag/drop, complete JRPG stats, NPC info popups, replicated ground-rise spawning and footsteps, collision-safe AI locomotion, gathering, combat, factions, saves and networking.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,

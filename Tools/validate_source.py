@@ -1018,8 +1018,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21303 or descriptor.get("VersionName") != "2.13.3-alpha":
-        issues.append("package descriptor must identify v2.13.3-alpha")
+    if descriptor.get("Version") != 21400 or descriptor.get("VersionName") != "2.14.0-alpha":
+        issues.append("package descriptor must identify v2.14.0-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1665,6 +1665,114 @@ if readme_2133.exists():
     splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
     if splash not in readme_text_2133[:500]:
         issues.append("README GitHub splash must remain at the top of the document")
+
+# v2.14.0 player crafting + durability + repair + tabbed Item Management UI.
+craft_h_2140 = root / "Public" / "Components" / "ARPGCraftingComponent.h"
+craft_cpp_2140 = root / "Private" / "Components" / "ARPGCraftingComponent.cpp"
+craft_ui_h_2140 = root / "Public" / "UI" / "ARPGCraftingWidgets.h"
+craft_ui_cpp_2140 = root / "Private" / "UI" / "ARPGCraftingWidgets.cpp"
+inv_h_2140 = root / "Public" / "Components" / "ARPGInventoryComponent.h"
+inv_cpp_2140 = root / "Private" / "Components" / "ARPGInventoryComponent.cpp"
+equip_cpp_2140 = root / "Private" / "Components" / "ARPGEquipmentComponent.cpp"
+combat_cpp_2140 = root / "Private" / "Components" / "ARPGCombatComponent.cpp"
+wood_cpp_2140 = root / "Private" / "Components" / "ARPGWoodcuttingComponent.cpp"
+inv_widgets_h_2140 = root / "Public" / "UI" / "ARPGInventoryWidgets.h"
+inv_widgets_cpp_2140 = root / "Private" / "UI" / "ARPGInventoryWidgets.cpp"
+inv_ui_h_2140 = root / "Public" / "Components" / "ARPGInventoryUIComponent.h"
+inv_ui_cpp_2140 = root / "Private" / "Components" / "ARPGInventoryUIComponent.cpp"
+recipe_h_2140 = root / "Public" / "Data" / "ARPGRecipeDefinition.h"
+item_h_2140 = root / "Public" / "Data" / "ARPGItemDefinition.h"
+station_cpp_2140 = root / "Private" / "Crafting" / "ARPGCraftingStationActor.cpp"
+character_h_2140 = root / "Public" / "Actors" / "ARPGCharacter.h"
+character_cpp_2140 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+quick_cpp_2140 = root / "Private" / "Components" / "ARPGQuickAccessComponent.cpp"
+save_h_2140 = root / "Public" / "Save" / "ARPGSaveGame.h"
+save_cpp_2140 = root / "Private" / "Subsystems" / "ARPGSaveSubsystem.cpp"
+types_h_2140 = root / "Public" / "ARPGTypes.h"
+paths_2140 = (craft_h_2140, craft_cpp_2140, craft_ui_h_2140, craft_ui_cpp_2140, inv_h_2140, inv_cpp_2140, equip_cpp_2140, combat_cpp_2140, wood_cpp_2140, inv_widgets_h_2140, inv_widgets_cpp_2140, inv_ui_h_2140, inv_ui_cpp_2140, recipe_h_2140, item_h_2140, station_cpp_2140, character_h_2140, character_cpp_2140, quick_cpp_2140, save_h_2140, save_cpp_2140, types_h_2140)
+if all(p.exists() for p in paths_2140):
+    texts = {p.name + str(i): p.read_text(errors="replace") for i,p in enumerate(paths_2140)}
+    ch = craft_h_2140.read_text(errors="replace"); cc = craft_cpp_2140.read_text(errors="replace")
+    cuh = craft_ui_h_2140.read_text(errors="replace"); cuc = craft_ui_cpp_2140.read_text(errors="replace")
+    ih = inv_h_2140.read_text(errors="replace"); ic = inv_cpp_2140.read_text(errors="replace")
+    ec = equip_cpp_2140.read_text(errors="replace"); coc = combat_cpp_2140.read_text(errors="replace"); wc = wood_cpp_2140.read_text(errors="replace")
+    iwh = inv_widgets_h_2140.read_text(errors="replace"); iwc = inv_widgets_cpp_2140.read_text(errors="replace")
+    iuih = inv_ui_h_2140.read_text(errors="replace"); iuic = inv_ui_cpp_2140.read_text(errors="replace")
+    rh = recipe_h_2140.read_text(errors="replace"); idh = item_h_2140.read_text(errors="replace"); stc = station_cpp_2140.read_text(errors="replace")
+    charh = character_h_2140.read_text(errors="replace"); charc = character_cpp_2140.read_text(errors="replace")
+    qac = quick_cpp_2140.read_text(errors="replace")
+    svh = save_h_2140.read_text(errors="replace"); svc = save_cpp_2140.read_text(errors="replace"); th = types_h_2140.read_text(errors="replace")
+    for required in ("PlayerRecipes", "ServerCraftRecipe", "ServerRepairItem", "COND_OwnerOnly", "PrimaryComponentTick.bCanEverTick = false", "GetMaxCraftableCount", "GetRepairCost", "bCurrentInputsCommitted", "RefundInputs"):
+        if required not in ch and required not in cc: issues.append(f"v2.14.0 player crafting path missing: {required}")
+    if "CanFitCommittedOutputs" not in ch or "CanFitCommittedOutputs" not in cc:
+        issues.append("v2.14.0 craft completion must use output-only capacity after committed inputs")
+    grant_pos = cc.find("bool UARPGCraftingComponent::GrantOutputs")
+    if grant_pos >= 0 and cc.find("CanFitOutputs(Recipe, 1)", grant_pos, cc.find("float UARPGCraftingComponent::GetServerTimeSeconds", grant_pos)) >= 0:
+        issues.append("v2.14.0 GrantOutputs must not subtract already-committed ingredients again")
+    for required in ("AggregateAmounts", "This recipe has no valid crafted output.", "This recipe contains an invalid ingredient entry."):
+        if required not in ch and required not in cc: issues.append(f"v2.14.0 crafting transaction/recipe validation missing: {required}")
+    for required in ("TObjectPtr<UARPGItemDefinition> Item", "bAllowPlayerCrafting", "CraftingCategory", "MaxBatchSize"):
+        if required not in rh: issues.append(f"v2.14.0 recipe authoring missing: {required}")
+    for required in ("bUsesDurability", "MaxDurability", "bLoseDurabilityOnCombatHit", "CombatDurabilityLossPerSuccessfulHit", "bLoseDurabilityOnGatheringHit", "GatheringDurabilityLossPerSuccessfulHit", "RepairInputs", "bScaleRepairCostByMissingDurability"):
+        if required not in idh: issues.append(f"v2.14.0 durability authoring missing: {required}")
+    for required in ("DamageItemDurability", "RepairItemToFull", "GetItemDurability", "GetUnequippedItemCount"):
+        if required not in ih or required not in ic: issues.append(f"v2.14.0 inventory durability/repair API missing: {required}")
+    transfer_pos = ic.find("bool UARPGInventoryComponent::TransferItemTo")
+    transfer_end = ic.find("int32 UARPGInventoryComponent::GetItemCount", transfer_pos)
+    transfer_body = ic[transfer_pos:transfer_end] if transfer_pos >= 0 and transfer_end > transfer_pos else ""
+    for required in ("if (Definition && Definition->bUsesDurability)", "GetUnequippedItemCount(ItemId) < Quantity", "FARPGInventoryEntry Moved = Entry;", "Destination->Items.Append(MovedEntries);"):
+        if required not in transfer_body:
+            issues.append(f"v2.14.0 durable storage transfer must preserve runtime item state: {required}")
+    if transfer_body and transfer_body.find("if (Definition && Definition->bUsesDurability)") > transfer_body.find("RemoveItemAuthority(ItemId, Quantity)"):
+        issues.append("v2.14.0 durable transfer must bypass the legacy remove/re-add path before it can reset durability")
+    if "ApplyCombatDurabilityWear" not in ec or "Info.AppliedDamage > KINDA_SMALL_NUMBER" not in coc:
+        issues.append("v2.14.0 combat durability must be charged only after real applied damage")
+    for required in ("ToolInstanceId", "Tree->ApplyChop", "DamageItemDurability", "GatheringDurabilityLossPerSuccessfulHit"):
+        if required not in wc: issues.append(f"v2.14.0 woodcutting durability integration missing: {required}")
+    for required in ("EARPGItemManagementTab", "InventoryTabButton", "CraftingTabButton", "MainTabSwitcher", "CraftingPageHost", "DurabilityBar", "BrokenText"):
+        if required not in iwh or required not in iwc: issues.append(f"v2.14.0 shared item-management UI missing: {required}")
+    for required in ("UARPGCraftingPanelWidget", "UARPGCraftingRecipeRowWidget", "UARPGRepairItemRowWidget", "CraftProgressBar", "RepairButton"):
+        if required not in cuh or required not in cuc: issues.append(f"v2.14.0 ready crafting/repair UI missing: {required}")
+    for required in ("CraftingWidgetClass", "CraftingRecipeRowWidgetClass", "RepairItemRowWidgetClass", "OpenCraftingUI", "HandleCraftingStateChanged"):
+        if required not in iuih or required not in iuic: issues.append(f"v2.14.0 exposed crafting UI integration missing: {required}")
+    if "TObjectPtr<UARPGCraftingComponent> Crafting" not in charh:
+        issues.append("v2.14.0 inherited Character must expose Crafting component")
+    for required in ("CraftRecipe", "RepairInventoryItem", "OpenCraftingUI"):
+        if required not in charh or required not in charc: issues.append(f"v2.14.0 inherited character crafting API missing: {required}")
+    if "ARPGResolveRecipeAmountId" not in stc or "Amount.Item" not in stc:
+        issues.append("v2.14.0 station crafting must remain compatible with direct Item Definition recipe authoring")
+    broken_guard = "RequestedDefinition->bUsesDurability && RequestedEntry->Durability <= KINDA_SMALL_NUMBER"
+    activation_pos = qac.find("EARPGQuickAccessResult UARPGQuickAccessComponent::ActivateSlotAuthority")
+    guard_pos = qac.find(broken_guard, activation_pos)
+    previous_handoff_pos = qac.find("FGuid PreviousActiveInstanceId", activation_pos)
+    if guard_pos < 0 or previous_handoff_pos < 0 or guard_pos > previous_handoff_pos:
+        issues.append("v2.14.0 broken Quick Access equipment must be rejected before active-slot/equipment handoff")
+    if "Action == EARPGQuickAccessAction::Equip && Definition->bUsesDurability && Entry->Durability <= KINDA_SMALL_NUMBER" not in qac:
+        issues.append("v2.14.0 broken Quick Access equipment should be rejected by local activation preflight")
+    if "SaveGame) float Durability" not in th or "SaveVersion = 5" not in svh or "ARPGMigrateLegacyInventoryDurability" not in svc or "Save->SaveVersion < 5" not in svc or "Save->SaveVersion<4" not in svc:
+        issues.append("v2.14.0 durability must persist and migrate pre-durability character/world saves")
+    for required in ("PersonalCraftingState", "MakeCraftingSaveState", "RestoreCraftingSaveState"):
+        if required not in th and required not in ch and required not in cc and required not in svc:
+            issues.append(f"v2.14.0 personal craft persistence missing: {required}")
+    if "D.PersonalCraftingState = Character->Crafting->MakeCraftingSaveState()" not in svc or "Character->Crafting->RestoreCraftingSaveState(D.PersonalCraftingState)" not in svc:
+        issues.append("v2.14.0 save subsystem must persist/resume active personal crafting")
+    start_pos_2140 = cc.find("bool UARPGCraftingComponent::StartCraftingAuthority")
+    begin_pos_2140 = cc.find("void UARPGCraftingComponent::BeginNextCraftAuthority", start_pos_2140)
+    start_body_2140 = cc[start_pos_2140:begin_pos_2140] if start_pos_2140 >= 0 and begin_pos_2140 > start_pos_2140 else ""
+    if "BeginNextCraftAuthority();" not in start_body_2140 or "BroadcastCraftingState();" in start_body_2140:
+        issues.append("v2.14.0 must not expose/save personal crafting as active before current inputs are committed")
+else:
+    issues.append("v2.14.0 crafting/durability/UI source set is incomplete")
+
+if any('Units="px"' in p.read_text(errors="replace") for p in source_files):
+    issues.append('unsupported UHT Units="px" metadata must not return')
+
+readme_2140 = plugin_root / "README.md"
+if readme_2140.exists():
+    rt = readme_2140.read_text(errors="replace")
+    if "2.14.0-alpha" not in rt: issues.append("README must document v2.14.0 crafting/durability/repair update")
+    splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
+    if splash not in rt[:500]: issues.append("README GitHub splash must remain at the top of the document")
 
 markers = []
 for p in source_files:

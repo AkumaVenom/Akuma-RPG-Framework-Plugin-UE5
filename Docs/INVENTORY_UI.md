@@ -219,3 +219,11 @@ Each slot receives `On ARPG Inventory Slot Updated` with a complete `FARPGInvent
 - A 0.10 s cooldown timer starts only while at least one visible Quick Access slot has an active cooldown and stops automatically when no cooldown remains.
 - Item ownership, assignment, equipment and use remain server-authoritative through the existing components.
 - Item Definition assets are presentation metadata only; owning an asset in Content never makes an item owned.
+
+## v2.14 shared Item Management tabs
+
+The ready `ARPGInventoryPanelWidget` is now the common Item Management shell. The top bar contains **Inventory** and **Crafting & Repair** and drives `MainTabSwitcher`. `CraftingPageHost` contains the selected `Crafting Widget Class`; this avoids creating a separate full-screen menu/input-mode owner and preserves Quick Access drag/drop layering.
+
+Custom Inventory Widget Blueprints can use standard children `InventoryTabButton`, `CraftingTabButton`, `MainTabSwitcher`, and `CraftingPageHost`. `InventoryUI` additionally exposes `Crafting Widget Class`, `Crafting Recipe Row Widget Class`, and `Repair Item Row Widget Class`.
+
+Durable item slot views now expose `bUsesDurability`, `Durability`, `MaxDurability`, `DurabilityPercent`, and `bBroken`. Optional standard slot children `DurabilityBar` and `BrokenText` receive zero-graph native updates. Broken equipment's Equip action is disabled until repaired.

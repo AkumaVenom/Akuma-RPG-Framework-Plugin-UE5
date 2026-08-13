@@ -2,11 +2,13 @@
 
 #include "Actors/ARPGCharacter.h"
 #include "Components/ARPGEquipmentComponent.h"
+#include "Components/ARPGCraftingComponent.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGItemUseComponent.h"
 #include "Items/ARPGItemUseBehavior.h"
 #include "Components/ARPGQuickAccessComponent.h"
 #include "Data/ARPGItemDefinition.h"
+#include "UI/ARPGCraftingWidgets.h"
 #include "GameFramework/PlayerController.h"
 
 UARPGInventoryUIComponent::UARPGInventoryUIComponent()
@@ -17,6 +19,9 @@ UARPGInventoryUIComponent::UARPGInventoryUIComponent()
     QuickAccessWidgetClass = UARPGQuickAccessBarWidget::StaticClass();
     InventorySlotWidgetClass = UARPGInventoryItemSlotWidget::StaticClass();
     QuickAccessSlotWidgetClass = UARPGInventoryItemSlotWidget::StaticClass();
+    CraftingWidgetClass = UARPGCraftingPanelWidget::StaticClass();
+    CraftingRecipeRowWidgetClass = UARPGCraftingRecipeRowWidget::StaticClass();
+    RepairItemRowWidgetClass = UARPGRepairItemRowWidget::StaticClass();
 }
 
 void UARPGInventoryUIComponent::BeginPlay()
@@ -53,6 +58,12 @@ UARPGItemUseComponent* UARPGInventoryUIComponent::GetItemUse() const
     return GetOwner() ? GetOwner()->FindComponentByClass<UARPGItemUseComponent>() : nullptr;
 }
 
+UARPGCraftingComponent* UARPGInventoryUIComponent::GetCrafting() const
+{
+    if (const AARPGCharacter* Character = Cast<AARPGCharacter>(GetOwner())) return Character->Crafting;
+    return GetOwner() ? GetOwner()->FindComponentByClass<UARPGCraftingComponent>() : nullptr;
+}
+
 void UARPGInventoryUIComponent::HandleOwnerControlChanged()
 {
     if (!GetWorld() || GetWorld()->GetNetMode() == NM_DedicatedServer) return;
@@ -84,12 +95,16 @@ void UARPGInventoryUIComponent::BindRuntimeEvents()
     UARPGInventoryComponent* Inventory = GetInventory();
     UARPGQuickAccessComponent* QuickAccess = GetQuickAccess();
     UARPGItemUseComponent* ItemUse = GetItemUse();
-    if (!Inventory || !QuickAccess || !ItemUse) return;
+    UARPGCraftingComponent* Crafting = GetCrafting();
+    if (!Inventory || !QuickAccess || !ItemUse || !Crafting) return;
 
     Inventory->OnInventoryChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleInventoryChanged);
     QuickAccess->OnQuickAccessChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleQuickAccessChanged);
     QuickAccess->OnActiveQuickAccessSlotChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleActiveQuickAccessSlotChanged);
     ItemUse->OnItemUseCooldownsChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleItemUseCooldownsChanged);
+    Crafting->OnCraftingStateChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleCraftingStateChanged);
+    Crafting->OnCraftingResult.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleCraftingResult);
+    Crafting->OnRepairResult.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleRepairResult);
     bEventsBound = true;
 }
 
@@ -105,6 +120,12 @@ void UARPGInventoryUIComponent::UnbindRuntimeEvents()
     }
     if (UARPGItemUseComponent* ItemUse = GetItemUse())
         ItemUse->OnItemUseCooldownsChanged.RemoveDynamic(this, &UARPGInventoryUIComponent::HandleItemUseCooldownsChanged);
+    if (UARPGCraftingComponent* Crafting = GetCrafting())
+    {
+        Crafting->OnCraftingStateChanged.RemoveDynamic(this, &UARPGInventoryUIComponent::HandleCraftingStateChanged);
+        Crafting->OnCraftingResult.RemoveDynamic(this, &UARPGInventoryUIComponent::HandleCraftingResult);
+        Crafting->OnRepairResult.RemoveDynamic(this, &UARPGInventoryUIComponent::HandleRepairResult);
+    }
     bEventsBound = false;
 }
 
@@ -169,6 +190,20 @@ bool UARPGInventoryUIComponent::CloseInventoryUIInternal(bool bRestoreInputMode)
 bool UARPGInventoryUIComponent::ToggleInventoryUI()
 {
     return IsInventoryUIOpen() ? CloseInventoryUI() : OpenInventoryUI();
+}
+
+bool UARPGInventoryUIComponent::OpenCraftingUI()
+{
+    if (!OpenInventoryUI()) return false;
+    return SetActiveItemManagementTab(EARPGItemManagementTab::Crafting);
+}
+
+bool UARPGInventoryUIComponent::SetActiveItemManagementTab(EARPGItemManagementTab NewTab)
+{
+    if (!ActiveInventoryWidget) return false;
+    ActiveInventoryWidget->SetActiveTab(NewTab);
+    UpdateCooldownRefreshTimer();
+    return true;
 }
 
 bool UARPGInventoryUIComponent::IsInventoryUIOpen() const
@@ -282,6 +317,14 @@ bool UARPGInventoryUIComponent::GetInventorySlotView(int32 SlotNumber, FARPGInve
     OutView.ItemDefinition = Inventory->ResolveItemDefinition(Entry);
     if (OutView.ItemDefinition)
     {
+        OutView.bUsesDurability = OutView.ItemDefinition->bUsesDurability;
+        OutView.MaxDurability = OutView.bUsesDurability ? FMath::Max(1.f, OutView.ItemDefinition->MaxDurability) : 0.f;
+        if (OutView.bUsesDurability)
+        {
+            OutView.Durability = FMath::Clamp(Entry.Durability, 0.f, OutView.MaxDurability);
+            OutView.DurabilityPercent = FMath::Clamp(OutView.Durability / OutView.MaxDurability, 0.f, 1.f);
+            OutView.bBroken = OutView.Durability <= KINDA_SMALL_NUMBER;
+        }
         OutView.DisplayName = OutView.ItemDefinition->DisplayName.IsEmpty() ? FText::FromName(Entry.ItemId) : OutView.ItemDefinition->DisplayName;
         OutView.Description = OutView.ItemDefinition->Description;
         OutView.Rarity = OutView.ItemDefinition->Rarity;
@@ -354,6 +397,14 @@ bool UARPGInventoryUIComponent::GetQuickAccessSlotView(int32 SlotNumber, FARPGIn
             OutView.bBound = Entry->bBound;
             OutView.Durability = Entry->Durability;
             OutView.EquipmentSlot = Entry->EquipmentSlot;
+            if (OutView.ItemDefinition && OutView.ItemDefinition->bUsesDurability)
+            {
+                OutView.bUsesDurability = true;
+                OutView.MaxDurability = FMath::Max(1.f, OutView.ItemDefinition->MaxDurability);
+                OutView.Durability = FMath::Clamp(Entry->Durability, 0.f, OutView.MaxDurability);
+                OutView.DurabilityPercent = FMath::Clamp(OutView.Durability / OutView.MaxDurability, 0.f, 1.f);
+                OutView.bBroken = OutView.Durability <= KINDA_SMALL_NUMBER;
+            }
         }
     }
     return true;
@@ -468,6 +519,7 @@ void UARPGInventoryUIComponent::SelectInventorySlot(int32 SlotNumber)
 void UARPGInventoryUIComponent::HandleInventoryChanged()
 {
     RefreshInventoryUI();
+    if (ActiveInventoryWidget) ActiveInventoryWidget->RefreshCraftingUI();
     RefreshQuickAccessUI();
 }
 
@@ -484,6 +536,26 @@ void UARPGInventoryUIComponent::HandleActiveQuickAccessSlotChanged(int32 SlotNum
 void UARPGInventoryUIComponent::HandleItemUseCooldownsChanged()
 {
     RefreshInventoryUI();
+    RefreshQuickAccessUI();
+}
+
+void UARPGInventoryUIComponent::HandleCraftingStateChanged()
+{
+    RefreshInventoryUI();
+    if (ActiveInventoryWidget) ActiveInventoryWidget->RefreshCraftingUI();
+}
+
+void UARPGInventoryUIComponent::HandleCraftingResult(EARPGCraftingResult Result, UARPGRecipeDefinition* Recipe, int32 RemainingCount, FText Message)
+{
+    RefreshInventoryUI();
+    if (ActiveInventoryWidget) ActiveInventoryWidget->RefreshCraftingUI();
+    RefreshQuickAccessUI();
+}
+
+void UARPGInventoryUIComponent::HandleRepairResult(EARPGCraftingResult Result, FGuid ItemInstanceId, FText Message)
+{
+    RefreshInventoryUI();
+    if (ActiveInventoryWidget) ActiveInventoryWidget->RefreshCraftingUI();
     RefreshQuickAccessUI();
 }
 
@@ -518,6 +590,12 @@ void UARPGInventoryUIComponent::UpdateCooldownRefreshTimer()
                 break;
             }
         }
+    }
+
+    if (!bNeedsCooldownRefresh && IsInventoryUIOpen())
+    {
+        if (const UARPGCraftingComponent* Crafting = GetCrafting())
+            bNeedsCooldownRefresh = Crafting->IsCrafting();
     }
 
     FTimerManager& TimerManager = GetWorld()->GetTimerManager();

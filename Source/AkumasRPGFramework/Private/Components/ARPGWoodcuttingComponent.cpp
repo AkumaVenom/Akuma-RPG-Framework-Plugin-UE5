@@ -88,6 +88,7 @@ UARPGItemDefinition* UARPGWoodcuttingComponent::FindBestToolForTree(const AARPGT
         if (!Entry.InstanceId.IsValid() || Entry.Quantity <= 0 || !Entry.bEquipped || !Entry.EquipmentSlot.IsValid()) continue;
         UARPGItemDefinition* Def = Inventory->ResolveItemDefinition(Entry);
         if (!Def || !Def->bEquippable || !Def->EquipmentSlot.IsValid() || Entry.EquipmentSlot != Def->EquipmentSlot) continue;
+        if (Def->bUsesDurability && Entry.Durability <= KINDA_SMALL_NUMBER) continue;
 
         const bool bMatchesDesired = DesiredTag.IsValid()
             ? (Def->GatheringToolTags.HasTag(DesiredTag) || Def->ItemTags.HasTag(DesiredTag))
@@ -376,12 +377,21 @@ void UARPGWoodcuttingComponent::ResolveSwingImpactAuthority()
     }
 
     AARPGTree* Tree = CurrentTree;
+    FGuid ToolInstanceId;
+    UARPGItemDefinition* ToolDefinition = FindBestToolForTree(Tree, &ToolInstanceId);
     const float Power = CalculateChopPower(Tree);
     const bool bSuccess = Tree->ApplyChop(GetOwner(), Power);
     if (!bSuccess)
     {
         StopWoodcuttingAuthority(FText::FromString(TEXT("The chop could not be applied.")), true);
         return;
+    }
+
+    // Wear the exact tool that produced this successful chop. Failed chops and cancelled swings cost nothing.
+    if (ToolDefinition && ToolDefinition->bUsesDurability && ToolDefinition->bLoseDurabilityOnGatheringHit && ToolInstanceId.IsValid())
+    {
+        if (UARPGInventoryComponent* Inventory = GetOwner()->FindComponentByClass<UARPGInventoryComponent>())
+            Inventory->DamageItemDurability(ToolInstanceId, FMath::Max(0.f, ToolDefinition->GatheringDurabilityLossPerSuccessfulHit));
     }
 
     OnWoodcuttingSwing.Broadcast(Tree, Power, Tree->CurrentChopHealth);

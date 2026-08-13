@@ -76,6 +76,18 @@ The supplied native Inventory panel and hotbar work without Widget Blueprints. D
 
 For custom art, derive Widget Blueprints from `ARPGInventoryPanelWidget`, `ARPGQuickAccessBarWidget` and/or `ARPGInventoryItemSlotWidget`, then select them on the inherited `InventoryUI` component. See `Docs/INVENTORY_UI.md`.
 
+## 2C. Player Crafting + Equipment Durability/Repair
+
+Select the inherited **Crafting** component on your player Blueprint and add recipe Data Assets to **Player Recipes**. Open the existing Inventory UI and select the **CRAFTING & REPAIR** top tab, or bind input directly to:
+
+```text
+Open Crafting UI
+```
+
+For a Stone Axe recipe, create `ARPGRecipeDefinition`, set Inputs to Wood x2 and Stone x3, Output to Stone Axe x1, and leave Required Station Tag empty for personal crafting. For the Stone Axe Item Definition enable **Uses Durability** and **Lose Durability On Gathering Hit**, set Max Durability/wear, then configure repair materials under `Durability -> Repair`. For a sword, enable **Lose Durability On Combat Hit**.
+
+Durability is stored on the exact runtime Inventory item instance. Broken equipment cannot equip and can automatically unequip when it reaches zero. See `Docs/CRAFTING_DURABILITY_REPAIR.md`.
+
 ## 3. Use the supplied GameMode/Controller/GameState
 
 For the complete default flow, derive project classes from:

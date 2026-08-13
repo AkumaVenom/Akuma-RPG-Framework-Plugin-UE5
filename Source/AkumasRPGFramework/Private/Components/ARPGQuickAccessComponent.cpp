@@ -630,6 +630,28 @@ EARPGQuickAccessResult UARPGQuickAccessComponent::UseSlotAuthority(int32 SlotNum
 EARPGQuickAccessResult UARPGQuickAccessComponent::ActivateSlotAuthority(int32 SlotNumber, FGuid& OutInstanceId)
 {
     OutInstanceId.Invalidate();
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValidSlotNumber(SlotNumber)) return EARPGQuickAccessResult::InvalidSlot;
+
+    // Activation must validate a broken equippable BEFORE changing the active slot or retiring the
+    // previously held Quick Access equipment. Otherwise a broken sword could become active, unequip
+    // a valid held weapon, and only then fail its own EquipItem() call.
+    EnsureSlotArrayAuthority();
+    if (!QuickAccessSlots.IsValidIndex(ToIndex(SlotNumber)) || !IsCanonicalSlotForView(SlotNumber))
+        return EARPGQuickAccessResult::EmptySlot;
+    const FARPGQuickAccessSlot& RequestedSlot = QuickAccessSlots[ToIndex(SlotNumber)];
+    const FARPGInventoryEntry* RequestedEntry = ResolveOwnedEntry(RequestedSlot);
+    UARPGInventoryComponent* RequestedInventory = GetInventory();
+    UARPGItemDefinition* RequestedDefinition = RequestedInventory && RequestedEntry
+        ? RequestedInventory->ResolveItemDefinition(*RequestedEntry)
+        : nullptr;
+    if (!RequestedEntry) return EARPGQuickAccessResult::ItemUnavailable;
+    if (!RequestedDefinition || !RequestedDefinition->bAllowQuickAccess) return EARPGQuickAccessResult::ItemNotAllowed;
+    if (ResolveAction(RequestedDefinition) == EARPGQuickAccessAction::Equip &&
+        RequestedDefinition->bUsesDurability && RequestedEntry->Durability <= KINDA_SMALL_NUMBER)
+    {
+        OutInstanceId = RequestedEntry->InstanceId;
+        return EARPGQuickAccessResult::EquipFailed;
+    }
 
     FGuid PreviousActiveInstanceId;
     if (GetOwner() && GetOwner()->HasAuthority() && IsValidSlotNumber(ActiveSlotNumber))
@@ -735,7 +757,10 @@ bool UARPGQuickAccessComponent::ActivateSlot(int32 SlotNumber)
             {
                 if (UARPGItemDefinition* Definition = GetInventory() ? GetInventory()->ResolveItemDefinition(*Entry) : nullptr)
                 {
-                    if (ResolveAction(Definition) == EARPGQuickAccessAction::Use)
+                    const EARPGQuickAccessAction Action = ResolveAction(Definition);
+                    if (Action == EARPGQuickAccessAction::Equip && Definition->bUsesDurability && Entry->Durability <= KINDA_SMALL_NUMBER)
+                        return false;
+                    if (Action == EARPGQuickAccessAction::Use)
                     {
                         if (UARPGItemUseComponent* ItemUse = GetOwner()->FindComponentByClass<UARPGItemUseComponent>())
                             if (!ItemUse->CanUseItemNow(Entry->InstanceId)) return false;

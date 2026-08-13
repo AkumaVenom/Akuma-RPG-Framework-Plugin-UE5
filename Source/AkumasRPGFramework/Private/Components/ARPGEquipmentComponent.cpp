@@ -73,6 +73,7 @@ bool UARPGEquipmentComponent::IsValidEquippedEntry(const FARPGInventoryEntry& En
 {
     if (!Entry.InstanceId.IsValid() || Entry.Quantity <= 0 || !Entry.bEquipped || !Entry.EquipmentSlot.IsValid()) return false;
     if (!Definition || !Definition->bEquippable || !Definition->EquipmentSlot.IsValid()) return false;
+    if (Definition->bUsesDurability && Entry.Durability <= KINDA_SMALL_NUMBER) return false;
     return Entry.EquipmentSlot == Definition->EquipmentSlot;
 }
 
@@ -236,6 +237,13 @@ bool UARPGEquipmentComponent::EquipAuthority(FGuid Id)
     {
         UE_LOG(LogARPG, Warning, TEXT("EquipItem rejected for %s: runtime inventory entry %s could not resolve a valid equippable Item Definition."),
             *GetNameSafe(GetOwner()), *Id.ToString());
+        OnEquipmentRequestResult.Broadcast(false, Id);
+        return false;
+    }
+
+    if (Definition->bUsesDurability && Entry->Durability <= KINDA_SMALL_NUMBER)
+    {
+        UE_LOG(LogARPG, Verbose, TEXT("EquipItem rejected for %s: item %s is broken."), *GetNameSafe(GetOwner()), *Id.ToString());
         OnEquipmentRequestResult.Broadcast(false, Id);
         return false;
     }
@@ -534,6 +542,37 @@ void UARPGEquipmentComponent::PlayEquipmentPresentationLocal(const UARPGItemDefi
 void UARPGEquipmentComponent::MulticastPlayEquipmentPresentation_Implementation(UARPGItemDefinition* Definition, bool bEquipping)
 {
     PlayEquipmentPresentationLocal(Definition, bEquipping);
+}
+
+bool UARPGEquipmentComponent::ApplyCombatDurabilityWear(float WearMultiplier)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || WearMultiplier <= 0.f) return false;
+    UARPGInventoryComponent* Inventory = GetOwner()->FindComponentByClass<UARPGInventoryComponent>();
+    if (!Inventory) return false;
+
+    auto TryWear = [&](const FGuid& InstanceId) -> bool
+    {
+        if (!InstanceId.IsValid()) return false;
+        FARPGInventoryEntry* Entry = Inventory->Items.FindByPredicate([&](const FARPGInventoryEntry& Candidate){ return Candidate.InstanceId == InstanceId; });
+        if (!Entry) return false;
+        UARPGItemDefinition* Definition = Inventory->ResolveItemDefinition(*Entry);
+        if (!IsValidEquippedEntry(*Entry, Definition) || !Definition->bUsesDurability || !Definition->bLoseDurabilityOnCombatHit) return false;
+        const float Wear = FMath::Max(0.f, Definition->CombatDurabilityLossPerSuccessfulHit) * WearMultiplier;
+        return Wear > KINDA_SMALL_NUMBER && Inventory->DamageItemDurability(InstanceId, Wear);
+    };
+
+    // The held/active Quick Access item is the deterministic combat durability owner when available.
+    if (const UARPGQuickAccessComponent* QuickAccess = GetOwner()->FindComponentByClass<UARPGQuickAccessComponent>())
+    {
+        const int32 ActiveIndex = QuickAccess->ActiveSlotNumber - 1;
+        if (QuickAccess->QuickAccessSlots.IsValidIndex(ActiveIndex))
+            if (TryWear(QuickAccess->QuickAccessSlots[ActiveIndex].ItemInstanceId)) return true;
+    }
+
+    // Direct Inventory equip (or a project without Quick Access) still receives wear.
+    for (const FARPGInventoryEntry& Entry : Inventory->Items)
+        if (TryWear(Entry.InstanceId)) return true;
+    return false;
 }
 
 bool UARPGEquipmentComponent::PlayEquippedCombatSwingSoundLocal()

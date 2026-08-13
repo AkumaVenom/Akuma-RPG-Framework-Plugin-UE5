@@ -6,6 +6,7 @@
 #include "Components/ARPGProgressionComponent.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGItemUseComponent.h"
+#include "Components/ARPGCraftingComponent.h"
 #include "Items/ARPGItemUseBehavior.h"
 #include "Components/ARPGEquipmentComponent.h"
 #include "Components/ARPGQuickAccessComponent.h"
@@ -46,6 +47,7 @@ AARPGCharacter::AARPGCharacter()
     Progression = CreateDefaultSubobject<UARPGProgressionComponent>(TEXT("Progression"));
     Inventory = CreateDefaultSubobject<UARPGInventoryComponent>(TEXT("Inventory"));
     ItemUse = CreateDefaultSubobject<UARPGItemUseComponent>(TEXT("ItemUse"));
+    Crafting = CreateDefaultSubobject<UARPGCraftingComponent>(TEXT("Crafting"));
     Equipment = CreateDefaultSubobject<UARPGEquipmentComponent>(TEXT("Equipment"));
     QuickAccess = CreateDefaultSubobject<UARPGQuickAccessComponent>(TEXT("QuickAccess"));
     Currencies = CreateDefaultSubobject<UARPGCurrencyComponent>(TEXT("Currencies"));
@@ -208,6 +210,21 @@ bool AARPGCharacter::UseFirstInventoryItemById(FName ItemId)
 }
 
 
+bool AARPGCharacter::CraftRecipe(UARPGRecipeDefinition* Recipe, int32 Count)
+{
+    return Crafting ? Crafting->CraftRecipe(Recipe, Count) : false;
+}
+
+bool AARPGCharacter::CancelCrafting()
+{
+    return Crafting ? Crafting->CancelCrafting() : false;
+}
+
+bool AARPGCharacter::RepairInventoryItem(FGuid ItemInstanceId)
+{
+    return Crafting ? Crafting->RepairItem(ItemInstanceId) : false;
+}
+
 bool AARPGCharacter::StartWoodcuttingFromView()
 {
     return Woodcutting ? Woodcutting->StartWoodcuttingFromView() : false;
@@ -267,4 +284,9 @@ bool AARPGCharacter::ToggleInventoryUI()
 bool AARPGCharacter::IsInventoryUIOpen() const
 {
     return InventoryUI ? InventoryUI->IsInventoryUIOpen() : false;
+}
+
+bool AARPGCharacter::OpenCraftingUI()
+{
+    return InventoryUI ? InventoryUI->OpenCraftingUI() : false;
 }

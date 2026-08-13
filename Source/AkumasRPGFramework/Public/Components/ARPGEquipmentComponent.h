@@ -42,6 +42,10 @@ public:
     // Returns true when an equipped item supplied a sound, allowing combat to fall back to its class/profile audio otherwise.
     bool PlayEquippedCombatSwingSoundLocal();
 
+    /** Authority-only wear hook used after a successful combat hit. Prefers the active equipped Quick Access item. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Equipment|Durability", meta=(BlueprintAuthorityOnly))
+    bool ApplyCombatDurabilityWear(float WearMultiplier = 1.f);
+
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 protected:

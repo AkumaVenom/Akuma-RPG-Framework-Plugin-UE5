@@ -4,6 +4,7 @@
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/UserWidget.h"
 #include "ARPGTypes.h"
+#include "UI/ARPGCraftingWidgets.h"
 #include "ARPGInventoryWidgets.generated.h"
 
 class AARPGCharacter;
@@ -16,6 +17,15 @@ class UImage;
 class UProgressBar;
 class UTextBlock;
 class UUniformGridPanel;
+class UWidgetSwitcher;
+class USizeBox;
+
+UENUM(BlueprintType)
+enum class EARPGItemManagementTab : uint8
+{
+    Inventory,
+    Crafting
+};
 
 UENUM(BlueprintType)
 enum class EARPGInventoryUISlotSource : uint8
@@ -42,6 +52,10 @@ struct AKUMASRPGFRAMEWORK_API FARPGInventoryUISlotView
     UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") FGuid ItemInstanceId;
     UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") int32 Quantity = 0;
     UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") float Durability = 0.f;
+    UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") float MaxDurability = 0.f;
+    UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") float DurabilityPercent = 0.f;
+    UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") bool bUsesDurability = false;
+    UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") bool bBroken = false;
     UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") FGameplayTag EquipmentSlot;
     UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") TObjectPtr<UARPGItemDefinition> ItemDefinition = nullptr;
     UPROPERTY(BlueprintReadOnly, Category="ARPG|Inventory UI") FText DisplayName;
@@ -93,6 +107,8 @@ public:
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UTextBlock> ItemNameText;
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UTextBlock> EquippedText;
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UProgressBar> CooldownBar;
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UProgressBar> DurabilityBar;
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UTextBlock> BrokenText;
 
 protected:
     virtual void NativeOnInitialized() override;
@@ -128,12 +144,17 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") void RefreshInventoryUI();
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") void RequestCloseInventoryUI();
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") void SetSelectedSlotView(const FARPGInventoryUISlotView& InView);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") void SetActiveTab(EARPGItemManagementTab NewTab);
+    UFUNCTION(BlueprintPure, Category="ARPG|Inventory UI") EARPGItemManagementTab GetActiveTab() const { return ActiveTab; }
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") void RefreshCraftingUI();
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory UI") FARPGInventoryUISlotView GetSelectedSlotView() const { return SelectedSlotView; }
 
     UFUNCTION(BlueprintImplementableEvent, Category="ARPG|Inventory UI", meta=(DisplayName="On ARPG Inventory UI Refreshed"))
     void BP_OnInventoryUIRefreshed();
     UFUNCTION(BlueprintImplementableEvent, Category="ARPG|Inventory UI", meta=(DisplayName="On ARPG Inventory Selection Changed"))
     void BP_OnInventorySelectionChanged(FARPGInventoryUISlotView SelectedView);
+    UFUNCTION(BlueprintImplementableEvent, Category="ARPG|Inventory UI", meta=(DisplayName="On ARPG Item Management Tab Changed"))
+    void BP_OnItemManagementTabChanged(EARPGItemManagementTab NewTab);
 
     // Standard bindings for custom Inventory Widget Blueprints.
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UUniformGridPanel> InventoryGrid;
@@ -144,6 +165,11 @@ public:
     /** Context-sensitive ready action: Equip/Unequip for equipment, Use for usable items. */
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UButton> PrimaryActionButton;
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UTextBlock> PrimaryActionText;
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UButton> InventoryTabButton;
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UButton> CraftingTabButton;
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UWidgetSwitcher> MainTabSwitcher;
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<USizeBox> CraftingPageHost;
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UARPGCraftingPanelWidget> CraftingPanel;
 
 protected:
     virtual void NativeOnInitialized() override;
@@ -154,12 +180,17 @@ private:
     UPROPERTY(Transient) TObjectPtr<UARPGInventoryUIComponent> InventoryUI = nullptr;
     FARPGInventoryUISlotView SelectedSlotView;
     TArray<TObjectPtr<UARPGInventoryItemSlotWidget>> RuntimeSlots;
+    EARPGItemManagementTab ActiveTab = EARPGItemManagementTab::Inventory;
 
     UFUNCTION() void HandleCloseClicked();
+    UFUNCTION() void HandleInventoryTabClicked();
+    UFUNCTION() void HandleCraftingTabClicked();
     UFUNCTION() void HandlePrimaryActionClicked();
     void EnsureNativeLayoutOrBindings();
     void RebuildInventoryGrid();
     void UpdateSelectionText();
+    void EnsureCraftingPanel();
+    void ApplyActiveTab();
 };
 
 /** Always-available local Quick Access HUD. Drag inventory items here, rearrange slots, or drag a slot away to clear it. */

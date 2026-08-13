@@ -11,6 +11,25 @@
 #include "EngineUtils.h"
 #include "Net/UnrealNetwork.h"
 
+static FName ARPGResolveRecipeAmountId(const FARPGItemAmount& Amount)
+{
+    if (Amount.Item) return Amount.Item->DefinitionId.IsNone() ? Amount.Item->GetFName() : Amount.Item->DefinitionId;
+    return Amount.ItemId;
+}
+
+static bool ARPGCanAddRecipeAmount(const UARPGInventoryComponent* InventoryComponent, const FARPGItemAmount& Amount)
+{
+    if (!InventoryComponent || Amount.Quantity <= 0) return false;
+    return Amount.Item ? InventoryComponent->CanAddItemDefinition(Amount.Item, Amount.Quantity) : InventoryComponent->CanAddItem(ARPGResolveRecipeAmountId(Amount), Amount.Quantity);
+}
+
+static bool ARPGAddRecipeAmount(UARPGInventoryComponent* InventoryComponent, const FARPGItemAmount& Amount, int32 Multiplier = 1)
+{
+    if (!InventoryComponent || Amount.Quantity <= 0 || Multiplier <= 0) return false;
+    const int32 Quantity = Amount.Quantity * Multiplier;
+    return Amount.Item ? InventoryComponent->AddItemDefinition(Amount.Item, Quantity) : InventoryComponent->AddItem(ARPGResolveRecipeAmountId(Amount), Quantity);
+}
+
 AARPGCraftingStationActor::AARPGCraftingStationActor()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -102,7 +121,7 @@ bool AARPGCraftingStationActor::CanUseRecipe(AActor* Crafter, const UARPGRecipeD
     const UARPGInventoryComponent* InputInventory = ResolveInputInventory(Crafter);
     if (!InputInventory) return false;
     for (const FARPGItemAmount& Input : Recipe->Inputs)
-        if (!InputInventory->HasItem(Input.ItemId, Input.Quantity)) return false;
+        if (!InputInventory->HasItem(ARPGResolveRecipeAmountId(Input), Input.Quantity)) return false;
     return HasFuelForCraft(Crafter, Recipe);
 }
 
@@ -111,9 +130,9 @@ bool AARPGCraftingStationActor::ConsumeRecipeInputs(AActor* Crafter, const UARPG
     UARPGInventoryComponent* InputInventory = ResolveInputInventory(Crafter);
     if (!InputInventory || !Recipe || Count <= 0) return false;
     for (const FARPGItemAmount& Input : Recipe->Inputs)
-        if (!InputInventory->HasItem(Input.ItemId, Input.Quantity * Count)) return false;
+        if (!InputInventory->HasItem(ARPGResolveRecipeAmountId(Input), Input.Quantity * Count)) return false;
     for (const FARPGItemAmount& Input : Recipe->Inputs)
-        if (!InputInventory->RemoveItem(Input.ItemId, Input.Quantity * Count)) return false;
+        if (!InputInventory->RemoveItem(ARPGResolveRecipeAmountId(Input), Input.Quantity * Count)) return false;
     return true;
 }
 
@@ -122,7 +141,7 @@ void AARPGCraftingStationActor::RefundRecipeInputs(AActor* Crafter, const UARPGR
     UARPGInventoryComponent* InputInventory = ResolveInputInventory(Crafter);
     if (!InputInventory && StationDefinition && !StationDefinition->bUseStationInventoryForInputs) InputInventory = Inventory;
     if (!InputInventory || !Recipe || Count <= 0) return;
-    for (const FARPGItemAmount& Input : Recipe->Inputs) InputInventory->AddItem(Input.ItemId, Input.Quantity * Count);
+    for (const FARPGItemAmount& Input : Recipe->Inputs) ARPGAddRecipeAmount(InputInventory, Input, Count);
 }
 
 AActor* AARPGCraftingStationActor::FindCrafter(FGuid CharacterId) const
@@ -174,10 +193,10 @@ bool AARPGCraftingStationActor::CompleteOneCraft(FARPGCraftQueueEntry& Entry)
     AActor* Crafter = FindCrafter(Entry.CrafterCharacterId);
     if (!HasFuelForCraft(Crafter, Recipe)) return false;
     for (const FARPGItemAmount& Output : Recipe->Outputs)
-        if (!OutputInventory->CanAddItem(Output.ItemId, Output.Quantity)) return false;
+        if (!ARPGCanAddRecipeAmount(OutputInventory, Output)) return false;
     if (!ConsumeFuelForCraft(Crafter, Recipe)) return false;
     for (const FARPGItemAmount& Output : Recipe->Outputs)
-        OutputInventory->AddItem(Output.ItemId, Output.Quantity);
+        ARPGAddRecipeAmount(OutputInventory, Output);
 
     if (Crafter)
     {

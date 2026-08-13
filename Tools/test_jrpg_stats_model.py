@@ -78,7 +78,9 @@ assert magic * 1.0 == 10
 # Regression guards for two subtle integration cases: equipment-derived max vitals must exist before
 # saved current vitals are clamped, and changing Speed while blocking must not erase the block penalty.
 save_stats_pos = save.index("RestoreStatProgressionState")
-save_inventory_pos = save.index("ReplaceInventory(D.Inventory)", save_stats_pos)
+# v2.14 may migrate legacy durability into a mutable InventoryToRestore copy before replacement.
+restore_token = "ReplaceInventory(InventoryToRestore)" if "ReplaceInventory(InventoryToRestore)" in save else "ReplaceInventory(D.Inventory)"
+save_inventory_pos = save.index(restore_token, save_stats_pos)
 save_health_pos = save.index("Stats->Health=FMath::Clamp", save_inventory_pos)
 assert save_stats_pos < save_inventory_pos < save_health_pos, "equipment must restore before saved vitals are clamped"
 assert "Combat->bIsBlocking" in stats_cpp and "BlockingMoveSpeedMultiplier" in stats_cpp

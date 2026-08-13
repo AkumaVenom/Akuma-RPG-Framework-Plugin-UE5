@@ -1,3 +1,19 @@
+## Player Crafting, Durability, Repair & Item Management UI (v2.14.0)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Personal player crafting | Implemented | Inherited `Crafting` component, server-authoritative, no permanent Tick, recipes explicitly exposed per character. |
+| Shared recipe format | Implemented | Uses existing `ARPGRecipeDefinition`; direct Item Definition ingredient/output selection plus legacy ItemId compatibility. |
+| Timed/batch crafting | Implemented | Owner-only synchronized progress, per-craft commits, cancellation refund, skill requirements/XP and output-capacity checks. |
+| Instance durability | Implemented | Exact Inventory `InstanceId`, unique durable stacks, max/current/percent/broken state, broken equip rejection/auto-unequip. |
+| Combat wear | Implemented | Explicit per-item opt-in; wear only after positive applied damage. |
+| Gathering wear | Implemented | Explicit per-item opt-in; woodcutting charges exact axe instance only after a successful chop; generic API supports future pickaxes. |
+| Equipment repair | Implemented | Full-repair material recipe, optional proportional scaling, authoritative material consumption and full durability restoration. |
+| Shared Item Management UI | Implemented | Top-level Inventory and Crafting & Repair tabs with future-page switcher architecture. |
+| Ready Crafting/Repair UI | Implemented | Recipe rows, detail summaries, batch quantity, Craft/Cancel/progress, repair list/cost/action. |
+| Reskin support | Implemented | Exposed Crafting panel, Recipe row and Repair row Widget Classes plus standard child bindings/events. |
+| Save/storage persistence | Implemented | Exact durability survives saves/container transfers; legacy saves migrate once; active personal craft progress resumes without double-consuming committed inputs. |
+
 ## Full-Vitals Consumable Guard (v2.13.2)
 
 | Feature | Status | Notes |

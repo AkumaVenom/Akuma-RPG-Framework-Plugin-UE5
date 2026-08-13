@@ -12,6 +12,8 @@ class UARPGCombatComponent;
 class UARPGProgressionComponent;
 class UARPGInventoryComponent;
 class UARPGItemUseComponent;
+class UARPGCraftingComponent;
+class UARPGRecipeDefinition;
 class UARPGEquipmentComponent;
 class UARPGQuickAccessComponent;
 class UARPGCurrencyComponent;
@@ -57,6 +59,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGInventoryComponent> Inventory;
     /** Server-authoritative generic consumable/custom item-use pipeline shared by Inventory UI and Quick Access. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGItemUseComponent> ItemUse;
+    /** Player crafting/repair authority component. Recipes are data-driven and reuse the framework recipe assets. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGCraftingComponent> Crafting;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGEquipmentComponent> Equipment;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGQuickAccessComponent> QuickAccess;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGCurrencyComponent> Currencies;
@@ -106,6 +110,10 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Item Use|Input") bool UseInventoryItem(FGuid ItemInstanceId);
     UFUNCTION(BlueprintCallable, Category="ARPG|Item Use|Input") bool UseFirstInventoryItemById(FName ItemId);
 
+    UFUNCTION(BlueprintCallable, Category="ARPG|Crafting|Input") bool CraftRecipe(UARPGRecipeDefinition* Recipe, int32 Count = 1);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Crafting|Input") bool CancelCrafting();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Crafting|Repair") bool RepairInventoryItem(FGuid ItemInstanceId);
+
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcuttingFromView();
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcutting(AARPGTree* Tree);
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool ChopTreeOnce(AARPGTree* Tree);
@@ -122,6 +130,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Input") bool CloseInventoryUI();
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Input") bool ToggleInventoryUI();
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory UI") bool IsInventoryUIOpen() const;
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Input") bool OpenCraftingUI();
 
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return AbilitySystem; }
     virtual void BeginPlay() override;

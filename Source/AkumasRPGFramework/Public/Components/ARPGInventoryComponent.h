@@ -20,6 +20,7 @@ struct AKUMASRPGFRAMEWORK_API FARPGStartingInventoryItem
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FARPGOnInventoryChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FARPGOnItemDurabilityChanged, FGuid, ItemInstanceId, float, CurrentDurability, float, MaxDurability, bool, bBroken);
 
 UCLASS(ClassGroup=(ARPG), meta=(BlueprintSpawnableComponent))
 class AKUMASRPGFRAMEWORK_API UARPGInventoryComponent : public UActorComponent
@@ -39,6 +40,7 @@ public:
     // Runtime/save state. Intentionally read-only in Class Defaults: author Starting Items above instead of hand-making GUID entries.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Items, SaveGame, Category="Inventory|Runtime", meta=(DisplayName="Runtime Items")) TArray<FARPGInventoryEntry> Items;
     UPROPERTY(BlueprintAssignable) FARPGOnInventoryChanged OnInventoryChanged;
+    UPROPERTY(BlueprintAssignable, Category="Inventory|Durability") FARPGOnItemDurabilityChanged OnItemDurabilityChanged;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool AddItem(FName ItemId, int32 Quantity=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool AddItemDefinition(const UARPGItemDefinition* Item, int32 Quantity=1);
@@ -46,7 +48,10 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool RemoveItemInstance(FGuid InstanceId, int32 Quantity=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool TransferItemTo(UARPGInventoryComponent* Destination, FName ItemId, int32 Quantity=1);
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") int32 GetItemCount(FName ItemId) const;
+    UFUNCTION(BlueprintPure, Category="ARPG|Inventory") int32 GetUnequippedItemCount(FName ItemId) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") bool HasItem(FName ItemId, int32 Quantity=1) const;
+    UFUNCTION(BlueprintPure, Category="ARPG|Inventory") bool HasUnequippedItem(FName ItemId, int32 Quantity=1) const;
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool RemoveUnequippedItem(FName ItemId, int32 Quantity=1);
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") int32 GetFreeSlots() const { return FMath::Max(0, MaxSlots - Items.Num()); }
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") bool CanAddItem(FName ItemId, int32 Quantity=1) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") bool CanAddItemDefinition(const UARPGItemDefinition* Item, int32 Quantity=1) const;
@@ -60,6 +65,12 @@ public:
     UARPGItemDefinition* ResolveItemDefinition(const FARPGInventoryEntry& Entry) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") UARPGItemDefinition* GetItemDefinitionForInstance(FGuid InstanceId) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") bool IsItemInstanceEquipped(FGuid InstanceId) const;
+    UFUNCTION(BlueprintPure, Category="ARPG|Inventory|Durability") bool GetItemDurability(FGuid InstanceId, float& OutCurrentDurability, float& OutMaxDurability, float& OutDurabilityPercent, bool& bOutBroken) const;
+    UFUNCTION(BlueprintPure, Category="ARPG|Inventory|Durability") bool IsItemBroken(FGuid InstanceId) const;
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory|Durability", meta=(BlueprintAuthorityOnly)) bool SetItemDurability(FGuid InstanceId, float NewDurability);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory|Durability", meta=(BlueprintAuthorityOnly)) bool DamageItemDurability(FGuid InstanceId, float Amount);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory|Durability", meta=(BlueprintAuthorityOnly)) bool RepairItemDurability(FGuid InstanceId, float Amount);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory|Durability", meta=(BlueprintAuthorityOnly)) bool RepairItemToFull(FGuid InstanceId);
 
     virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

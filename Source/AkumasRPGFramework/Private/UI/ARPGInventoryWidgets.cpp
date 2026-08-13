@@ -20,6 +20,8 @@
 #include "Components/UniformGridSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/WidgetSwitcher.h"
+#include "UI/ARPGCraftingWidgets.h"
 #include "Components/ARPGInventoryUIComponent.h"
 #include "Data/ARPGItemDefinition.h"
 #include "Engine/Texture2D.h"
@@ -34,6 +36,16 @@ namespace
         Font.Size = FontSize;
         Text->SetFont(Font);
         Text->SetColorAndOpacity(FSlateColor(Color));
+    }
+
+    UTextBlock* MakeTextBlock(UWidgetTree* Tree, const FText& Value, int32 FontSize)
+    {
+        if (!Tree) return nullptr;
+        UTextBlock* Text = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+        Text->SetText(Value);
+        Text->SetJustification(ETextJustify::Center);
+        StyleInventoryText(Text, FontSize);
+        return Text;
     }
 
     FText RarityText(EARPGRarity Rarity)
@@ -174,6 +186,25 @@ void UARPGInventoryItemSlotWidget::EnsureNativeLayoutOrBindings()
             CooldownSlot->SetVerticalAlignment(VAlign_Bottom);
             CooldownSlot->SetPadding(FMargin(4.f, 0.f, 4.f, 1.f));
         }
+
+        DurabilityBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("DurabilityBar"));
+        DurabilityBar->SetFillColorAndOpacity(FLinearColor(0.88f, 0.70f, 0.20f, 0.95f));
+        if (UOverlaySlot* DurabilitySlot = Overlay->AddChildToOverlay(DurabilityBar))
+        {
+            DurabilitySlot->SetHorizontalAlignment(HAlign_Fill);
+            DurabilitySlot->SetVerticalAlignment(VAlign_Bottom);
+            DurabilitySlot->SetPadding(FMargin(5.f, 0.f, 5.f, 6.f));
+        }
+
+        BrokenText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BrokenText"));
+        BrokenText->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryBrokenOverlay", "BROKEN"));
+        BrokenText->SetJustification(ETextJustify::Center);
+        StyleInventoryText(BrokenText, 10, FLinearColor(1.f, 0.28f, 0.20f, 1.f));
+        if (UOverlaySlot* BrokenSlot = Overlay->AddChildToOverlay(BrokenText))
+        {
+            BrokenSlot->SetHorizontalAlignment(HAlign_Fill);
+            BrokenSlot->SetVerticalAlignment(VAlign_Center);
+        }
     }
     else
     {
@@ -184,6 +215,8 @@ void UARPGInventoryItemSlotWidget::EnsureNativeLayoutOrBindings()
         if (!ItemNameText) ItemNameText = Cast<UTextBlock>(GetWidgetFromName(TEXT("ItemNameText")));
         if (!EquippedText) EquippedText = Cast<UTextBlock>(GetWidgetFromName(TEXT("EquippedText")));
         if (!CooldownBar) CooldownBar = Cast<UProgressBar>(GetWidgetFromName(TEXT("CooldownBar")));
+        if (!DurabilityBar) DurabilityBar = Cast<UProgressBar>(GetWidgetFromName(TEXT("DurabilityBar")));
+        if (!BrokenText) BrokenText = Cast<UTextBlock>(GetWidgetFromName(TEXT("BrokenText")));
     }
 }
 
@@ -246,14 +279,30 @@ void UARPGInventoryItemSlotWidget::ApplyViewToStandardFields()
         CooldownBar->SetVisibility(bCoolingDown ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
     }
 
+    if (DurabilityBar)
+    {
+        DurabilityBar->SetPercent(FMath::Clamp(SlotView.DurabilityPercent, 0.f, 1.f));
+        DurabilityBar->SetVisibility(SlotView.bOccupied && SlotView.bUsesDurability ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    }
+    if (BrokenText)
+        BrokenText->SetVisibility(SlotView.bOccupied && SlotView.bBroken ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+
     if (SlotView.bOccupied)
     {
+        const FText DurabilityLine = SlotView.bUsesDurability
+            ? FText::Format(
+                NSLOCTEXT("AkumasRPGFramework", "InventoryTooltipDurability", "\nDurability: {0} / {1} ({2}%){3}"),
+                FText::AsNumber(FMath::RoundToInt(SlotView.Durability)),
+                FText::AsNumber(FMath::RoundToInt(SlotView.MaxDurability)),
+                FText::AsNumber(FMath::RoundToInt(FMath::Clamp(SlotView.DurabilityPercent, 0.f, 1.f) * 100.f)),
+                SlotView.bBroken ? NSLOCTEXT("AkumasRPGFramework", "InventoryTooltipBroken", "  BROKEN") : FText::GetEmpty())
+            : FText::GetEmpty();
         const FText Tooltip = FText::Format(
-            NSLOCTEXT("AkumasRPGFramework", "InventorySlotTooltip", "{0}\n{1}\nQuantity: {2}\nDurability: {3}%{4}"),
+            NSLOCTEXT("AkumasRPGFramework", "InventorySlotTooltip", "{0}\n{1}\nQuantity: {2}{3}{4}"),
             SlotView.DisplayName,
             SlotView.Description,
             FText::AsNumber(FMath::Max(0, SlotView.Quantity)),
-            FText::AsNumber(FMath::RoundToInt(FMath::Clamp(SlotView.Durability, 0.f, 100.f))),
+            DurabilityLine,
             SlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryTooltipEquipped", "\nEquipped") : FText::GetEmpty());
         SetToolTipText(Tooltip);
     }
@@ -402,6 +451,8 @@ void UARPGInventoryPanelWidget::NativeOnInitialized()
     EnsureNativeLayoutOrBindings();
     if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleCloseClicked);
     if (PrimaryActionButton) PrimaryActionButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandlePrimaryActionClicked);
+    if (InventoryTabButton) InventoryTabButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleInventoryTabClicked);
+    if (CraftingTabButton) CraftingTabButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleCraftingTabClicked);
 }
 
 void UARPGInventoryPanelWidget::InitializeInventoryUI(AARPGCharacter* InCharacter, UARPGInventoryUIComponent* InInventoryUIComponent)
@@ -411,7 +462,11 @@ void UARPGInventoryPanelWidget::InitializeInventoryUI(AARPGCharacter* InCharacte
     EnsureNativeLayoutOrBindings();
     if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleCloseClicked);
     if (PrimaryActionButton) PrimaryActionButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandlePrimaryActionClicked);
+    if (InventoryTabButton) InventoryTabButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleInventoryTabClicked);
+    if (CraftingTabButton) CraftingTabButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleCraftingTabClicked);
+    EnsureCraftingPanel();
     RebuildInventoryGrid();
+    SetActiveTab(EARPGItemManagementTab::Inventory);
     RefreshInventoryUI();
 }
 
@@ -424,118 +479,70 @@ void UARPGInventoryPanelWidget::EnsureNativeLayoutOrBindings()
         WidgetTree->RootWidget = Root;
 
         UBorder* ScreenDim = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryUIScreenDim"));
-        ScreenDim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.38f));
+        ScreenDim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.42f));
         ScreenDim->SetVisibility(ESlateVisibility::HitTestInvisible);
-        if (UOverlaySlot* DimSlot = Root->AddChildToOverlay(ScreenDim))
-        {
-            DimSlot->SetHorizontalAlignment(HAlign_Fill);
-            DimSlot->SetVerticalAlignment(VAlign_Fill);
-        }
+        if (UOverlaySlot* S = Root->AddChildToOverlay(ScreenDim)) { S->SetHorizontalAlignment(HAlign_Fill); S->SetVerticalAlignment(VAlign_Fill); }
 
         USizeBox* PanelSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("InventoryUIPanelSize"));
-        PanelSize->SetWidthOverride(880.f);
-        PanelSize->SetHeightOverride(650.f);
-        if (UOverlaySlot* PanelSlot = Root->AddChildToOverlay(PanelSize))
+        PanelSize->SetWidthOverride(930.f); PanelSize->SetHeightOverride(680.f);
+        PanelSize->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        if (UOverlaySlot* S = Root->AddChildToOverlay(PanelSize))
         {
-            PanelSlot->SetHorizontalAlignment(HAlign_Center);
-            PanelSlot->SetVerticalAlignment(VAlign_Center);
-            PanelSlot->SetPadding(FMargin(24.f, 24.f, 24.f, 120.f));
+            S->SetHorizontalAlignment(HAlign_Center); S->SetVerticalAlignment(VAlign_Center); S->SetPadding(FMargin(24.f,24.f,24.f,120.f));
         }
 
-        UBorder* PanelBackground = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryUIPanelBackground"));
-        PanelBackground->SetPadding(FMargin(16.f));
-        PanelBackground->SetBrushColor(FLinearColor(0.012f, 0.015f, 0.024f, 0.97f));
-        PanelBackground->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-        PanelSize->SetContent(PanelBackground);
-
-        UVerticalBox* MainStack = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("InventoryUIMainStack"));
-        PanelBackground->SetContent(MainStack);
+        UBorder* Background = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryUIPanelBackground"));
+        Background->SetPadding(FMargin(16.f)); Background->SetBrushColor(FLinearColor(0.012f,0.015f,0.024f,0.975f)); Background->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        PanelSize->SetContent(Background);
+        UVerticalBox* Main = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("InventoryUIMainStack")); Background->SetContent(Main);
 
         UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("InventoryUIHeader"));
-        if (UVerticalBoxSlot* HeaderSlot = MainStack->AddChildToVerticalBox(Header)) HeaderSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+        if (UVerticalBoxSlot* S=Main->AddChildToVerticalBox(Header)) S->SetPadding(FMargin(0.f,0.f,0.f,8.f));
+        UTextBlock* Title=WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),TEXT("ItemManagementTitleText")); Title->SetText(NSLOCTEXT("AkumasRPGFramework","ItemManagementTitle","Item Management")); StyleInventoryText(Title,26,FLinearColor(0.95f,0.78f,0.28f,1.f));
+        if(UHorizontalBoxSlot* S=Header->AddChildToHorizontalBox(Title)){FSlateChildSize Fill;Fill.SizeRule=ESlateSizeRule::Fill;S->SetSize(Fill);}
+        CapacityText=WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),TEXT("CapacityText"));CapacityText->SetJustification(ETextJustify::Right);StyleInventoryText(CapacityText,13,FLinearColor(0.76f,0.80f,0.88f,1.f));
+        USizeBox* Cap=WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());Cap->SetWidthOverride(220.f);Cap->SetContent(CapacityText);Header->AddChildToHorizontalBox(Cap);
+        CloseButton=WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(),TEXT("CloseButton"));UTextBlock* CloseText=WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());CloseText->SetText(NSLOCTEXT("AkumasRPGFramework","InventoryClose","Close"));CloseText->SetJustification(ETextJustify::Center);StyleInventoryText(CloseText,12);CloseButton->AddChild(CloseText);
+        USizeBox* CloseBox=WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());CloseBox->SetWidthOverride(90.f);CloseBox->SetHeightOverride(34.f);CloseBox->SetContent(CloseButton);if(UHorizontalBoxSlot* S=Header->AddChildToHorizontalBox(CloseBox))S->SetPadding(FMargin(8.f,0.f,0.f,0.f));
 
-        USizeBox* TitleBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-        TitleBox->SetWidthOverride(420.f);
-        UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("InventoryTitleText"));
-        Title->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryTitle", "Inventory"));
-        StyleInventoryText(Title, 26, FLinearColor(0.95f, 0.78f, 0.28f, 1.f));
-        TitleBox->SetContent(Title);
-        Header->AddChildToHorizontalBox(TitleBox);
+        // Top-level extensible item-management tabs. Future systems can add switcher pages without replacing the shell.
+        UHorizontalBox* Tabs=WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(),TEXT("ItemManagementTabs"));if(UVerticalBoxSlot* S=Main->AddChildToVerticalBox(Tabs))S->SetPadding(FMargin(0.f,0.f,0.f,10.f));
+        InventoryTabButton=WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(),TEXT("InventoryTabButton"));InventoryTabButton->AddChild(MakeTextBlock(WidgetTree, NSLOCTEXT("AkumasRPGFramework","InventoryTab","INVENTORY"), 12));
+        CraftingTabButton=WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(),TEXT("CraftingTabButton"));CraftingTabButton->AddChild(MakeTextBlock(WidgetTree, NSLOCTEXT("AkumasRPGFramework","CraftingTab","CRAFTING & REPAIR"), 12));
+        USizeBox* InvTabSize=WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());InvTabSize->SetWidthOverride(170.f);InvTabSize->SetHeightOverride(36.f);InvTabSize->SetContent(InventoryTabButton);if(UHorizontalBoxSlot* S=Tabs->AddChildToHorizontalBox(InvTabSize))S->SetPadding(FMargin(0.f,0.f,7.f,0.f));
+        USizeBox* CraftTabSize=WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());CraftTabSize->SetWidthOverride(190.f);CraftTabSize->SetHeightOverride(36.f);CraftTabSize->SetContent(CraftingTabButton);Tabs->AddChildToHorizontalBox(CraftTabSize);
 
-        USizeBox* CapacityBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-        CapacityBox->SetWidthOverride(300.f);
-        CapacityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CapacityText"));
-        CapacityText->SetJustification(ETextJustify::Right);
-        StyleInventoryText(CapacityText, 14, FLinearColor(0.78f, 0.81f, 0.88f, 1.f));
-        CapacityBox->SetContent(CapacityText);
-        Header->AddChildToHorizontalBox(CapacityBox);
+        MainTabSwitcher=WidgetTree->ConstructWidget<UWidgetSwitcher>(UWidgetSwitcher::StaticClass(),TEXT("MainTabSwitcher"));
+        if(UVerticalBoxSlot* S=Main->AddChildToVerticalBox(MainTabSwitcher)){FSlateChildSize Fill;Fill.SizeRule=ESlateSizeRule::Fill;S->SetSize(Fill);}
 
-        USizeBox* CloseBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-        CloseBox->SetWidthOverride(96.f);
-        CloseBox->SetHeightOverride(36.f);
-        CloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CloseButton"));
-        UTextBlock* CloseLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-        CloseLabel->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryClose", "Close"));
-        CloseLabel->SetJustification(ETextJustify::Center);
-        StyleInventoryText(CloseLabel, 13);
-        CloseButton->AddChild(CloseLabel);
-        CloseBox->SetContent(CloseButton);
-        Header->AddChildToHorizontalBox(CloseBox);
+        // Inventory page preserves the proven drag/drop grid and item context action flow.
+        UVerticalBox* InventoryPage=WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(),TEXT("InventoryPage"));MainTabSwitcher->AddChild(InventoryPage);
+        UScrollBox* Scroll=WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(),TEXT("InventoryScroll"));if(UVerticalBoxSlot* S=InventoryPage->AddChildToVerticalBox(Scroll)){FSlateChildSize Fill;Fill.SizeRule=ESlateSizeRule::Fill;S->SetSize(Fill);}
+        InventoryGrid=WidgetTree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(),TEXT("InventoryGrid"));InventoryGrid->SetVisibility(ESlateVisibility::SelfHitTestInvisible);Scroll->AddChild(InventoryGrid);
+        UBorder* DetailBorder=WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(),TEXT("InventorySelectionBorder"));DetailBorder->SetPadding(FMargin(10.f));DetailBorder->SetBrushColor(FLinearColor(0.025f,0.03f,0.045f,0.96f));if(UVerticalBoxSlot* S=InventoryPage->AddChildToVerticalBox(DetailBorder))S->SetPadding(FMargin(0.f,9.f,0.f,0.f));
+        UVerticalBox* Detail=WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());DetailBorder->SetContent(Detail);
+        SelectedItemNameText=WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),TEXT("SelectedItemNameText"));StyleInventoryText(SelectedItemNameText,16,FLinearColor(0.94f,0.77f,0.30f,1.f));Detail->AddChildToVerticalBox(SelectedItemNameText);
+        SelectedItemDetailsText=WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),TEXT("SelectedItemDetailsText"));SelectedItemDetailsText->SetAutoWrapText(true);StyleInventoryText(SelectedItemDetailsText,11,FLinearColor(0.76f,0.79f,0.86f,1.f));Detail->AddChildToVerticalBox(SelectedItemDetailsText);
+        USizeBox* ActionSize=WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(),TEXT("InventoryPrimaryActionSize"));ActionSize->SetWidthOverride(150.f);ActionSize->SetHeightOverride(36.f);if(UVerticalBoxSlot* S=Detail->AddChildToVerticalBox(ActionSize))S->SetPadding(FMargin(0.f,8.f,0.f,0.f));
+        PrimaryActionButton=WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(),TEXT("PrimaryActionButton"));PrimaryActionText=WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),TEXT("PrimaryActionText"));PrimaryActionText->SetJustification(ETextJustify::Center);StyleInventoryText(PrimaryActionText,13);PrimaryActionButton->AddChild(PrimaryActionText);PrimaryActionButton->SetVisibility(ESlateVisibility::Collapsed);ActionSize->SetContent(PrimaryActionButton);
+        UTextBlock* Help=WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),TEXT("InventoryHelpText"));Help->SetText(NSLOCTEXT("AkumasRPGFramework","InventoryHelpTabs","Select or right-click an item to use/equip it. Drag items to Quick Access. Durable equipment shows its condition directly on the slot. Use the Crafting & Repair tab to create or restore equipment."));Help->SetAutoWrapText(true);StyleInventoryText(Help,10,FLinearColor(0.58f,0.62f,0.70f,1.f));if(UVerticalBoxSlot* S=InventoryPage->AddChildToVerticalBox(Help))S->SetPadding(FMargin(0.f,7.f,0.f,0.f));
 
-        UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("InventoryScroll"));
-        if (UVerticalBoxSlot* ScrollSlot = MainStack->AddChildToVerticalBox(Scroll))
-        {
-            FSlateChildSize Fill;
-            Fill.SizeRule = ESlateSizeRule::Fill;
-            ScrollSlot->SetSize(Fill);
-        }
-
-        InventoryGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(), TEXT("InventoryGrid"));
-        InventoryGrid->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-        Scroll->AddChild(InventoryGrid);
-
-        UBorder* DetailBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventorySelectionBorder"));
-        DetailBorder->SetPadding(FMargin(10.f));
-        DetailBorder->SetBrushColor(FLinearColor(0.025f, 0.03f, 0.045f, 0.96f));
-        if (UVerticalBoxSlot* DetailSlot = MainStack->AddChildToVerticalBox(DetailBorder)) DetailSlot->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
-
-        UVerticalBox* DetailStack = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-        DetailBorder->SetContent(DetailStack);
-        SelectedItemNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SelectedItemNameText"));
-        StyleInventoryText(SelectedItemNameText, 16, FLinearColor(0.94f, 0.77f, 0.30f, 1.f));
-        DetailStack->AddChildToVerticalBox(SelectedItemNameText);
-        SelectedItemDetailsText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SelectedItemDetailsText"));
-        SelectedItemDetailsText->SetAutoWrapText(true);
-        StyleInventoryText(SelectedItemDetailsText, 11, FLinearColor(0.76f, 0.79f, 0.86f, 1.f));
-        DetailStack->AddChildToVerticalBox(SelectedItemDetailsText);
-
-        USizeBox* ActionSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("InventoryPrimaryActionSize"));
-        ActionSize->SetWidthOverride(150.f);
-        ActionSize->SetHeightOverride(36.f);
-        if (UVerticalBoxSlot* ActionSlot = DetailStack->AddChildToVerticalBox(ActionSize)) ActionSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
-        PrimaryActionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("PrimaryActionButton"));
-        PrimaryActionText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PrimaryActionText"));
-        PrimaryActionText->SetJustification(ETextJustify::Center);
-        StyleInventoryText(PrimaryActionText, 13);
-        PrimaryActionButton->AddChild(PrimaryActionText);
-        PrimaryActionButton->SetVisibility(ESlateVisibility::Collapsed);
-        ActionSize->SetContent(PrimaryActionButton);
-
-        UTextBlock* HelpText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("InventoryHelpText"));
-        HelpText->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryHelp", "Select an item and use the action button, or right-click it: equipment equips/unequips and usable items activate immediately. Drag an item to Quick Access to assign it. Drag Quick Access slots to rearrange them or drag one away to clear it."));
-        HelpText->SetAutoWrapText(true);
-        StyleInventoryText(HelpText, 10, FLinearColor(0.58f, 0.62f, 0.70f, 1.f));
-        if (UVerticalBoxSlot* HelpSlot = MainStack->AddChildToVerticalBox(HelpText)) HelpSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+        // Crafting page is hosted separately so the entire subsystem can be reskinned/replaced as one Widget Class.
+        CraftingPageHost=WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(),TEXT("CraftingPageHost"));CraftingPageHost->SetVisibility(ESlateVisibility::SelfHitTestInvisible);MainTabSwitcher->AddChild(CraftingPageHost);
     }
     else
     {
-        if (!InventoryGrid) InventoryGrid = Cast<UUniformGridPanel>(GetWidgetFromName(TEXT("InventoryGrid")));
-        if (!CapacityText) CapacityText = Cast<UTextBlock>(GetWidgetFromName(TEXT("CapacityText")));
-        if (!SelectedItemNameText) SelectedItemNameText = Cast<UTextBlock>(GetWidgetFromName(TEXT("SelectedItemNameText")));
-        if (!SelectedItemDetailsText) SelectedItemDetailsText = Cast<UTextBlock>(GetWidgetFromName(TEXT("SelectedItemDetailsText")));
-        if (!CloseButton) CloseButton = Cast<UButton>(GetWidgetFromName(TEXT("CloseButton")));
-        if (!PrimaryActionButton) PrimaryActionButton = Cast<UButton>(GetWidgetFromName(TEXT("PrimaryActionButton")));
-        if (!PrimaryActionText) PrimaryActionText = Cast<UTextBlock>(GetWidgetFromName(TEXT("PrimaryActionText")));
+        if (!InventoryGrid) InventoryGrid=Cast<UUniformGridPanel>(GetWidgetFromName(TEXT("InventoryGrid")));
+        if (!CapacityText) CapacityText=Cast<UTextBlock>(GetWidgetFromName(TEXT("CapacityText")));
+        if (!SelectedItemNameText) SelectedItemNameText=Cast<UTextBlock>(GetWidgetFromName(TEXT("SelectedItemNameText")));
+        if (!SelectedItemDetailsText) SelectedItemDetailsText=Cast<UTextBlock>(GetWidgetFromName(TEXT("SelectedItemDetailsText")));
+        if (!CloseButton) CloseButton=Cast<UButton>(GetWidgetFromName(TEXT("CloseButton")));
+        if (!PrimaryActionButton) PrimaryActionButton=Cast<UButton>(GetWidgetFromName(TEXT("PrimaryActionButton")));
+        if (!PrimaryActionText) PrimaryActionText=Cast<UTextBlock>(GetWidgetFromName(TEXT("PrimaryActionText")));
+        if (!InventoryTabButton) InventoryTabButton=Cast<UButton>(GetWidgetFromName(TEXT("InventoryTabButton")));
+        if (!CraftingTabButton) CraftingTabButton=Cast<UButton>(GetWidgetFromName(TEXT("CraftingTabButton")));
+        if (!MainTabSwitcher) MainTabSwitcher=Cast<UWidgetSwitcher>(GetWidgetFromName(TEXT("MainTabSwitcher")));
+        if (!CraftingPageHost) CraftingPageHost=Cast<USizeBox>(GetWidgetFromName(TEXT("CraftingPageHost")));
     }
 }
 
@@ -597,6 +604,8 @@ void UARPGInventoryPanelWidget::RefreshInventoryUI()
         if (InventoryUI->GetInventorySlotView(SelectedSlotView.SlotNumber, RefreshedSelection)) SelectedSlotView = RefreshedSelection;
     }
     UpdateSelectionText();
+    if (CraftingPanel) CraftingPanel->RefreshCraftingProgress();
+    ApplyActiveTab();
     BP_OnInventoryUIRefreshed();
 }
 
@@ -616,12 +625,13 @@ void UARPGInventoryPanelWidget::UpdateSelectionText()
     {
         const UARPGItemDefinition* Definition = SelectedSlotView.ItemDefinition;
         const bool bCanEquip = SelectedSlotView.bOccupied && Definition && Definition->bEquippable && Definition->EquipmentSlot.IsValid();
+        const bool bBrokenEquip = bCanEquip && SelectedSlotView.bUsesDurability && SelectedSlotView.bBroken;
         const bool bCanUse = SelectedSlotView.bOccupied && Definition && Definition->bUsable;
         const bool bPreferUse = bCanUse && Definition->QuickAccessAction == EARPGQuickAccessAction::Use;
         const bool bActionIsUse = bCanUse && (bPreferUse || !bCanEquip);
         PrimaryActionButton->SetVisibility((bCanEquip || bCanUse) ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
         const bool bUseAvailableNow = !bActionIsUse || (InventoryUI && InventoryUI->CanUseInventoryItemNow(SelectedSlotView.ItemInstanceId));
-        PrimaryActionButton->SetIsEnabled(!bActionIsUse || (SelectedSlotView.CooldownRemaining <= KINDA_SMALL_NUMBER && bUseAvailableNow));
+        PrimaryActionButton->SetIsEnabled(!bBrokenEquip && (!bActionIsUse || (SelectedSlotView.CooldownRemaining <= KINDA_SMALL_NUMBER && bUseAvailableNow)));
         if (PrimaryActionText)
         {
             if (bActionIsUse)
@@ -629,7 +639,7 @@ void UARPGInventoryPanelWidget::UpdateSelectionText()
                     ? FText::Format(NSLOCTEXT("AkumasRPGFramework", "InventoryUseCooldownAction", "Use ({0}s)"), FText::AsNumber(FMath::CeilToInt(SelectedSlotView.CooldownRemaining)))
                     : NSLOCTEXT("AkumasRPGFramework", "InventoryUseAction", "Use"));
             else if (bCanEquip)
-                PrimaryActionText->SetText(SelectedSlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryUnequipAction", "Unequip") : NSLOCTEXT("AkumasRPGFramework", "InventoryEquipAction", "Equip"));
+                PrimaryActionText->SetText(bBrokenEquip ? NSLOCTEXT("AkumasRPGFramework", "InventoryBrokenRepairAction", "Broken - Repair") : (SelectedSlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryUnequipAction", "Unequip") : NSLOCTEXT("AkumasRPGFramework", "InventoryEquipAction", "Equip")));
         }
     }
 
@@ -641,12 +651,20 @@ void UARPGInventoryPanelWidget::UpdateSelectionText()
             return;
         }
 
+        const FText DurabilityDetail = SelectedSlotView.bUsesDurability
+            ? FText::Format(
+                NSLOCTEXT("AkumasRPGFramework", "InventorySelectedDurability", "   Durability: {0} / {1} ({2}%){3}"),
+                FText::AsNumber(FMath::RoundToInt(SelectedSlotView.Durability)),
+                FText::AsNumber(FMath::RoundToInt(SelectedSlotView.MaxDurability)),
+                FText::AsNumber(FMath::RoundToInt(FMath::Clamp(SelectedSlotView.DurabilityPercent, 0.f, 1.f) * 100.f)),
+                SelectedSlotView.bBroken ? NSLOCTEXT("AkumasRPGFramework", "InventorySelectedBroken", "   BROKEN") : FText::GetEmpty())
+            : FText::GetEmpty();
         SelectedItemDetailsText->SetText(FText::Format(
-            NSLOCTEXT("AkumasRPGFramework", "InventorySelectedDetail", "{0}\nRarity: {1}   Quantity: {2}   Durability: {3}%{4}{5}"),
+            NSLOCTEXT("AkumasRPGFramework", "InventorySelectedDetail", "{0}\nRarity: {1}   Quantity: {2}{3}{4}{5}"),
             SelectedSlotView.Description,
             RarityText(SelectedSlotView.Rarity),
             FText::AsNumber(FMath::Max(0, SelectedSlotView.Quantity)),
-            FText::AsNumber(FMath::RoundToInt(FMath::Clamp(SelectedSlotView.Durability, 0.f, 100.f))),
+            DurabilityDetail,
             SelectedSlotView.bBound ? NSLOCTEXT("AkumasRPGFramework", "InventoryBoundDetail", "   Bound") : FText::GetEmpty(),
             SelectedSlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryEquippedDetail", "   Equipped") : FText::GetEmpty()));
     }
@@ -658,6 +676,42 @@ void UARPGInventoryPanelWidget::HandlePrimaryActionClicked()
     InventoryUI->ActivateInventoryItem(SelectedSlotView.ItemInstanceId);
     RefreshInventoryUI();
 }
+
+void UARPGInventoryPanelWidget::EnsureCraftingPanel()
+{
+    if (CraftingPanel || !CraftingPageHost || !InventoryUI || !ObservedCharacter || !GetOwningPlayer()) return;
+    TSubclassOf<UARPGCraftingPanelWidget> ResolvedClass = InventoryUI->CraftingWidgetClass;
+    if (!ResolvedClass) ResolvedClass = UARPGCraftingPanelWidget::StaticClass();
+    CraftingPanel = CreateWidget<UARPGCraftingPanelWidget>(GetOwningPlayer(), ResolvedClass);
+    if (!CraftingPanel) return;
+    CraftingPanel->InitializeCraftingUI(ObservedCharacter, InventoryUI);
+    CraftingPageHost->SetContent(CraftingPanel);
+}
+
+void UARPGInventoryPanelWidget::SetActiveTab(EARPGItemManagementTab NewTab)
+{
+    ActiveTab = NewTab;
+    EnsureCraftingPanel();
+    ApplyActiveTab();
+    if (ActiveTab == EARPGItemManagementTab::Crafting) RefreshCraftingUI();
+    BP_OnItemManagementTabChanged(ActiveTab);
+}
+
+void UARPGInventoryPanelWidget::ApplyActiveTab()
+{
+    if (MainTabSwitcher) MainTabSwitcher->SetActiveWidgetIndex(ActiveTab == EARPGItemManagementTab::Inventory ? 0 : 1);
+    if (InventoryTabButton) InventoryTabButton->SetIsEnabled(ActiveTab != EARPGItemManagementTab::Inventory);
+    if (CraftingTabButton) CraftingTabButton->SetIsEnabled(ActiveTab != EARPGItemManagementTab::Crafting);
+}
+
+void UARPGInventoryPanelWidget::RefreshCraftingUI()
+{
+    EnsureCraftingPanel();
+    if (CraftingPanel) CraftingPanel->RefreshCraftingUI();
+}
+
+void UARPGInventoryPanelWidget::HandleInventoryTabClicked() { SetActiveTab(EARPGItemManagementTab::Inventory); }
+void UARPGInventoryPanelWidget::HandleCraftingTabClicked() { SetActiveTab(EARPGItemManagementTab::Crafting); }
 
 void UARPGInventoryPanelWidget::RequestCloseInventoryUI()
 {

@@ -452,6 +452,12 @@ void UARPGCombatComponent::ResolveHitOnActor(AActor* Target, const FARPGAttackSt
         MulticastPlayCombatCue(bCritical ? EARPGCombatFeedbackCue::CriticalHit : EARPGCombatFeedbackCue::Hit,
                                HitLocation, (Target->GetActorLocation() - GetOwner()->GetActorLocation()).GetSafeNormal());
     }
+    // Durability is charged only after a real damaging hit resolves on authority. Misses, dodges,
+    // parries and zero-damage contacts do not wear the held weapon. Multi-target attacks wear per target hit.
+    if (Info.AppliedDamage > KINDA_SMALL_NUMBER)
+        if (UARPGEquipmentComponent* Equipment = GetOwner()->FindComponentByClass<UARPGEquipmentComponent>())
+            Equipment->ApplyCombatDurabilityWear();
+
     OnCombatHitDealt.Broadcast(Info);
 }
 

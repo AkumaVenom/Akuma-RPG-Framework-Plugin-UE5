@@ -414,6 +414,8 @@ struct AKUMASRPGFRAMEWORK_API FARPGCharacterSaveData
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGInventoryEntry> Inventory;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGQuickAccessSlot> QuickAccessSlots;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) int32 ActiveQuickAccessSlotNumber = 0;
+    /** Active personal craft. The current craft's ingredients are already committed in Inventory. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FARPGCraftQueueEntry PersonalCraftingState;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGQuestRuntime> Quests;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGSkillState> Skills;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FARPGSlayerTask SlayerTask;

@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "TimerManager.h"
 #include "UI/ARPGInventoryWidgets.h"
+#include "Components/ARPGCraftingComponent.h"
 #include "ARPGInventoryUIComponent.generated.h"
 
 class AARPGCharacter;
@@ -11,6 +12,9 @@ class APlayerController;
 class UARPGInventoryComponent;
 class UARPGQuickAccessComponent;
 class UARPGItemUseComponent;
+class UARPGCraftingPanelWidget;
+class UARPGCraftingRecipeRowWidget;
+class UARPGRepairItemRowWidget;
 
 /**
  * Local player Inventory + Quick Access UI owner.
@@ -31,6 +35,12 @@ public:
     TSubclassOf<UARPGInventoryItemSlotWidget> InventorySlotWidgetClass;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Inventory UI|Widgets", meta=(DisplayName="Quick Access Slot Widget Class"))
     TSubclassOf<UARPGInventoryItemSlotWidget> QuickAccessSlotWidgetClass;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Inventory UI|Widgets", meta=(DisplayName="Crafting Widget Class"))
+    TSubclassOf<UARPGCraftingPanelWidget> CraftingWidgetClass;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Inventory UI|Widgets", meta=(DisplayName="Crafting Recipe Row Widget Class"))
+    TSubclassOf<UARPGCraftingRecipeRowWidget> CraftingRecipeRowWidgetClass;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Inventory UI|Widgets", meta=(DisplayName="Repair Item Row Widget Class"))
+    TSubclassOf<UARPGRepairItemRowWidget> RepairItemRowWidgetClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Inventory UI|Inventory", meta=(ClampMin="1", ClampMax="12")) int32 InventoryColumns = 8;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Inventory UI|Inventory", meta=(ClampMin="48.0", ClampMax="160.0")) float InventorySlotSize = 86.f;
@@ -56,6 +66,8 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") bool OpenInventoryUI();
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") bool CloseInventoryUI();
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") bool ToggleInventoryUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") bool OpenCraftingUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") bool SetActiveItemManagementTab(EARPGItemManagementTab NewTab);
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory UI") bool IsInventoryUIOpen() const;
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") bool EnsureQuickAccessUI();
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI") void SetQuickAccessHUDVisible(bool bShouldShow);
@@ -96,11 +108,15 @@ private:
     UFUNCTION() void HandleQuickAccessChanged();
     UFUNCTION() void HandleActiveQuickAccessSlotChanged(int32 SlotNumber, FName ItemId, FGuid ItemInstanceId);
     UFUNCTION() void HandleItemUseCooldownsChanged();
+    UFUNCTION() void HandleCraftingStateChanged();
+    UFUNCTION() void HandleCraftingResult(EARPGCraftingResult Result, UARPGRecipeDefinition* Recipe, int32 RemainingCount, FText Message);
+    UFUNCTION() void HandleRepairResult(EARPGCraftingResult Result, FGuid ItemInstanceId, FText Message);
 
     bool ResolveLocalPlayer(AARPGCharacter*& OutCharacter, APlayerController*& OutPlayerController) const;
     UARPGInventoryComponent* GetInventory() const;
     UARPGQuickAccessComponent* GetQuickAccess() const;
     UARPGItemUseComponent* GetItemUse() const;
+    UARPGCraftingComponent* GetCrafting() const;
     void BindRuntimeEvents();
     void UnbindRuntimeEvents();
     void UpdateCooldownRefreshTimer();

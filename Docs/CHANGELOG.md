@@ -1,3 +1,22 @@
+## v2.14.0-alpha — Player Crafting, Functional Durability, Repair & Tabbed Item Management UI
+
+- Added inherited replicated `UARPGCraftingComponent` to every `AARPGCharacter`; no permanent Tick.
+- Reused `UARPGRecipeDefinition` for secure personal crafting and existing station crafting rather than creating a second recipe format.
+- Added direct Item Definition asset references to recipe inputs/outputs while preserving legacy ItemId authoring and station compatibility.
+- Added server-authoritative timed/batch crafting, owner-only synchronized runtime state, skill checks/XP, output-capacity simulation, per-craft ingredient commits, cancellation refund and EventRouter craft reporting.
+- Added functional per-instance durability with unique durable stacks, current/max/percent/broken APIs, broken equip rejection and optional automatic unequip on break.
+- Added explicit Combat and Gathering wear contexts so durable armor or unrelated equipment cannot accidentally lose durability from weapon/tool actions.
+- Combat durability is charged only after positive applied damage; woodcutting charges the exact axe instance only after `ApplyChop()` succeeds.
+- Added generic `Damage Item Durability`, `Repair Item Durability`, `Repair Item To Full` Blueprint APIs for future mining/pickaxe and custom gameplay systems.
+- Added Data Asset repair configuration with proportional missing-durability material cost and authoritative repair validation/consumption.
+- Rebuilt the ready Inventory panel into an extensible Item Management shell with Inventory + Crafting & Repair tabs.
+- Added native `ARPGCraftingPanelWidget`, recipe-row and repair-row widgets, exposed reskin classes, quantity controls, craft/cancel/progress, damaged-item list and repair action.
+- Added durability bars/BROKEN state to ready Inventory/Quick Access slot presentation and disabled equipping broken equipment.
+- Durable storage/container transfers now preserve exact runtime InstanceId state/condition instead of recreating items at full durability.
+- Bumped character/world save schemas for backward-compatible durability migration: legacy durable items initialize at authored max once; new saves persist exact damaged/broken condition.
+- Active personal crafting now persists recipe, remaining batch and progress so reload resumes the already-committed current craft without double-consuming ingredients.
+- Preserved the README splash, Inventory/Quick Access drag/drop, Item Use, equipment socket exclusivity and previous framework behavior.
+
 ## v2.13.3-alpha — Full-Vitals Hard-Gate Fix
 
 - Fixed the actual v2.13.2 loophole where any configured `UseGameplayEffect` or `Item Use Behavior Class` bypassed the full Health/Mana/Stamina protection on an otherwise vital-restoring consumable.
