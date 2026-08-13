@@ -55,6 +55,15 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor") TSoftObjectPtr<UStaticMesh> BuildMesh;
     /** Optional lighter proxy mesh for placement. Falls back to Build Mesh. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor") TSoftObjectPtr<UStaticMesh> PreviewMesh;
+    /**
+     * Data-driven transform applied to the visible Build/Preview mesh inside the framework actor.
+     * Use this to adapt third-party modular meshes without reimporting them. For wall-family pieces,
+     * actor-local X is the logical wall run and actor-local +Y is the logical front/exterior side;
+     * rotate/flip the visible mesh here so its intended art-facing matches that convention.
+     * Identity preserves all pre-v2.15.3 content exactly.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor", meta=(DisplayName="Mesh Relative Transform"))
+    FTransform MeshRelativeTransform = FTransform::Identity;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Identity") EARPGBuildPieceKind PieceKind = EARPGBuildPieceKind::Foundation;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Identity") FName BuildCategory = TEXT("Structure");

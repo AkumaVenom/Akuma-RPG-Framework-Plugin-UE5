@@ -37,7 +37,7 @@ for kind in ('Foundation','Wall','WindowWall','Window','Doorway','Door','Floor',
     assert kind in piece_h
 require(piece_h, 'BuildMesh', 'PreviewMesh', 'BuildCost', 'ConstructionSeconds', 'ConstructionStartScaleZ',
         'ConstructionProgressMaterialParameter', 'SnapSize', 'StandardWallHeight', 'CustomSnapPoints',
-        'StorageSlots', 'StationDefinition', 'DemolishRefundFraction')
+        'StorageSlots', 'StationDefinition', 'DemolishRefundFraction', 'MeshRelativeTransform')
 
 # Local build mode + ghost; permanent component tick is avoided outside build mode.
 require(build_h, 'BuildCatalog', 'BeginBuildMode', 'EndBuildMode', 'ConfirmPreviewPlacement', 'RotatePreview',
@@ -50,6 +50,15 @@ require(build_cpp, 'PrimaryComponentTick.bStartWithTickEnabled = false', 'SetCom
 require(build_cpp, 'ARPGGetBuildPieceBottomAnchorLocal', 'ARPGGetBuildPieceBoundsCenterLocal',
         'Hit.ImpactPoint - DesiredRotation.RotateVector(BottomAnchorLocal)', 'PlacementBoundsCenter',
         'BottomAnchor + FVector::UpVector * ProbeLift', 'Grid-snap the visible footprint anchor')
+# v2.15.3 mesh-orientation adaptation: transformed bounds are used by placement and snapping,
+# while preview/final visuals receive the same Data Asset relative transform.
+require(build_cpp, 'RawBox.TransformBy(Piece->MeshRelativeTransform)')
+require(actor_cpp, 'RawBox.TransformBy(Piece->MeshRelativeTransform)',
+        'BuildMesh->SetRelativeTransform(Definition->MeshRelativeTransform)')
+require(preview_h, 'USceneComponent', 'PreviewRoot')
+require(preview_cpp, 'PreviewMesh->SetupAttachment(PreviewRoot)',
+        'PreviewMesh->SetRelativeTransform(Piece->MeshRelativeTransform)')
+require(piece_h, 'FTransform MeshRelativeTransform = FTransform::Identity')
 assert 'Hit.ImpactNormal * FMath::Max(0.f, SelectedBuildPiece->PlacementBounds.Z)' not in build_cpp
 
 # Mathematical regression: bottom-pivot and center-pivot 150 cm foundations both land their visible bottom at Z=0.
@@ -80,6 +89,57 @@ require(preview_cpp, 'bReplicates = false', 'SetActorEnableCollision(false)', 'E
 require(actor_cpp, 'Foundation', 'WindowWall', 'Doorway', 'Ceiling', 'Roof',
         'TargetKind == EARPGBuildPieceKind::Doorway && IncomingKind == EARPGBuildPieceKind::Door',
         'TargetKind == EARPGBuildPieceKind::WindowWall && IncomingKind == EARPGBuildPieceKind::Window')
+# v2.15.4 modular seam/corner collision fix: wall graph advertises perpendicular L-corners, and
+# placement only tolerates overlap with another completed build when the final transform exactly
+# matches one of that neighbour's native/custom snap candidates. This keeps arbitrary clipping blocked.
+require(actor_cpp, 'TargetHalfGrid', 'IncomingHalfGrid', 'CornerOffsets[]',
+        'FVector( TargetHalfGrid,  IncomingHalfGrid, AlignBottomPlaneZ)',
+        'FVector( TargetHalfGrid, -IncomingHalfGrid, AlignBottomPlaneZ)',
+        'FVector(-TargetHalfGrid,  IncomingHalfGrid, AlignBottomPlaneZ)',
+        'FVector(-TargetHalfGrid, -IncomingHalfGrid, AlignBottomPlaneZ)',
+        'FRotator(0.f,  90.f, 0.f)', 'FRotator(0.f, -90.f, 0.f)')
+require(build_cpp, 'ARPGIsValidSnappedBuildNeighbor', 'Neighbor->GetSnapTransformsFor',
+        'PlacementCollisionClearance + 0.5f', 'BuildNeighbor->CanActorModify(Owner)')
+assert 'const_cast<AARPGBuildPieceActor*>' not in build_cpp
+# 300 cm target + 300 cm incoming wall: the four L-corner centers sit at +/-150 cm on both axes,
+# and each center accepts both +/-90 facing variants for intentional wall-only left/right turns.
+target_half = 300.0 * 0.5
+incoming_half = 300.0 * 0.5
+corner_centers = {
+    (target_half, incoming_half), (target_half, -incoming_half),
+    (-target_half, incoming_half), (-target_half, -incoming_half),
+}
+assert corner_centers == {(150.0,150.0),(150.0,-150.0),(-150.0,150.0),(-150.0,-150.0)}
+corner_candidates = {(x, y, yaw) for x, y in corner_centers for yaw in (90.0, -90.0)}
+assert len(corner_candidates) == 8
+# v2.15.5 directional-wall regression: local +Y is the logical front/exterior side. Foundation
+# support-edge yaw must rotate that +Y vector toward each edge's outward normal. The previous
+# +X/-X signs were reversed, making exactly two opposite walls show their back face.
+require(actor_cpp,
+        'FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingOnTargetTopZ)',
+        'FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingOnTargetTopZ)',
+        'actor local +Y is the', 'front/exterior side')
+import math
+def rotate_y(yaw_deg):
+    r=math.radians(yaw_deg)
+    # Standard UE yaw in XY: x'=cos*x-sin*y, y'=sin*x+cos*y. Input is local +Y=(0,1).
+    return (round(-math.sin(r), 6), round(math.cos(r), 6))
+edge_yaws = {
+    (0.0, 1.0): 0.0,
+    (0.0,-1.0): 180.0,
+    (1.0, 0.0):-90.0,
+    (-1.0,0.0): 90.0,
+}
+for outward, yaw in edge_yaws.items():
+    assert rotate_y(yaw) == outward, (outward, yaw, rotate_y(yaw))
+# Example from a 300 foundation: north wall (0,+150,yaw0) and east wall (+150,0,yaw-90).
+# East relative to north is (+150,-150,yaw-90), which is one wall-only corner variant.
+assert (150.0, -150.0, -90.0) in corner_candidates
+# If a foundation edge and an already-built wall corner advertise that same physical slot, the
+# horizontal support owns orientation. Wall-only corners still keep both variants when no support ties.
+require(build_cpp, 'ARPGGetSnapTargetSemanticPriority', 'ARPGIsHorizontalStructuralKind',
+        'SameSlotTolerance', 'bSamePhysicalSlot', 'bBetterSemanticOwner',
+        'SemanticPriority < BestSemanticPriority')
 # Timed construction uses synchronized server time, visible reveal and tick-only-while-building.
 require(actor_h, 'bConstructionComplete', 'ConstructionStartServerTime', 'ConstructionDuration', 'GetConstructionProgress01')
 require(actor_cpp, 'GetServerWorldTimeSeconds', 'ConstructionStartScaleZ', 'SetScalarParameterValueOnMaterials',

@@ -4,6 +4,7 @@
 #include "ARPGTypes.h"
 #include "ARPGBuildPreviewActor.generated.h"
 
+class USceneComponent;
 class UStaticMeshComponent;
 class UARPGBuildPieceDefinition;
 class UMaterialInterface;
@@ -15,6 +16,7 @@ class AKUMASRPGFRAMEWORK_API AARPGBuildPreviewActor : public AActor
     GENERATED_BODY()
 public:
     AARPGBuildPreviewActor();
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Preview") TObjectPtr<USceneComponent> PreviewRoot;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Preview") TObjectPtr<UStaticMeshComponent> PreviewMesh;
     UFUNCTION() void ConfigurePreview(const UARPGBuildPieceDefinition* Piece, UMaterialInterface* ValidMaterial, UMaterialInterface* InvalidMaterial);
     UFUNCTION() void SetPlacementResult(EARPGPlacementResult Result);

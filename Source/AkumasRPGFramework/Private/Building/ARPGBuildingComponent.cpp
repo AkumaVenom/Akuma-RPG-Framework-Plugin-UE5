@@ -36,6 +36,36 @@ static void ARPGAggregateBuildCosts(const UARPGBuildPieceDefinition* Piece, TMap
     }
 }
 
+static bool ARPGIsWallLikeKind(EARPGBuildPieceKind Kind)
+{
+    return Kind == EARPGBuildPieceKind::Wall || Kind == EARPGBuildPieceKind::WindowWall || Kind == EARPGBuildPieceKind::Doorway;
+}
+
+static bool ARPGIsHorizontalStructuralKind(EARPGBuildPieceKind Kind)
+{
+    return Kind == EARPGBuildPieceKind::Foundation || Kind == EARPGBuildPieceKind::Floor ||
+           Kind == EARPGBuildPieceKind::Ceiling || Kind == EARPGBuildPieceKind::Roof;
+}
+
+/**
+ * Multiple completed structures can advertise the same geometric snap slot. This is common at a
+ * foundation corner after the first wall exists: both the horizontal support and that wall can
+ * produce an incoming-wall transform at essentially the same location. The support edge owns the
+ * unambiguous outward-facing orientation, while the wall corner deliberately exposes both turn
+ * facings for wall-only construction. Prefer the support only when candidates are the same slot;
+ * ordinary distance/yaw scoring remains unchanged everywhere else.
+ */
+static int32 ARPGGetSnapTargetSemanticPriority(const AARPGBuildPieceActor* Target, const UARPGBuildPieceDefinition* IncomingPiece)
+{
+    if (!Target || !Target->Definition || !IncomingPiece) return 0;
+    if (!ARPGIsWallLikeKind(IncomingPiece->PieceKind)) return 0;
+
+    const EARPGBuildPieceKind TargetKind = Target->Definition->PieceKind;
+    if (ARPGIsHorizontalStructuralKind(TargetKind)) return 0;
+    if (ARPGIsWallLikeKind(TargetKind)) return 1;
+    return 2;
+}
+
 /**
  * PlacementBounds are validation half-extents, not a promise about where a mesh pivot lives.
  * Modular building meshes are commonly authored with center, bottom-center, or corner pivots.
@@ -47,8 +77,10 @@ static bool ARPGGetBuildPieceLocalBounds(const UARPGBuildPieceDefinition* Piece,
     if (UStaticMesh* Mesh = Piece->BuildMesh.LoadSynchronous())
     {
         const FBoxSphereBounds Bounds = Mesh->GetBounds();
-        OutMin = Bounds.Origin - Bounds.BoxExtent;
-        OutMax = Bounds.Origin + Bounds.BoxExtent;
+        const FBox RawBox(Bounds.Origin - Bounds.BoxExtent, Bounds.Origin + Bounds.BoxExtent);
+        const FBox ActorLocalBox = RawBox.TransformBy(Piece->MeshRelativeTransform);
+        OutMin = ActorLocalBox.Min;
+        OutMax = ActorLocalBox.Max;
         return true;
     }
 
@@ -71,6 +103,37 @@ static FVector ARPGGetBuildPieceBottomAnchorLocal(const UARPGBuildPieceDefinitio
     ARPGGetBuildPieceLocalBounds(Piece, Min, Max);
     const FVector Center = (Min + Max) * 0.5f;
     return FVector(Center.X, Center.Y, Min.Z);
+}
+
+/**
+ * A snapped modular seam may intentionally overlap a few centimetres of neighbouring art
+ * (for example a 302 cm wall on a 300 cm structural grid, or two wall posts meeting at an L corner).
+ * Collision validation must not globally ignore build pieces, because that would permit arbitrary
+ * clipping. Instead, an overlapping completed build piece is tolerated only when it advertises the
+ * incoming final transform as one of its native/custom snap transforms.
+ */
+static bool ARPGIsValidSnappedBuildNeighbor(AARPGBuildPieceActor* Neighbor, const UARPGBuildPieceDefinition* IncomingPiece, const FTransform& IncomingFinal)
+{
+    if (!Neighbor || !IncomingPiece || !Neighbor->IsConstructionComplete()) return false;
+
+    TArray<FTransform> NeighborCandidates;
+    Neighbor->GetSnapTransformsFor(IncomingPiece, NeighborCandidates);
+    if (NeighborCandidates.Num() == 0) return false;
+
+    // Candidate transforms come from the same authoritative snap graph, so only a small tolerance
+    // is needed for transform composition/floating-point drift. PlacementCollisionClearance remains
+    // the exposed per-piece seam/validation tuning value and therefore also informs this tolerance.
+    const float PositionTolerance = FMath::Max(1.f, IncomingPiece->PlacementCollisionClearance + 0.5f);
+    const float PositionToleranceSq = FMath::Square(PositionTolerance);
+    constexpr float RotationToleranceDegrees = 1.f;
+
+    for (const FTransform& Candidate : NeighborCandidates)
+    {
+        if (FVector::DistSquared(Candidate.GetLocation(), IncomingFinal.GetLocation()) > PositionToleranceSq) continue;
+        const float RotationDeltaDegrees = FMath::RadiansToDegrees(Candidate.GetRotation().AngularDistance(IncomingFinal.GetRotation()));
+        if (RotationDeltaDegrees <= RotationToleranceDegrees) return true;
+    }
+    return false;
 }
 
 UARPGBuildingComponent::UARPGBuildingComponent()
@@ -287,13 +350,20 @@ bool UARPGBuildingComponent::FindBestSnapTransform(const UARPGBuildPieceDefiniti
         FCollisionShape::MakeSphere(FMath::Max(1.f, Piece->SnapSearchRadius)), QueryParams);
 
     float BestScore = TNumericLimits<float>::Max();
+    int32 BestSemanticPriority = TNumericLimits<int32>::Max();
     const float CaptureSq = FMath::Square(FMath::Max(1.f, Piece->SnapCaptureDistance));
+    // Only use semantic priority as a tie-breaker for transforms that represent the same physical
+    // socket. This avoids changing normal snap selection while preventing an overlapping wall-corner
+    // candidate from overriding the foundation/floor edge that defines wall exterior orientation.
+    const float SameSlotTolerance = FMath::Max(1.f, Piece->PlacementCollisionClearance + 0.5f);
+    const float SameSlotToleranceSq = FMath::Square(SameSlotTolerance);
     TSet<AARPGBuildPieceActor*> Seen;
     for (const FOverlapResult& Overlap : Overlaps)
     {
         AARPGBuildPieceActor* Target = Cast<AARPGBuildPieceActor>(Overlap.GetActor());
         if (!Target || Seen.Contains(Target) || !Target->IsConstructionComplete()) continue;
         Seen.Add(Target);
+        const int32 SemanticPriority = ARPGGetSnapTargetSemanticPriority(Target, Piece);
         TArray<FTransform> Candidates;
         Target->GetSnapTransformsFor(Piece, Candidates);
         for (const FTransform& Candidate : Candidates)
@@ -302,9 +372,15 @@ bool UARPGBuildingComponent::FindBestSnapTransform(const UARPGBuildPieceDefiniti
             if (DistSq > CaptureSq) continue;
             const float YawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(Candidate.Rotator().Yaw, DesiredTransform.Rotator().Yaw));
             const float Score = DistSq + FMath::Square(YawDelta * 1.5f);
-            if (Score < BestScore)
+
+            const bool bSamePhysicalSlot = OutSnapTarget &&
+                FVector::DistSquared(Candidate.GetLocation(), OutTransform.GetLocation()) <= SameSlotToleranceSq;
+            const bool bBetterSemanticOwner = bSamePhysicalSlot && SemanticPriority < BestSemanticPriority;
+            const bool bSameSemanticOwner = !bSamePhysicalSlot || SemanticPriority == BestSemanticPriority;
+            if (bBetterSemanticOwner || (bSameSemanticOwner && Score < BestScore))
             {
                 BestScore = Score;
+                BestSemanticPriority = SemanticPriority;
                 OutTransform = Candidate;
                 OutSnapTarget = Target;
             }
@@ -412,8 +488,25 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
     {
         for (const FOverlapResult& Overlap : Overlaps)
         {
-            const AActor* Other = Overlap.GetActor();
-            if (Other && Other != Owner && Other != SnapTarget) return EARPGPlacementResult::Blocked;
+            AActor* Other = Overlap.GetActor();
+            if (!Other || Other == Owner || Other == SnapTarget) continue;
+
+            // Valid modular seams/corners can have deliberate art overlap. Only tolerate another
+            // completed build actor when this exact final transform is one of that actor's declared
+            // snap neighbours. Arbitrary build-piece clipping and all non-building blockers remain blocked.
+            if (AARPGBuildPieceActor* BuildNeighbor = Cast<AARPGBuildPieceActor>(Other))
+            {
+                if (ARPGIsValidSnappedBuildNeighbor(BuildNeighbor, Piece, Final))
+                {
+                    // Treat an accepted seam neighbour like an additional snap relationship for access
+                    // control, so a player cannot exploit corner tolerance to intersect protected builds.
+                    if (bRequireSnapTargetModificationAccess && !BuildNeighbor->CanActorModify(Owner))
+                        return EARPGPlacementResult::Restricted;
+                    continue;
+                }
+            }
+
+            return EARPGPlacementResult::Blocked;
         }
     }
 

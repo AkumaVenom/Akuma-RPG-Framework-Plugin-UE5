@@ -32,8 +32,10 @@ static void ARPGGetBuildDefinitionLocalBounds(const UARPGBuildPieceDefinition* P
         if (UStaticMesh* Mesh = Piece->BuildMesh.LoadSynchronous())
         {
             const FBoxSphereBounds Bounds = Mesh->GetBounds();
-            OutMin = Bounds.Origin - Bounds.BoxExtent;
-            OutMax = Bounds.Origin + Bounds.BoxExtent;
+            const FBox RawBox(Bounds.Origin - Bounds.BoxExtent, Bounds.Origin + Bounds.BoxExtent);
+            const FBox ActorLocalBox = RawBox.TransformBy(Piece->MeshRelativeTransform);
+            OutMin = ActorLocalBox.Min;
+            OutMax = ActorLocalBox.Max;
             return;
         }
         OutMin = -Piece->PlacementBounds;
@@ -164,6 +166,13 @@ void AARPGBuildPieceActor::RefreshDefinitionPresentation()
 {
     if (!BuildMesh || !Definition) return;
     if (UStaticMesh* Mesh = Definition->BuildMesh.LoadSynchronous()) BuildMesh->SetStaticMesh(Mesh);
+
+    // Keep the gameplay actor on the framework's stable logical axes while letting content creators
+    // adapt arbitrary imported mesh orientation/pivot/scale entirely from the Build Piece Data Asset.
+    // This is deliberately component-relative so replication/save transforms remain clean and the
+    // native structural snap graph does not inherit art-pipeline axis assumptions.
+    BuildMesh->SetRelativeTransform(Definition->MeshRelativeTransform);
+
     BaseMeshRelativeLocation = BuildMesh->GetRelativeLocation();
     BaseMeshRelativeScale = BuildMesh->GetRelativeScale3D();
 }
@@ -302,12 +311,17 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
             }
 
             // Wall-family pieces sit with their actual mesh bottom on the target's actual top.
+            // Logical wall convention: actor local X is the wall run and actor local +Y is the
+            // authored front/exterior side after MeshRelativeTransform. Each support-edge yaw must
+            // therefore rotate +Y toward that edge's outward normal. In UE yaw space +90 rotates
+            // local +Y toward -X, while -90 rotates local +Y toward +X. Keep these signs paired
+            // with their geometric edge; swapping them turns the two X-edge walls inside-out.
             if (ARPGIsWallLike(IncomingKind))
             {
                 AddLocal(FTransform(FRotator(0.f,   0.f, 0.f), FVector(0.f,  Half, IncomingOnTargetTopZ)));
                 AddLocal(FTransform(FRotator(0.f, 180.f, 0.f), FVector(0.f, -Half, IncomingOnTargetTopZ)));
-                AddLocal(FTransform(FRotator(0.f,  90.f, 0.f), FVector(Half, 0.f, IncomingOnTargetTopZ)));
-                AddLocal(FTransform(FRotator(0.f, -90.f, 0.f), FVector(-Half, 0.f, IncomingOnTargetTopZ)));
+                AddLocal(FTransform(FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingOnTargetTopZ)));
+                AddLocal(FTransform(FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingOnTargetTopZ)));
             }
 
             if (IncomingKind == EARPGBuildPieceKind::Stair && TargetKind != EARPGBuildPieceKind::Roof)
@@ -338,6 +352,28 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(Grid, 0.f, AlignBottomPlaneZ)));
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(-Grid, 0.f, AlignBottomPlaneZ)));
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, 0.f, IncomingAboveTargetZ)));
+
+                // Perpendicular corner continuation. A modular wall placed on one foundation edge must be
+                // allowed to meet a wall on the adjacent edge without requiring the art meshes to stop
+                // exactly at the logical grid centerline. These transforms describe the four legitimate
+                // L-corner neighbours using the target half-grid along X and incoming half-grid along Y.
+                // They also let wall-only construction turn a 90-degree corner without a foundation below.
+                const float TargetHalfGrid = Grid * 0.5f;
+                const float IncomingHalfGrid = IncomingGrid * 0.5f;
+                const FVector CornerOffsets[] =
+                {
+                    FVector( TargetHalfGrid,  IncomingHalfGrid, AlignBottomPlaneZ),
+                    FVector( TargetHalfGrid, -IncomingHalfGrid, AlignBottomPlaneZ),
+                    FVector(-TargetHalfGrid,  IncomingHalfGrid, AlignBottomPlaneZ),
+                    FVector(-TargetHalfGrid, -IncomingHalfGrid, AlignBottomPlaneZ)
+                };
+                for (const FVector& CornerOffset : CornerOffsets)
+                {
+                    // Both +/-90 facings are legitimate at the same geometric L-corner. Keeping both
+                    // preserves authored front/back orientation and matches foundation-edge yaw choices.
+                    AddLocal(FTransform(FRotator(0.f,  90.f, 0.f), CornerOffset));
+                    AddLocal(FTransform(FRotator(0.f, -90.f, 0.f), CornerOffset));
+                }
             }
 
             // Horizontal structural pieces attach at the actual wall top instead of assuming a centered pivot.

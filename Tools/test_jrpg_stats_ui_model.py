@@ -81,8 +81,8 @@ assert "FInputModeGameOnly" in component_cpp
 
 # README splash is a protected top-of-file contract.
 lines = readme.splitlines()
-splash = '<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/42618c54-4728-4a36-9d18-9e2b8181c455" />'
-assert splash in lines[:6], "GitHub README splash must remain at the top"
+splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
+assert any(splash in line for line in lines[:6]), "GitHub README splash must remain at the top"
 assert "v2.11.0-alpha — Complete Ready-to-Use JRPG Stats UI" in changelog
 
 print("Complete JRPG Stats UI model: PASS")

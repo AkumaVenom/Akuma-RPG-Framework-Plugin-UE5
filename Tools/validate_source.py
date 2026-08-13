@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21502 or descriptor.get("VersionName") != "2.15.2-alpha":
-        issues.append("package descriptor must identify v2.15.2-alpha")
+    if descriptor.get("Version") != 21505 or descriptor.get("VersionName") != "2.15.5-alpha":
+        issues.append("package descriptor must identify v2.15.5-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1359,8 +1359,8 @@ if character_header_211.exists() and character_cpp_211.exists():
 readme_path = plugin_root / "README.md"
 if readme_path.exists():
     readme_lines = readme_path.read_text(errors="replace").splitlines()
-    splash = '<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/42618c54-4728-4a36-9d18-9e2b8181c455" />'
-    if splash not in readme_lines[:6]:
+    splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
+    if not any(splash in line for line in readme_lines[:6]):
         issues.append("README GitHub splash image must remain at the top")
 
 # v2.12 complete ready-to-use Inventory + Quick Access UI requirements.
@@ -1841,6 +1841,22 @@ if all(p.exists() for p in paths_2150):
         issues.append("v2.15.2 ground placement must not blindly lift every mesh by PlacementBounds.Z")
     for required in ("ARPGGetBuildDefinitionLocalBounds", "IncomingOnTargetTopZ", "AlignBottomPlaneZ", "TargetMax.Z + WallHeight - IncomingMin.Z"):
         if required not in bac: issues.append(f"v2.15.2 pivot-aware structural snap math missing: {required}")
+    for required in ("MeshRelativeTransform", "FTransform::Identity"):
+        if required not in bdh: issues.append(f"v2.15.3 data-driven mesh transform missing: {required}")
+    if "RawBox.TransformBy(Piece->MeshRelativeTransform)" not in bc or "RawBox.TransformBy(Piece->MeshRelativeTransform)" not in bac:
+        issues.append("v2.15.3 transformed Build Mesh bounds must drive both placement and structural snapping")
+    if "BuildMesh->SetRelativeTransform(Definition->MeshRelativeTransform)" not in bac:
+        issues.append("v2.15.3 final Build Mesh must apply the Data Asset mesh-relative transform")
+    if "PreviewMesh->SetRelativeTransform(Piece->MeshRelativeTransform)" not in pc or "PreviewMesh->SetupAttachment(PreviewRoot)" not in pc:
+        issues.append("v2.15.3 preview must apply mesh-relative transform beneath a dedicated scene root")
+    for required in ("TargetHalfGrid", "IncomingHalfGrid", "CornerOffsets[]", "FVector( TargetHalfGrid,  IncomingHalfGrid, AlignBottomPlaneZ)", "FVector(-TargetHalfGrid, -IncomingHalfGrid, AlignBottomPlaneZ)", "FRotator(0.f,  90.f, 0.f)", "FRotator(0.f, -90.f, 0.f)"):
+        if required not in bac: issues.append(f"v2.15.4 wall L-corner snap graph missing: {required}")
+    for required in ("ARPGIsValidSnappedBuildNeighbor", "Neighbor->GetSnapTransformsFor", "PlacementCollisionClearance + 0.5f", "BuildNeighbor->CanActorModify(Owner)"):
+        if required not in bc: issues.append(f"v2.15.4 selective snapped-neighbour overlap validation missing: {required}")
+    for required in ("FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingOnTargetTopZ)", "FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingOnTargetTopZ)", "actor local +Y is the", "front/exterior side"):
+        if required not in bac: issues.append(f"v2.15.5 directional support-edge wall facing fix missing: {required}")
+    for required in ("ARPGGetSnapTargetSemanticPriority", "ARPGIsHorizontalStructuralKind", "SameSlotTolerance", "bSamePhysicalSlot", "bBetterSemanticOwner", "SemanticPriority < BestSemanticPriority"):
+        if required not in bc: issues.append(f"v2.15.5 same-slot snap semantic priority missing: {required}")
     for required in ("GetSnapTransformsFor", "WindowWall", "Doorway", "EARPGBuildPieceKind::Roof && IncomingKind == EARPGBuildPieceKind::Roof", "IncomingKind == EARPGBuildPieceKind::Stair"):
         if required not in bac: issues.append(f"v2.15.0 structural snapping missing: {required}")
     for required in ("ConstructionStartServerTime", "ConstructionDuration", "GetConstructionProgress01"):

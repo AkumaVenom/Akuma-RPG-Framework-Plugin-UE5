@@ -1,4 +1,5 @@
 #include "Building/ARPGBuildPreviewActor.h"
+#include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Data/ARPGBuildPieceDefinition.h"
 #include "Materials/MaterialInterface.h"
@@ -9,8 +10,10 @@ AARPGBuildPreviewActor::AARPGBuildPreviewActor()
     PrimaryActorTick.bCanEverTick = false;
     bReplicates = false;
     SetActorEnableCollision(false);
+    PreviewRoot = CreateDefaultSubobject<USceneComponent>(TEXT("PreviewRoot"));
+    RootComponent = PreviewRoot;
     PreviewMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PreviewMesh"));
-    RootComponent = PreviewMesh;
+    PreviewMesh->SetupAttachment(PreviewRoot);
     PreviewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PreviewMesh->SetGenerateOverlapEvents(false);
     PreviewMesh->SetCastShadow(false);
@@ -26,6 +29,7 @@ void AARPGBuildPreviewActor::ConfigurePreview(const UARPGBuildPieceDefinition* P
         UStaticMesh* Mesh = Piece->PreviewMesh.LoadSynchronous();
         if (!Mesh) Mesh = Piece->BuildMesh.LoadSynchronous();
         PreviewMesh->SetStaticMesh(Mesh);
+        PreviewMesh->SetRelativeTransform(Piece->MeshRelativeTransform);
         PreviewMesh->SetScalarParameterValueOnMaterials(TEXT("PreviewOpacity"), 0.45f);
     }
     ApplyMaterialState();

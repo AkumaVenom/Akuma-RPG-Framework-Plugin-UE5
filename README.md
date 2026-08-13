@@ -8,9 +8,9 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.15.2-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.15.5-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest:** v2.15 adds the complete player-facing Settlement Building layer: build catalogue, ghost placement, structural snapping, timed construction, doors, storage, production/furnaces, persistence and ready reskinnable UI. v2.15.2 adds pivot-aware ground placement so modular pieces correctly sit flush on landscape/support surfaces.
+> **Latest:** v2.15 adds the complete player-facing Settlement Building layer. v2.15.2 added pivot-aware placement; v2.15.3 added data-driven mesh orientation; v2.15.4 fixed modular wall seam/corner collision; v2.15.5 fixes directional wall-facing consistency on all support edges and resolves same-slot snap-target ambiguity.
 
 ## Start here
 
@@ -299,9 +299,32 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.15.2-alpha
+## Current release — v2.15.5-alpha
 
 The current release focuses on the Settlement Building system introduced in v2.15.
+
+**v2.15.5**
+
+- Fixed a root yaw-sign error that made walls on the +X/-X edges of foundations/floors/ceilings/roofs show the opposite face while +Y/-Y edges were correct.
+- Standard wall convention is now explicit: actor-local X is wall run and actor-local +Y is the logical front/exterior side after `Mesh Relative Transform`. Every horizontal support edge rotates that +Y side toward its outward normal.
+- Hardened snap selection when a support edge and an already-built wall corner advertise the same physical slot: the horizontal support owns the unambiguous exterior orientation, while wall-only corner construction still retains both ±90° turn facings.
+- No Build Piece Data Asset migration is required. Existing v2.15.3 `Mesh Relative Transform`, v2.15.4 seam/corner collision rules, saves, replication and 300 cm modular snapping are preserved.
+
+**v2.15.4**
+
+- Fixed adjacent/perpendicular modular walls being reported as **Blocked by another object** when their authored posts/trim intentionally overlap at a valid structural seam.
+- Added native 90-degree wall-family L-corner snap candidates using each target/incoming piece's configured Snap Size, with both facing orientations at every geometric corner so walls can turn corners from foundations or directly from other walls.
+- Placement collision remains strict: only another completed build actor that advertises the exact incoming transform as a native/custom snap neighbour may be tolerated; arbitrary clipping and non-building blockers are still rejected.
+- Protected-build access is also checked for every tolerated seam neighbour, preserving multiplayer/faction modification rules.
+- Preserves v2.15.3 Mesh Relative Transform, v2.15.2 pivot-aware placement, existing saves/data assets, and the rest of the settlement framework.
+
+**v2.15.3**
+
+- Added exposed `Mesh Relative Transform` to every Build Piece Data Asset.
+- Build/Preview meshes can be rotated, offset or scaled inside the native framework actor without reimporting source art.
+- Ghost preview and final replicated build actors apply the same mesh-relative transform.
+- Pivot/bounds-aware placement and structural height snapping now evaluate the transformed Build Mesh bounds.
+- Existing definitions remain backward compatible because the new transform defaults to Identity.
 
 **v2.15.2**
 

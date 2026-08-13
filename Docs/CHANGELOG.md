@@ -1,3 +1,32 @@
+## v2.15.5-alpha — Directional Wall Facing & Snap Ownership Fix
+
+- Fixed the root support-edge yaw-sign error that made wall-family pieces on horizontal supports face correctly on +Y/-Y edges but inside-out on +X/-X edges.
+- Formalized the standard wall coordinate convention: actor-local X is wall run and actor-local +Y is the logical front/exterior side after `Mesh Relative Transform`.
+- Corrected horizontal support edge yaws to `+Y: 0`, `-Y: 180`, `+X: -90`, `-X: +90`, so the logical +Y side always points toward the selected edge's outward normal.
+- Added same-physical-slot semantic snap ownership: for incoming wall-family pieces, Foundation/Floor/Ceiling/Roof edge candidates take precedence over overlapping Wall/WindowWall/Doorway corner candidates only when they resolve to the same location.
+- Preserved both ±90° direct Wall → Wall corner variants for intentional wall-only left/right turns; normal distance/yaw snap scoring is unchanged for different slots.
+- Preserved v2.15.4 selective seam-overlap validation, v2.15.3 mesh orientation, v2.15.2 pivot-aware placement, multiplayer authority/replication, saves and existing Build Piece Data Assets.
+- Added regression coverage for all four support-edge outward normals and same-slot support priority.
+
+## v2.15.4-alpha — Modular Wall Seam & Corner Collision Fix
+
+- Fixed a snapped second wall being rejected as `Blocked by another object` when an already-built neighbouring wall intentionally overlaps a small amount at the modular seam/corner.
+- Added four geometric wall-family L-corner positions based on the target and incoming `Snap Size`, with both ±90° facing variants, supporting Foundation-edge corners and direct Wall → Wall corner continuation.
+- Hardened placement validation so build-piece overlap is **not** globally ignored: a completed neighbouring build actor is tolerated only when the exact final incoming transform matches one of that neighbour's native/custom snap transforms.
+- Retained strict collision rejection for duplicate placement, arbitrary clipping, world geometry and unrelated actors.
+- Applied snap-target-style modification-access checks to every tolerated seam neighbour so protected/faction-owned construction cannot be intersected through the seam rule.
+- Preserved v2.15.3 data-driven mesh orientation, v2.15.2 pivot-aware placement, authoritative server revalidation and existing Build Piece Data Assets.
+
+## v2.15.3-alpha — Data-Driven Mesh Orientation for Modular Building Kits
+
+- Added exposed `Mesh Relative Transform` to `ARPGBuildPieceDefinition`, defaulting to Identity for backward compatibility.
+- Build Piece Data Assets can rotate, offset and scale imported Build/Preview meshes inside the native framework actor without requiring Static Mesh reimport or per-piece Actor Blueprints.
+- Added a dedicated Preview scene root so the ghost actor's authoritative placement transform remains separate from art-orientation adaptation.
+- Final replicated Build Mesh and local ghost now apply the same mesh-relative transform.
+- Pivot-aware ground anchors, validation centers and structural vertical snapping now use the Build Mesh bounds after the data-driven relative transform.
+- This directly supports Y-long wall meshes (for example `31 × 302 × 271`) by setting Mesh Relative Transform Z rotation to `+90` or `-90`, while the native wall snap graph continues to use a stable logical local-X run direction.
+- Added settlement regression guards for transformed mesh bounds, preview/final transform parity and backward-compatible Identity defaults.
+
 ## v2.15.2-alpha — Pivot-Aware Ground Placement & Structural Height Fix
 
 - Fixed bottom-pivot foundations floating above Landscape in both ghost preview and final placement because v2.15.0/2.15.1 blindly added `PlacementBounds.Z` to every ground hit.

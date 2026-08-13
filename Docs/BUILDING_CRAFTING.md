@@ -1,4 +1,4 @@
-# Settlement Building, Storage & Production — v2.15
+# Settlement Building, Storage & Production — v2.15.5
 
 v2.15 promotes the framework's original low-level build actors into a complete player-facing settlement workflow. The gameplay state is authoritative; the placement ghost and menus are local presentation.
 
@@ -90,6 +90,28 @@ Typical modular starter values:
 ### Ground placement and mesh pivots (v2.15.2+)
 
 Do **not** use `Placement Offset Z` just to compensate for a bottom-pivot foundation. Ground placement automatically reads the selected **Build Mesh** bounds and anchors its visible bottom-center to the traced landscape/support surface. A bottom-pivot mesh receives zero artificial lift; a centered mesh receives only its real half-height; corner pivots are also handled through the visible footprint anchor. `Placement Bounds` remains the collision-validation half-extents and is no longer used as an unconditional visual ground lift. Use `Placement Offset` only when you intentionally want an authored local offset.
+
+### Imported mesh orientation (v2.15.3+)
+
+You do **not** need to reimport a modular mesh just because its authored horizontal axis differs from the framework's logical snapping axis. Use **Actor → Mesh Relative Transform** on the Build Piece Data Asset. The transform is applied identically to the local placement ghost and the final native build actor, and transformed Build Mesh bounds are used by pivot-aware placement/snapping.
+
+The standard wall graph intentionally keeps its logical wall run on actor-local **X** and defines actor-local **+Y as the logical front/exterior side**. For a wall mesh whose raw dimensions are approximately `31 × 302 × 271` (long axis on mesh Y), set **Mesh Relative Transform → Rotation Z** to `90` or `-90` so the visible wall becomes approximately `302 × 31 × 271` in actor space. No Static Mesh reimport or custom build Actor Blueprint is required. Choose the sign that places the wall face you consider the exterior/front toward actor-local +Y. Existing assets leave Mesh Relative Transform at Identity.
+
+### Modular wall seams and 90-degree corners (v2.15.4+)
+
+Walls often intentionally extend a little beyond the logical grid size (for example a `302` cm wall on a `300` cm snap grid), and corner posts/trim can overlap where two valid pieces meet. v2.15.4 treats that as a **structural seam**, not a generic collision exception.
+
+The standard wall-family graph now includes side continuation, vertical stacking **and four geometric 90-degree L-corner positions (both facing variants)**. During placement, overlap with an already-built piece is tolerated only when the final incoming transform exactly matches one of that neighbour's native/custom snap transforms. This means valid straight seams and corners can overlap authored trim, while duplicate pieces, arbitrary clipping, unrelated world geometry and non-snap overlaps remain blocked. Multiplayer modification access is still enforced on every accepted seam neighbour.
+
+For a `300` cm kit, keep `Snap Size = 300` even if the visible wall art is slightly longer (such as `302`). Use the real transformed half-extents for `Placement Bounds` and keep a small `Placement Collision Clearance` (the default `2` cm is a good starting point). You should not shrink the wall art, reimport the mesh, or inflate clearance simply to make corners place.
+
+### Directional wall facing on support edges (v2.15.5+)
+
+Wall art is often asymmetric: the exterior can use finished horizontal boards while the interior/back uses framing, posts or a different material. v2.15.5 formalizes the standard wall-facing convention instead of treating the two sides as interchangeable. After `Mesh Relative Transform`, actor-local **X** is the wall run and actor-local **+Y** is the logical front/exterior side.
+
+Horizontal structural supports (`Foundation`, `Floor`, `Ceiling`, `Roof`) orient that logical +Y side toward the selected edge's **outward normal**. The four standard edge mappings are therefore `+Y edge → yaw 0`, `-Y edge → yaw 180`, `+X edge → yaw -90`, and `-X edge → yaw +90`. This fixes the previous +X/-X sign inversion that could make exactly two opposite walls display their back face.
+
+At a built corner, a Foundation edge and a neighbouring Wall can both advertise the same geometric incoming-wall slot. v2.15.5 resolves that ambiguity semantically: when the transforms occupy the same physical slot, the horizontal support edge has priority because it uniquely defines exterior direction. Direct Wall → Wall corner construction still keeps both ±90° turn variants, so unsupported/custom wall-only shapes remain flexible. This priority is only a same-slot tie-breaker; normal distance/yaw snap selection elsewhere is unchanged.
 
 ### Construction
 

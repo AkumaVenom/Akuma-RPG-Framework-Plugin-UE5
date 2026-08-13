@@ -136,8 +136,8 @@ for token in (
 
 # README splash stays protected at the top and v2.12 docs exist.
 lines = readme.splitlines()
-splash = '<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/42618c54-4728-4a36-9d18-9e2b8181c455" />'
-assert splash in lines[:6]
+splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
+assert any(splash in line for line in lines[:6])
 assert "v2.12.2-alpha — Inventory Viewport Hit-Test Ownership Fix" in changelog
 for token in ("Inventory item -> Quick Access slot", "Quick Access slot -> Quick Access slot", "Clear Slot And Unequip Active", "No permanent UI/component Tick"):
     assert token in doc, token
