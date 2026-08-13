@@ -6,6 +6,8 @@
 class UARPGVendorComponent;
 class AARPGStorageActor;
 class AARPGCraftingStationActor;
+class AARPGBuildDoorActor;
+class AARPGBuildPieceActor;
 class UARPGRecipeDefinition;
 class UARPGQuestGiverComponent;
 class UARPGQuestDefinition;
@@ -28,6 +30,12 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Vendor") void BuybackFromVendor(UARPGVendorComponent* Vendor, FGuid BuybackId);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Storage") void DepositToStorage(AARPGStorageActor* Storage, FName ItemId, int32 Quantity=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Storage") void WithdrawFromStorage(AARPGStorageActor* Storage, FName ItemId, int32 Quantity=1);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Storage") void WithdrawStationOutput(AARPGCraftingStationActor* Station, FName ItemId, int32 Quantity=1);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Storage") void DepositToStorageInstance(AARPGStorageActor* Storage, FGuid InstanceId, int32 Quantity=1);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Storage") void WithdrawFromStorageInstance(AARPGStorageActor* Storage, FGuid InstanceId, int32 Quantity=1);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Storage") void WithdrawStationOutputInstance(AARPGCraftingStationActor* Station, FGuid InstanceId, int32 Quantity=1);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void ToggleBuiltDoor(AARPGBuildDoorActor* Door);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void DemolishBuilding(AARPGBuildPieceActor* Building);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Crafting") void QueueCraft(AARPGCraftingStationActor* Station, UARPGRecipeDefinition* Recipe, int32 Count=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Quest") void AcceptQuest(UARPGQuestGiverComponent* Giver, UARPGQuestDefinition* Quest);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Quest") void TurnInQuest(UARPGQuestGiverComponent* Giver, UARPGQuestDefinition* Quest);
@@ -40,6 +48,12 @@ protected:
     UFUNCTION(Server, Reliable) void ServerBuybackFromVendor(UARPGVendorComponent* Vendor, FGuid BuybackId);
     UFUNCTION(Server, Reliable) void ServerDepositToStorage(AARPGStorageActor* Storage, FName ItemId, int32 Quantity);
     UFUNCTION(Server, Reliable) void ServerWithdrawFromStorage(AARPGStorageActor* Storage, FName ItemId, int32 Quantity);
+    UFUNCTION(Server, Reliable) void ServerWithdrawStationOutput(AARPGCraftingStationActor* Station, FName ItemId, int32 Quantity);
+    UFUNCTION(Server, Reliable) void ServerDepositToStorageInstance(AARPGStorageActor* Storage, FGuid InstanceId, int32 Quantity);
+    UFUNCTION(Server, Reliable) void ServerWithdrawFromStorageInstance(AARPGStorageActor* Storage, FGuid InstanceId, int32 Quantity);
+    UFUNCTION(Server, Reliable) void ServerWithdrawStationOutputInstance(AARPGCraftingStationActor* Station, FGuid InstanceId, int32 Quantity);
+    UFUNCTION(Server, Reliable) void ServerToggleBuiltDoor(AARPGBuildDoorActor* Door);
+    UFUNCTION(Server, Reliable) void ServerDemolishBuilding(AARPGBuildPieceActor* Building);
     UFUNCTION(Server, Reliable) void ServerQueueCraft(AARPGCraftingStationActor* Station, UARPGRecipeDefinition* Recipe, int32 Count);
     UFUNCTION(Server, Reliable) void ServerAcceptQuest(UARPGQuestGiverComponent* Giver, UARPGQuestDefinition* Quest);
     UFUNCTION(Server, Reliable) void ServerTurnInQuest(UARPGQuestGiverComponent* Giver, UARPGQuestDefinition* Quest);

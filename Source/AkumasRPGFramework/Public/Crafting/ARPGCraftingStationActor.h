@@ -17,7 +17,7 @@ class AKUMASRPGFRAMEWORK_API AARPGCraftingStationActor : public AARPGStorageActo
 public:
     AARPGCraftingStationActor();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Crafting") TObjectPtr<UARPGCraftingStationDefinition> StationDefinition;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_StationDefinition, Category="Crafting") TObjectPtr<UARPGCraftingStationDefinition> StationDefinition;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Crafting") TObjectPtr<UARPGInventoryComponent> OutputInventory;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_CraftQueue, SaveGame, Category="Crafting") TArray<FARPGCraftQueueEntry> CraftQueue;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category="Crafting") EARPGCraftingStationState StationState = EARPGCraftingStationState::Idle;
@@ -25,6 +25,9 @@ public:
     UPROPERTY(BlueprintAssignable) FARPGCraftCompleted OnCraftCompleted;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Crafting", meta=(BlueprintAuthorityOnly)) bool QueueRecipe(AActor* Crafter, UARPGRecipeDefinition* Recipe, int32 Count=1);
+    /** Applies station data at runtime; used by data-driven build pieces so a furnace needs no actor Blueprint. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Crafting", meta=(BlueprintAuthorityOnly)) void ApplyStationDefinition(UARPGCraftingStationDefinition* InDefinition);
+    UFUNCTION(BlueprintPure, Category="ARPG|Crafting") bool CanQueueRecipe(AActor* Crafter, const UARPGRecipeDefinition* Recipe) const { return CanUseRecipe(Crafter, Recipe); }
     UFUNCTION(BlueprintCallable, Category="ARPG|Crafting", meta=(BlueprintAuthorityOnly)) bool CancelQueueEntry(FGuid QueueId, bool bRefundRemaining=true);
     UFUNCTION(BlueprintPure, Category="ARPG|Crafting") float GetCurrentCraftProgress01() const;
     UFUNCTION(BlueprintCallable, Category="ARPG|Crafting", meta=(BlueprintAuthorityOnly)) void ProcessOfflineElapsed();
@@ -34,6 +37,8 @@ public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 protected:
     UFUNCTION() void OnRep_CraftQueue();
+    UFUNCTION() void OnRep_StationDefinition();
+    void ApplyStationConfiguration();
 
     bool QueueRecipeAuthority(AActor* Crafter, UARPGRecipeDefinition* Recipe, int32 Count);
     bool CanUseRecipe(AActor* Crafter, const UARPGRecipeDefinition* Recipe) const;

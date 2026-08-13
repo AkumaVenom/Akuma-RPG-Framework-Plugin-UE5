@@ -2,6 +2,8 @@
 #include "Components/ARPGVendorComponent.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Crafting/ARPGStorageActor.h"
+#include "Building/ARPGBuildDoorActor.h"
+#include "Building/ARPGBuildPieceActor.h"
 #include "Crafting/ARPGCraftingStationActor.h"
 #include "Data/ARPGRecipeDefinition.h"
 #include "Data/ARPGQuestDefinition.h"
@@ -43,6 +45,42 @@ void UARPGInteractionComponent::WithdrawFromStorage(AARPGStorageActor* Storage, 
 {
     if (!GetOwner() || !Storage) return;
     if (GetOwner()->HasAuthority()) ServerWithdrawFromStorage_Implementation(Storage, ItemId, Quantity); else ServerWithdrawFromStorage(Storage, ItemId, Quantity);
+}
+
+void UARPGInteractionComponent::WithdrawStationOutput(AARPGCraftingStationActor* Station, FName ItemId, int32 Quantity)
+{
+    if (!GetOwner() || !Station) return;
+    if (GetOwner()->HasAuthority()) ServerWithdrawStationOutput_Implementation(Station, ItemId, Quantity); else ServerWithdrawStationOutput(Station, ItemId, Quantity);
+}
+
+void UARPGInteractionComponent::DepositToStorageInstance(AARPGStorageActor* Storage, FGuid InstanceId, int32 Quantity)
+{
+    if (!GetOwner() || !Storage || !InstanceId.IsValid()) return;
+    if (GetOwner()->HasAuthority()) ServerDepositToStorageInstance_Implementation(Storage, InstanceId, Quantity); else ServerDepositToStorageInstance(Storage, InstanceId, Quantity);
+}
+
+void UARPGInteractionComponent::WithdrawFromStorageInstance(AARPGStorageActor* Storage, FGuid InstanceId, int32 Quantity)
+{
+    if (!GetOwner() || !Storage || !InstanceId.IsValid()) return;
+    if (GetOwner()->HasAuthority()) ServerWithdrawFromStorageInstance_Implementation(Storage, InstanceId, Quantity); else ServerWithdrawFromStorageInstance(Storage, InstanceId, Quantity);
+}
+
+void UARPGInteractionComponent::WithdrawStationOutputInstance(AARPGCraftingStationActor* Station, FGuid InstanceId, int32 Quantity)
+{
+    if (!GetOwner() || !Station || !InstanceId.IsValid()) return;
+    if (GetOwner()->HasAuthority()) ServerWithdrawStationOutputInstance_Implementation(Station, InstanceId, Quantity); else ServerWithdrawStationOutputInstance(Station, InstanceId, Quantity);
+}
+
+void UARPGInteractionComponent::ToggleBuiltDoor(AARPGBuildDoorActor* Door)
+{
+    if (!GetOwner() || !Door) return;
+    if (GetOwner()->HasAuthority()) ServerToggleBuiltDoor_Implementation(Door); else ServerToggleBuiltDoor(Door);
+}
+
+void UARPGInteractionComponent::DemolishBuilding(AARPGBuildPieceActor* Building)
+{
+    if (!GetOwner() || !Building) return;
+    if (GetOwner()->HasAuthority()) ServerDemolishBuilding_Implementation(Building); else ServerDemolishBuilding(Building);
 }
 
 void UARPGInteractionComponent::QueueCraft(AARPGCraftingStationActor* Station, UARPGRecipeDefinition* Recipe, int32 Count)
@@ -106,6 +144,46 @@ void UARPGInteractionComponent::ServerWithdrawFromStorage_Implementation(AARPGSt
     UARPGInventoryComponent* PlayerInventory = GetOwner() ? GetOwner()->FindComponentByClass<UARPGInventoryComponent>() : nullptr;
     const bool bSuccess = Storage && IsActorInRange(Storage) && Storage->CanActorAccess(GetOwner()) && PlayerInventory && Storage->Inventory && Storage->Inventory->TransferItemTo(PlayerInventory, ItemId, Quantity);
     ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Item withdrawn.") : TEXT("Could not withdraw item.")));
+}
+
+void UARPGInteractionComponent::ServerWithdrawStationOutput_Implementation(AARPGCraftingStationActor* Station, FName ItemId, int32 Quantity)
+{
+    UARPGInventoryComponent* PlayerInventory = GetOwner() ? GetOwner()->FindComponentByClass<UARPGInventoryComponent>() : nullptr;
+    const bool bSuccess = Station && IsActorInRange(Station) && Station->CanActorAccess(GetOwner()) && PlayerInventory && Station->OutputInventory && Station->OutputInventory->TransferItemTo(PlayerInventory, ItemId, Quantity);
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Output collected.") : TEXT("Could not collect output.")));
+}
+
+void UARPGInteractionComponent::ServerDepositToStorageInstance_Implementation(AARPGStorageActor* Storage, FGuid InstanceId, int32 Quantity)
+{
+    UARPGInventoryComponent* PlayerInventory = GetOwner() ? GetOwner()->FindComponentByClass<UARPGInventoryComponent>() : nullptr;
+    const bool bSuccess = Storage && IsActorInRange(Storage) && Storage->CanActorAccess(GetOwner()) && PlayerInventory && Storage->Inventory && PlayerInventory->TransferItemInstanceTo(Storage->Inventory, InstanceId, Quantity);
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Item stored.") : TEXT("Could not store item.")));
+}
+
+void UARPGInteractionComponent::ServerWithdrawFromStorageInstance_Implementation(AARPGStorageActor* Storage, FGuid InstanceId, int32 Quantity)
+{
+    UARPGInventoryComponent* PlayerInventory = GetOwner() ? GetOwner()->FindComponentByClass<UARPGInventoryComponent>() : nullptr;
+    const bool bSuccess = Storage && IsActorInRange(Storage) && Storage->CanActorAccess(GetOwner()) && PlayerInventory && Storage->Inventory && Storage->Inventory->TransferItemInstanceTo(PlayerInventory, InstanceId, Quantity);
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Item withdrawn.") : TEXT("Could not withdraw item.")));
+}
+
+void UARPGInteractionComponent::ServerWithdrawStationOutputInstance_Implementation(AARPGCraftingStationActor* Station, FGuid InstanceId, int32 Quantity)
+{
+    UARPGInventoryComponent* PlayerInventory = GetOwner() ? GetOwner()->FindComponentByClass<UARPGInventoryComponent>() : nullptr;
+    const bool bSuccess = Station && IsActorInRange(Station) && Station->CanActorAccess(GetOwner()) && PlayerInventory && Station->OutputInventory && Station->OutputInventory->TransferItemInstanceTo(PlayerInventory, InstanceId, Quantity);
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Output collected.") : TEXT("Could not collect output.")));
+}
+
+void UARPGInteractionComponent::ServerToggleBuiltDoor_Implementation(AARPGBuildDoorActor* Door)
+{
+    const bool bSuccess = Door && IsActorInRange(Door) && Door->ToggleDoor(GetOwner());
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Door toggled.") : TEXT("Door cannot be used.")));
+}
+
+void UARPGInteractionComponent::ServerDemolishBuilding_Implementation(AARPGBuildPieceActor* Building)
+{
+    const bool bSuccess = Building && IsActorInRange(Building) && Building->Demolish(GetOwner());
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Building demolished.") : TEXT("Building cannot be demolished.")));
 }
 
 void UARPGInteractionComponent::ServerQueueCraft_Implementation(AARPGCraftingStationActor* Station, UARPGRecipeDefinition* Recipe, int32 Count)

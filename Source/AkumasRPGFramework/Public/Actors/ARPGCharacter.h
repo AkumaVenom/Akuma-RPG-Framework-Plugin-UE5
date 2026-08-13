@@ -29,6 +29,8 @@ class UARPGEventRouterComponent;
 class UARPGPersistenceComponent;
 class UARPGInteractionComponent;
 class UARPGBuildingComponent;
+class UARPGBuildingUIComponent;
+class UARPGBuildPieceDefinition;
 class UARPGMountComponent;
 class UARPGGroupComponent;
 class UARPGThreatComponent;
@@ -76,6 +78,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGPersistenceComponent> Persistence;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGInteractionComponent> Interaction;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGBuildingComponent> Building;
+    /** Local ready build catalogue / placement HUD / storage / production station UI owner. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGBuildingUIComponent> BuildingUI;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGMountComponent> Mounts;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGGroupComponent> Group;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGThreatComponent> Threat;
@@ -131,6 +135,20 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Input") bool ToggleInventoryUI();
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory UI") bool IsInventoryUIOpen() const;
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Input") bool OpenCraftingUI();
+
+    // Ready world-building wrappers. Wire these to your input actions; authority remains inside Building/Interaction.
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool OpenBuildMenuUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool CloseBuildMenuUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool ToggleBuildMenuUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") bool BeginBuildPlacement(UARPGBuildPieceDefinition* Piece);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") bool ConfirmBuildPlacement();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") void RotateBuildPlacement(float Direction = 1.f);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") bool NextBuildPiece();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") bool PreviousBuildPiece();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") void CancelBuildPlacement();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool InteractBuiltStructure();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool DemolishBuiltStructure();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool CloseBuiltStructureUI();
 
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return AbilitySystem; }
     virtual void BeginPlay() override;

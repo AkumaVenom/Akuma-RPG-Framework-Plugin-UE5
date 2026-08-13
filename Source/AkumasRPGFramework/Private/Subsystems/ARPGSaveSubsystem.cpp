@@ -4,6 +4,7 @@
 #include "Actors/ARPGCharacter.h"
 #include "Actors/ARPGDungeonManager.h"
 #include "Building/ARPGBuildPieceActor.h"
+#include "Building/ARPGBuildDoorActor.h"
 #include "Crafting/ARPGStorageActor.h"
 #include "Crafting/ARPGCraftingStationActor.h"
 #include "Components/ARPGFactionOwnershipComponent.h"
@@ -151,7 +152,7 @@ bool UARPGSaveSubsystem::SaveWorld(FString WorldId, FString SlotOverride)
     for(TActorIterator<AARPGBuildPieceActor> It(W);It;++It)
     {
         AARPGBuildPieceActor* B=*It; if(!B || !B->bRuntimePlaced || !B->BuildingId.IsValid())continue;
-        FARPGPlacedBuildingSave R; R.BuildingId=B->BuildingId; R.PieceId=B->Definition?B->Definition->DefinitionId:NAME_None; R.ActorClass=FSoftClassPath(B->GetClass()->GetPathName()); R.Transform=B->GetActorTransform(); R.Health=B->Health; R.UpgradeLevel=B->UpgradeLevel;
+        FARPGPlacedBuildingSave R; R.BuildingId=B->BuildingId; R.PieceId=B->Definition?B->Definition->DefinitionId:NAME_None; R.ActorClass=FSoftClassPath(B->GetClass()->GetPathName()); R.Transform=B->GetActorTransform(); R.Health=B->Health; R.UpgradeLevel=B->UpgradeLevel; R.bConstructionComplete=B->IsConstructionComplete(); R.ConstructionRemainingSeconds=B->GetConstructionRemainingSeconds(); if(const AARPGBuildDoorActor* Door=Cast<AARPGBuildDoorActor>(B))R.bDoorOpen=Door->IsDoorOpen();
         if(B->Ownership){R.OwnerAccountId=B->Ownership->OwnerAccountId;R.OwnerCharacterId=B->Ownership->OwnerCharacterId;R.OwnerFactionId=B->Ownership->OwnerFactionId;} D.Buildings.Add(R);
     }
     for(TActorIterator<AARPGStorageActor> It(W);It;++It)
@@ -184,9 +185,15 @@ bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
             UClass* Cls=R.ActorClass.TryLoadClass<AARPGBuildPieceActor>(); if(!Cls)continue;
             FActorSpawnParameters Params;Params.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn; B=W->SpawnActor<AARPGBuildPieceActor>(Cls,R.Transform,Params); if(!B)continue;
             UARPGBuildPieceDefinition* Def=Cast<UARPGBuildPieceDefinition>(UARPGAssetLibrary::ResolveDefinitionById(UARPGBuildPieceDefinition::StaticClass(),R.PieceId));
-            if(Def)B->InitializeBuilding(Def,nullptr); B->BuildingId=R.BuildingId; B->bRuntimePlaced=true;
+            if(Def)
+            {
+                if(AARPGStorageActor* Storage=Cast<AARPGStorageActor>(B)) if(Storage->Inventory) Storage->Inventory->MaxSlots=FMath::Max(1,Def->StorageSlots);
+                if(AARPGCraftingStationActor* Station=Cast<AARPGCraftingStationActor>(B)) Station->ApplyStationDefinition(Def->StationDefinition);
+                B->InitializeBuilding(Def,nullptr);
+            }
+            B->BuildingId=R.BuildingId; B->bRuntimePlaced=true;
         }
-        B->SetActorTransform(R.Transform,false,nullptr,ETeleportType::TeleportPhysics);B->Health=R.Health;B->UpgradeLevel=R.UpgradeLevel;
+        B->SetActorTransform(R.Transform,false,nullptr,ETeleportType::TeleportPhysics);B->Health=R.Health;B->UpgradeLevel=R.UpgradeLevel; if(Save->SaveVersion>=5) B->RestoreConstructionState(R.bConstructionComplete,R.ConstructionRemainingSeconds); else B->RestoreConstructionState(true,0.f); if(AARPGBuildDoorActor* Door=Cast<AARPGBuildDoorActor>(B)) Door->RestoreDoorOpenState(R.bDoorOpen);
         if(B->Ownership)B->Ownership->SetOwnership(R.OwnerAccountId,R.OwnerCharacterId,R.OwnerFactionId);
     }
     for(const TPair<FGuid,AARPGBuildPieceActor*>& Pair:Existing) if(!SavedIds.Contains(Pair.Key)&&Pair.Value)Pair.Value->Destroy();
@@ -214,6 +221,7 @@ bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
                 C->OutputInventory->ReplaceInventory(OutputsToRestore);
             }
             C->ProcessOfflineElapsed();
+            C->SetActorTickEnabled(C->CraftQueue.Num()>0);
         }
     }
     for(const FARPGDungeonSaveState& R:Save->World.Dungeons)

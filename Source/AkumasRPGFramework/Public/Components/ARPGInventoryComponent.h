@@ -47,6 +47,8 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool RemoveItem(FName ItemId, int32 Quantity=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool RemoveItemInstance(FGuid InstanceId, int32 Quantity=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool TransferItemTo(UARPGInventoryComponent* Destination, FName ItemId, int32 Quantity=1);
+    /** Transfers from the exact runtime stack/instance. Durable items preserve condition, binding and identity. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) bool TransferItemInstanceTo(UARPGInventoryComponent* Destination, FGuid InstanceId, int32 Quantity=1);
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") int32 GetItemCount(FName ItemId) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") int32 GetUnequippedItemCount(FName ItemId) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Inventory") bool HasItem(FName ItemId, int32 Quantity=1) const;

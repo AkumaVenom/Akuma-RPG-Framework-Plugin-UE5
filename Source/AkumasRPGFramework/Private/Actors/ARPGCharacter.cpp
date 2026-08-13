@@ -23,6 +23,8 @@
 #include "Components/ARPGPersistenceComponent.h"
 #include "Components/ARPGInteractionComponent.h"
 #include "Building/ARPGBuildingComponent.h"
+#include "Components/ARPGBuildingUIComponent.h"
+#include "Data/ARPGBuildPieceDefinition.h"
 #include "Mounts/ARPGMountComponent.h"
 #include "Social/ARPGGroupComponent.h"
 #include "Components/ARPGThreatComponent.h"
@@ -63,6 +65,7 @@ AARPGCharacter::AARPGCharacter()
     Persistence = CreateDefaultSubobject<UARPGPersistenceComponent>(TEXT("Persistence"));
     Interaction = CreateDefaultSubobject<UARPGInteractionComponent>(TEXT("Interaction"));
     Building = CreateDefaultSubobject<UARPGBuildingComponent>(TEXT("Building"));
+    BuildingUI = CreateDefaultSubobject<UARPGBuildingUIComponent>(TEXT("BuildingUI"));
     Mounts = CreateDefaultSubobject<UARPGMountComponent>(TEXT("Mounts"));
     Group = CreateDefaultSubobject<UARPGGroupComponent>(TEXT("Group"));
     Threat = CreateDefaultSubobject<UARPGThreatComponent>(TEXT("Threat"));
@@ -290,3 +293,17 @@ bool AARPGCharacter::OpenCraftingUI()
 {
     return InventoryUI ? InventoryUI->OpenCraftingUI() : false;
 }
+
+
+bool AARPGCharacter::OpenBuildMenuUI() { return BuildingUI ? BuildingUI->OpenBuildMenu() : false; }
+bool AARPGCharacter::CloseBuildMenuUI() { return BuildingUI ? BuildingUI->CloseBuildMenu() : false; }
+bool AARPGCharacter::ToggleBuildMenuUI() { return BuildingUI ? BuildingUI->ToggleBuildMenu() : false; }
+bool AARPGCharacter::BeginBuildPlacement(UARPGBuildPieceDefinition* Piece) { return Building ? Building->BeginBuildMode(Piece) : false; }
+bool AARPGCharacter::ConfirmBuildPlacement() { return Building ? Building->ConfirmPreviewPlacement() : false; }
+void AARPGCharacter::RotateBuildPlacement(float Direction) { if (Building) Building->RotatePreview(Direction); }
+bool AARPGCharacter::NextBuildPiece() { return Building ? Building->SelectNextBuildPiece() : false; }
+bool AARPGCharacter::PreviousBuildPiece() { return Building ? Building->SelectPreviousBuildPiece() : false; }
+void AARPGCharacter::CancelBuildPlacement() { if (Building) Building->EndBuildMode(); }
+bool AARPGCharacter::InteractBuiltStructure() { return BuildingUI ? BuildingUI->InteractWithBuiltStructureFromView() : false; }
+bool AARPGCharacter::DemolishBuiltStructure() { return BuildingUI ? BuildingUI->DemolishBuiltStructureFromView() : false; }
+bool AARPGCharacter::CloseBuiltStructureUI() { return BuildingUI ? BuildingUI->CloseStructureUI() : false; }

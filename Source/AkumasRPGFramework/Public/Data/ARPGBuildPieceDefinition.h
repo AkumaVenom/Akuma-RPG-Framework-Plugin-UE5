@@ -5,22 +5,102 @@
 #include "ARPGBuildPieceDefinition.generated.h"
 
 class AARPGBuildPieceActor;
+class UARPGCraftingStationDefinition;
+class UStaticMesh;
+class UMaterialInterface;
+class USoundBase;
+
+UENUM(BlueprintType)
+enum class EARPGBuildPieceKind : uint8
+{
+    Foundation,
+    Wall,
+    WindowWall,
+    Window,
+    Doorway,
+    Door,
+    Floor,
+    Ceiling,
+    Roof,
+    Stair,
+    Pillar,
+    Storage,
+    Production,
+    Decoration,
+    Custom
+};
+
+USTRUCT(BlueprintType)
+struct AKUMASRPGFRAMEWORK_API FARPGBuildSnapPoint
+{
+    GENERATED_BODY()
+
+    /** Designer label only. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Snap") FName SnapName = NAME_None;
+    /** Desired incoming actor transform relative to this built piece. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Snap") FTransform IncomingPlacementTransform;
+    /** Empty means every incoming piece kind is accepted. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Snap") TArray<EARPGBuildPieceKind> AcceptedIncomingKinds;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Snap") bool bEnabled = true;
+};
 
 UCLASS(BlueprintType)
 class AKUMASRPGFRAMEWORK_API UARPGBuildPieceDefinition : public UARPGDefinitionBase
 {
     GENERATED_BODY()
 public:
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building") TSoftClassPtr<AARPGBuildPieceActor> ActorClass;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building") TArray<FARPGItemAmount> BuildCost;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building") FGameplayTag PieceType;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building") FGameplayTag MaterialTier;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building") bool bSnapPlacement = true;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building") bool bRequiresSupport = true;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building", meta=(ClampMin="1.0")) float MaxHealth = 500.f;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building", meta=(ClampMin="1.0")) float SnapSize = 100.f;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building") FVector PlacementBounds = FVector(50.f, 50.f, 50.f);
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building", meta=(ClampMin="0.0")) float SupportTraceDepth = 150.f;
+    /** Optional custom actor class. Leave empty to use the framework's native actor for this Piece Kind. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor") TSoftClassPtr<AARPGBuildPieceActor> ActorClass;
+    /** Main visible world mesh. This is enough to use the native build actor without making a Blueprint actor. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor") TSoftObjectPtr<UStaticMesh> BuildMesh;
+    /** Optional lighter proxy mesh for placement. Falls back to Build Mesh. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor") TSoftObjectPtr<UStaticMesh> PreviewMesh;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Identity") EARPGBuildPieceKind PieceKind = EARPGBuildPieceKind::Foundation;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Identity") FName BuildCategory = TEXT("Structure");
+    /** Existing tag-based classification remains available for project-specific Wood/Stone/Metal tiers. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Identity") FGameplayTag PieceType;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Identity") FGameplayTag MaterialTier;
+
+    /** Resource requirements are read directly from the player's replicated Inventory. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Cost") TArray<FARPGItemAmount> BuildCost;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Cost") bool bRefundOnDemolish = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Cost", meta=(ClampMin="0.0", ClampMax="1.0")) float DemolishRefundFraction = 1.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") bool bSnapPlacement = true;
+    /** Walls, ceilings, roofs and doors normally enable this; foundations normally leave it disabled. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") bool bRequiresSnapTarget = false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") bool bRequiresSupport = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") bool bAllowGroundPlacement = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") bool bRequireMostlyFlatGround = false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="0.0", ClampMax="89.0", Units="deg")) float MaxGroundSlopeDegrees = 35.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") FVector PlacementBounds = FVector(190.f, 190.f, 20.f);
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") FVector PlacementOffset = FVector::ZeroVector;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="0.0")) float SupportTraceDepth = 200.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="0.0")) float PlacementCollisionClearance = 2.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="1.0")) float SnapSize = 400.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="1.0")) float StandardWallHeight = 300.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="1.0")) float SnapSearchRadius = 500.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="0.0")) float SnapCaptureDistance = 140.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="1.0", ClampMax="180.0", Units="deg")) float RotationStepDegrees = 90.f;
+    /** Native standard sockets cover foundations, walls, doorways, floors/ceilings and roofs. Add custom points for unusual kits. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") bool bGenerateStandardSnapPoints = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") TArray<FARPGBuildSnapPoint> CustomSnapPoints;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Construction", meta=(ClampMin="1.0")) float MaxHealth = 500.f;
+    /** 0 = instant placement. Non-zero pieces visibly materialize over this duration. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Construction", meta=(ClampMin="0.0", Units="s")) float ConstructionSeconds = 0.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Construction") bool bCollisionDuringConstruction = false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Construction", meta=(ClampMin="0.01", ClampMax="1.0")) float ConstructionStartScaleZ = 0.05f;
+    /** Materials may optionally expose either ConstructionProgress or BuildProgress scalar parameters for a custom dissolve/reveal. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Construction") FName ConstructionProgressMaterialParameter = TEXT("ConstructionProgress");
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Construction") TSoftObjectPtr<USoundBase> ConstructionStartSound;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Construction") TSoftObjectPtr<USoundBase> ConstructionCompleteSound;
+
+    /** Storage Piece Kind only. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Utility", meta=(ClampMin="1", EditCondition="PieceKind==EARPGBuildPieceKind::Storage", EditConditionHides)) int32 StorageSlots = 48;
+    /** Production Piece Kind only. Lets a furnace/workbench be entirely Data Asset driven with no actor Blueprint required. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Utility", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Production", EditConditionHides)) TObjectPtr<UARPGCraftingStationDefinition> StationDefinition = nullptr;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Faction") FName RequiredBuilderFactionId = NAME_None;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Faction") int32 MinimumBuilderReputation = TNumericLimits<int32>::Lowest();

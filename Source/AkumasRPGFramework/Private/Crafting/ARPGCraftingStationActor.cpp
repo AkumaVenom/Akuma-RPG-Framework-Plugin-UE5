@@ -17,22 +17,97 @@ static FName ARPGResolveRecipeAmountId(const FARPGItemAmount& Amount)
     return Amount.ItemId;
 }
 
-static bool ARPGCanAddRecipeAmount(const UARPGInventoryComponent* InventoryComponent, const FARPGItemAmount& Amount)
+struct FARPGResolvedRecipeAmount
 {
-    if (!InventoryComponent || Amount.Quantity <= 0) return false;
-    return Amount.Item ? InventoryComponent->CanAddItemDefinition(Amount.Item, Amount.Quantity) : InventoryComponent->CanAddItem(ARPGResolveRecipeAmountId(Amount), Amount.Quantity);
+    FName ItemId = NAME_None;
+    UARPGItemDefinition* Item = nullptr;
+    int32 Quantity = 0;
+};
+
+static bool ARPGAggregateRecipeAmounts(const TArray<FARPGItemAmount>& Amounts, int32 Multiplier, TArray<FARPGResolvedRecipeAmount>& OutAmounts)
+{
+    OutAmounts.Reset();
+    if (Multiplier <= 0) return false;
+    TMap<FName, int32> IndexById;
+    for (const FARPGItemAmount& Amount : Amounts)
+    {
+        const FName ItemId = ARPGResolveRecipeAmountId(Amount);
+        if (ItemId.IsNone() || Amount.Quantity <= 0) return false;
+        const int64 Scaled64 = static_cast<int64>(Amount.Quantity) * static_cast<int64>(Multiplier);
+        if (Scaled64 <= 0 || Scaled64 > MAX_int32) return false;
+        if (int32* ExistingIndex = IndexById.Find(ItemId))
+        {
+            FARPGResolvedRecipeAmount& Existing = OutAmounts[*ExistingIndex];
+            const int64 Combined64 = static_cast<int64>(Existing.Quantity) + Scaled64;
+            if (Combined64 > MAX_int32) return false;
+            Existing.Quantity = static_cast<int32>(Combined64);
+            if (!Existing.Item && Amount.Item) Existing.Item = Amount.Item;
+        }
+        else
+        {
+            FARPGResolvedRecipeAmount Resolved;
+            Resolved.ItemId = ItemId;
+            Resolved.Item = Amount.Item;
+            Resolved.Quantity = static_cast<int32>(Scaled64);
+            IndexById.Add(ItemId, OutAmounts.Add(Resolved));
+        }
+    }
+    return OutAmounts.Num() > 0;
 }
 
-static bool ARPGAddRecipeAmount(UARPGInventoryComponent* InventoryComponent, const FARPGItemAmount& Amount, int32 Multiplier = 1)
+static bool ARPGAddResolvedAmount(UARPGInventoryComponent* InventoryComponent, const FARPGResolvedRecipeAmount& Amount)
 {
-    if (!InventoryComponent || Amount.Quantity <= 0 || Multiplier <= 0) return false;
-    const int32 Quantity = Amount.Quantity * Multiplier;
-    return Amount.Item ? InventoryComponent->AddItemDefinition(Amount.Item, Quantity) : InventoryComponent->AddItem(ARPGResolveRecipeAmountId(Amount), Quantity);
+    if (!InventoryComponent || Amount.ItemId.IsNone() || Amount.Quantity <= 0) return false;
+    return Amount.Item ? InventoryComponent->AddItemDefinition(Amount.Item, Amount.Quantity) : InventoryComponent->AddItem(Amount.ItemId, Amount.Quantity);
+}
+
+/**
+ * Capacity simulation across all outputs together. Calling CanAddItem for each output independently can
+ * overbook the same free slot, so station completion evaluates the whole output transaction at once.
+ */
+static bool ARPGCanFitResolvedOutputs(const UARPGInventoryComponent* InventoryComponent, const TArray<FARPGResolvedRecipeAmount>& Outputs)
+{
+    if (!InventoryComponent || Outputs.Num() == 0) return false;
+    int32 VirtualSlots = InventoryComponent->Items.Num();
+    for (const FARPGResolvedRecipeAmount& Output : Outputs)
+    {
+        if (Output.ItemId.IsNone() || Output.Quantity <= 0) return false;
+        const UARPGItemDefinition* Definition = Output.Item;
+        if (!Definition)
+        {
+            for (const FARPGInventoryEntry& Entry : InventoryComponent->Items)
+            {
+                if (Entry.ItemId == Output.ItemId)
+                {
+                    Definition = InventoryComponent->ResolveItemDefinition(Entry);
+                    if (Definition) break;
+                }
+            }
+        }
+        if (!Definition)
+            Definition = Cast<UARPGItemDefinition>(UARPGAssetLibrary::ResolveDefinitionById(UARPGItemDefinition::StaticClass(), Output.ItemId));
+        const int32 MaxStack = Definition && Definition->bUsesDurability
+            ? 1
+            : FMath::Max(1, Definition ? Definition->MaxStack : InventoryComponent->FallbackMaxStack);
+        int32 Remaining = Output.Quantity;
+        for (const FARPGInventoryEntry& Entry : InventoryComponent->Items)
+        {
+            if (Entry.ItemId != Output.ItemId || Entry.bEquipped || Entry.Quantity >= MaxStack) continue;
+            Remaining -= FMath::Min(Remaining, MaxStack - Entry.Quantity);
+            if (Remaining <= 0) break;
+        }
+        if (Remaining <= 0) continue;
+        const int32 NeededSlots = FMath::DivideAndRoundUp(Remaining, MaxStack);
+        if (VirtualSlots + NeededSlots > InventoryComponent->MaxSlots) return false;
+        VirtualSlots += NeededSlots;
+    }
+    return true;
 }
 
 AARPGCraftingStationActor::AARPGCraftingStationActor()
 {
     PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bStartWithTickEnabled = false;
     PrimaryActorTick.TickInterval = 0.1f;
     OutputInventory = CreateDefaultSubobject<UARPGInventoryComponent>(TEXT("OutputInventory"));
     OutputInventory->MaxSlots = 24;
@@ -41,12 +116,29 @@ AARPGCraftingStationActor::AARPGCraftingStationActor()
 void AARPGCraftingStationActor::BeginPlay()
 {
     Super::BeginPlay();
-    if (StationDefinition)
-    {
-        if (Inventory) Inventory->MaxSlots = FMath::Max(1, StationDefinition->InputSlots);
-        if (OutputInventory) OutputInventory->MaxSlots = FMath::Max(1, StationDefinition->OutputSlots);
-    }
+    ApplyStationConfiguration();
     if (HasAuthority()) ProcessOfflineElapsed();
+    SetActorTickEnabled(CraftQueue.Num() > 0);
+}
+
+void AARPGCraftingStationActor::ApplyStationConfiguration()
+{
+    if (!StationDefinition) return;
+    if (Inventory) Inventory->MaxSlots = FMath::Max(1, StationDefinition->InputSlots);
+    if (OutputInventory) OutputInventory->MaxSlots = FMath::Max(1, StationDefinition->OutputSlots);
+}
+
+void AARPGCraftingStationActor::ApplyStationDefinition(UARPGCraftingStationDefinition* InDefinition)
+{
+    if (!HasAuthority()) return;
+    StationDefinition = InDefinition;
+    ApplyStationConfiguration();
+    ForceNetUpdate();
+}
+
+void AARPGCraftingStationActor::OnRep_StationDefinition()
+{
+    ApplyStationConfiguration();
 }
 
 UARPGInventoryComponent* AARPGCraftingStationActor::ResolveInputInventory(AActor* Crafter) const
@@ -68,7 +160,7 @@ static int32 ARPGCountTaggedItems(const UARPGInventoryComponent* InventoryCompon
     for (const FARPGInventoryEntry& Entry : InventoryComponent->Items)
     {
         const UARPGItemDefinition* Item = InventoryComponent->ResolveItemDefinition(Entry);
-        if (Item && Item->ItemTags.HasTag(Tag)) Count += FMath::Max(0, Entry.Quantity);
+        if (!Entry.bEquipped && Item && Item->ItemTags.HasTag(Tag)) Count += FMath::Max(0, Entry.Quantity);
     }
     return Count;
 }
@@ -94,25 +186,32 @@ bool AARPGCraftingStationActor::ConsumeFuelForCraft(AActor* Crafter, const UARPG
     {
         if (Remaining <= 0) break;
         const UARPGItemDefinition* Item = FuelInventory->ResolveItemDefinition(Entry);
-        if (!Item || !Item->ItemTags.HasTag(Recipe->FuelTag)) continue;
+        if (Entry.bEquipped || !Item || !Item->ItemTags.HasTag(Recipe->FuelTag)) continue;
         const int32 Take = FMath::Min(Remaining, Entry.Quantity);
         Removals.Emplace(Entry.ItemId, Take);
         Remaining -= Take;
     }
     if (Remaining > 0) return false;
+    const TArray<FARPGInventoryEntry> Before = FuelInventory->Items;
     for (const TPair<FName, int32>& Removal : Removals)
-        if (!FuelInventory->RemoveItem(Removal.Key, Removal.Value)) return false;
+    {
+        if (!FuelInventory->RemoveUnequippedItem(Removal.Key, Removal.Value))
+        {
+            FuelInventory->ReplaceInventory(Before);
+            return false;
+        }
+    }
     return true;
 }
 
 bool AARPGCraftingStationActor::CanUseRecipe(AActor* Crafter, const UARPGRecipeDefinition* Recipe) const
 {
-    if (!Crafter || !Recipe) return false;
-    if (StationDefinition)
+    if (!Crafter || !Recipe || Recipe->Outputs.Num() == 0) return false;
+    if (Recipe->RequiredStationTag.IsValid())
     {
-        if (Recipe->RequiredStationTag.IsValid() && StationDefinition->StationTag.IsValid() && !StationDefinition->StationTag.MatchesTagExact(Recipe->RequiredStationTag)) return false;
-        if (StationDefinition->Recipes.Num() > 0 && !StationDefinition->Recipes.Contains(Recipe)) return false;
+        if (!StationDefinition || !StationDefinition->StationTag.IsValid() || !StationDefinition->StationTag.MatchesTagExact(Recipe->RequiredStationTag)) return false;
     }
+    if (StationDefinition && StationDefinition->Recipes.Num() > 0 && !StationDefinition->Recipes.Contains(Recipe)) return false;
     if (!Recipe->RequiredSkillId.IsNone())
     {
         const UARPGSkillComponent* Skills = Crafter->FindComponentByClass<UARPGSkillComponent>();
@@ -120,8 +219,12 @@ bool AARPGCraftingStationActor::CanUseRecipe(AActor* Crafter, const UARPGRecipeD
     }
     const UARPGInventoryComponent* InputInventory = ResolveInputInventory(Crafter);
     if (!InputInventory) return false;
-    for (const FARPGItemAmount& Input : Recipe->Inputs)
-        if (!InputInventory->HasItem(ARPGResolveRecipeAmountId(Input), Input.Quantity)) return false;
+    TArray<FARPGResolvedRecipeAmount> RequiredInputs;
+    if (!ARPGAggregateRecipeAmounts(Recipe->Inputs, 1, RequiredInputs)) return false;
+    for (const FARPGResolvedRecipeAmount& Input : RequiredInputs)
+        if (!InputInventory->HasUnequippedItem(Input.ItemId, Input.Quantity)) return false;
+    TArray<FARPGResolvedRecipeAmount> Outputs;
+    if (!ARPGAggregateRecipeAmounts(Recipe->Outputs, 1, Outputs)) return false;
     return HasFuelForCraft(Crafter, Recipe);
 }
 
@@ -129,10 +232,21 @@ bool AARPGCraftingStationActor::ConsumeRecipeInputs(AActor* Crafter, const UARPG
 {
     UARPGInventoryComponent* InputInventory = ResolveInputInventory(Crafter);
     if (!InputInventory || !Recipe || Count <= 0) return false;
-    for (const FARPGItemAmount& Input : Recipe->Inputs)
-        if (!InputInventory->HasItem(ARPGResolveRecipeAmountId(Input), Input.Quantity * Count)) return false;
-    for (const FARPGItemAmount& Input : Recipe->Inputs)
-        if (!InputInventory->RemoveItem(ARPGResolveRecipeAmountId(Input), Input.Quantity * Count)) return false;
+    TArray<FARPGResolvedRecipeAmount> RequiredInputs;
+    if (!ARPGAggregateRecipeAmounts(Recipe->Inputs, Count, RequiredInputs)) return false;
+    for (const FARPGResolvedRecipeAmount& Input : RequiredInputs)
+        if (!InputInventory->HasUnequippedItem(Input.ItemId, Input.Quantity)) return false;
+
+    // Snapshot makes the multi-line removal atomic if a later line unexpectedly fails.
+    const TArray<FARPGInventoryEntry> Before = InputInventory->Items;
+    for (const FARPGResolvedRecipeAmount& Input : RequiredInputs)
+    {
+        if (!InputInventory->RemoveUnequippedItem(Input.ItemId, Input.Quantity))
+        {
+            InputInventory->ReplaceInventory(Before);
+            return false;
+        }
+    }
     return true;
 }
 
@@ -141,7 +255,9 @@ void AARPGCraftingStationActor::RefundRecipeInputs(AActor* Crafter, const UARPGR
     UARPGInventoryComponent* InputInventory = ResolveInputInventory(Crafter);
     if (!InputInventory && StationDefinition && !StationDefinition->bUseStationInventoryForInputs) InputInventory = Inventory;
     if (!InputInventory || !Recipe || Count <= 0) return;
-    for (const FARPGItemAmount& Input : Recipe->Inputs) ARPGAddRecipeAmount(InputInventory, Input, Count);
+    TArray<FARPGResolvedRecipeAmount> Refunds;
+    if (!ARPGAggregateRecipeAmounts(Recipe->Inputs, Count, Refunds)) return;
+    for (const FARPGResolvedRecipeAmount& Refund : Refunds) ARPGAddResolvedAmount(InputInventory, Refund);
 }
 
 AActor* AARPGCraftingStationActor::FindCrafter(FGuid CharacterId) const
@@ -169,6 +285,7 @@ bool AARPGCraftingStationActor::QueueRecipeAuthority(AActor* Crafter, UARPGRecip
     Entry.LastUpdatedUtc = FDateTime::UtcNow();
     CraftQueue.Add(Entry);
     StationState = EARPGCraftingStationState::Crafting;
+    SetActorTickEnabled(true);
     OnCraftQueueChanged.Broadcast();
     return true;
 }
@@ -192,11 +309,26 @@ bool AARPGCraftingStationActor::CompleteOneCraft(FARPGCraftQueueEntry& Entry)
     if (!Recipe || !OutputInventory) return false;
     AActor* Crafter = FindCrafter(Entry.CrafterCharacterId);
     if (!HasFuelForCraft(Crafter, Recipe)) return false;
-    for (const FARPGItemAmount& Output : Recipe->Outputs)
-        if (!ARPGCanAddRecipeAmount(OutputInventory, Output)) return false;
+
+    TArray<FARPGResolvedRecipeAmount> Outputs;
+    if (!ARPGAggregateRecipeAmounts(Recipe->Outputs, 1, Outputs) || !ARPGCanFitResolvedOutputs(OutputInventory, Outputs)) return false;
+
+    UARPGInventoryComponent* FuelInventory = ResolveFuelInventory(Crafter);
+    const TArray<FARPGInventoryEntry> FuelBefore = FuelInventory ? FuelInventory->Items : TArray<FARPGInventoryEntry>();
+    const TArray<FARPGInventoryEntry> OutputBefore = OutputInventory->Items;
     if (!ConsumeFuelForCraft(Crafter, Recipe)) return false;
-    for (const FARPGItemAmount& Output : Recipe->Outputs)
-        ARPGAddRecipeAmount(OutputInventory, Output);
+
+    for (const FARPGResolvedRecipeAmount& Output : Outputs)
+    {
+        if (!ARPGAddResolvedAmount(OutputInventory, Output))
+        {
+            // Output and fuel are one completion transaction. If an unexpected runtime capacity/add failure occurs,
+            // neither side is allowed to partially commit.
+            OutputInventory->ReplaceInventory(OutputBefore);
+            if (FuelInventory) FuelInventory->ReplaceInventory(FuelBefore);
+            return false;
+        }
+    }
 
     if (Crafter)
     {
@@ -247,6 +379,7 @@ void AARPGCraftingStationActor::Tick(float DeltaSeconds)
         OnCraftQueueChanged.Broadcast();
     }
     StationState = CraftQueue.Num() > 0 ? EARPGCraftingStationState::Crafting : EARPGCraftingStationState::Idle;
+    if (CraftQueue.Num() == 0) SetActorTickEnabled(false);
 }
 
 bool AARPGCraftingStationActor::CancelQueueEntry(FGuid QueueId, bool bRefundRemaining)
@@ -259,6 +392,7 @@ bool AARPGCraftingStationActor::CancelQueueEntry(FGuid QueueId, bool bRefundRema
         if (UARPGRecipeDefinition* Recipe = ResolveRecipe(Entry.RecipeId)) RefundRecipeInputs(FindCrafter(Entry.CrafterCharacterId), Recipe, Entry.RemainingCount);
     CraftQueue.RemoveAt(Index);
     OnCraftQueueChanged.Broadcast();
+    if (CraftQueue.Num() == 0) { StationState = EARPGCraftingStationState::Idle; SetActorTickEnabled(false); }
     return true;
 }
 
@@ -283,6 +417,7 @@ void AARPGCraftingStationActor::OnRep_CraftQueue() { OnCraftQueueChanged.Broadca
 void AARPGCraftingStationActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    DOREPLIFETIME(AARPGCraftingStationActor, StationDefinition);
     DOREPLIFETIME(AARPGCraftingStationActor, CraftQueue);
     DOREPLIFETIME(AARPGCraftingStationActor, StationState);
 }

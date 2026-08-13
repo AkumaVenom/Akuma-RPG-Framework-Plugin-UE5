@@ -22,8 +22,8 @@ class AKUMASRPGFRAMEWORK_API UARPGWorldSaveGame : public USaveGame
 {
     GENERATED_BODY()
 public:
-    // v4 adds exact per-instance durability to persistent container/station Inventory entries.
-    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 4;
+    // v5 adds in-progress building construction and built-door state persistence.
+    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 5;
     UPROPERTY(SaveGame, BlueprintReadWrite) FARPGWorldSaveData World;
 };
 

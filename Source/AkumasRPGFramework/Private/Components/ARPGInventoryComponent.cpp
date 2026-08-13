@@ -307,6 +307,53 @@ bool UARPGInventoryComponent::RemoveItemInstanceAuthority(FGuid InstanceId, int3
     return false;
 }
 
+bool UARPGInventoryComponent::TransferItemInstanceTo(UARPGInventoryComponent* Destination, FGuid InstanceId, int32 Quantity)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !Destination || Destination == this || !InstanceId.IsValid() || Quantity <= 0) return false;
+    const int32 SourceIndex = Items.IndexOfByPredicate([&](const FARPGInventoryEntry& Entry){ return Entry.InstanceId == InstanceId; });
+    if (!Items.IsValidIndex(SourceIndex)) return false;
+    const FARPGInventoryEntry SourceEntry = Items[SourceIndex];
+    if (SourceEntry.bEquipped || SourceEntry.Quantity < Quantity || SourceEntry.ItemId.IsNone()) return false;
+    const UARPGItemDefinition* Definition = ResolveItemDefinition(SourceEntry);
+    const bool bCanFit = Definition ? Destination->CanAddItemDefinition(Definition, Quantity) : Destination->CanAddItem(SourceEntry.ItemId, Quantity);
+    if (!bCanFit) return false;
+
+    const TArray<FARPGInventoryEntry> SourceBefore = Items;
+    const TArray<FARPGInventoryEntry> DestinationBefore = Destination->Items;
+
+    if (Definition && Definition->bUsesDurability)
+    {
+        TArray<FARPGInventoryEntry> MovedEntries;
+        MovedEntries.Reserve(Quantity);
+        for (int32 Unit = 0; Unit < Quantity; ++Unit)
+        {
+            FARPGInventoryEntry Moved = SourceEntry;
+            Moved.Quantity = 1;
+            Moved.bEquipped = false;
+            Moved.EquipmentSlot = FGameplayTag();
+            // Preserve identity only for a complete single-instance move; split legacy durable stacks into unique instances.
+            if (SourceEntry.Quantity != 1 || Quantity != 1 || Unit > 0) Moved.InstanceId = FGuid::NewGuid();
+            if (Destination->Items.ContainsByPredicate([&](const FARPGInventoryEntry& Existing){ return Existing.InstanceId == Moved.InstanceId; }))
+                Moved.InstanceId = FGuid::NewGuid();
+            MovedEntries.Add(Moved);
+        }
+        if (!RemoveItemInstanceAuthority(InstanceId, Quantity)) return false;
+        Destination->Items.Append(MovedEntries);
+        Destination->OnInventoryChanged.Broadcast();
+        return true;
+    }
+
+    if (!RemoveItemInstanceAuthority(InstanceId, Quantity)) return false;
+    const bool bAdded = Definition ? Destination->AddItemDefinition(Definition, Quantity) : Destination->AddItem(SourceEntry.ItemId, Quantity);
+    if (!bAdded)
+    {
+        ReplaceInventory(SourceBefore);
+        Destination->ReplaceInventory(DestinationBefore);
+        return false;
+    }
+    return true;
+}
+
 bool UARPGInventoryComponent::TransferItemTo(UARPGInventoryComponent* Destination, FName ItemId, int32 Quantity)
 {
     if (!GetOwner() || !Destination || Destination == this || ItemId.IsNone() || Quantity <= 0) return false;
