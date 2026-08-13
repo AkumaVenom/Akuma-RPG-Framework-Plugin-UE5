@@ -1,5 +1,6 @@
 #include "Components/ARPGEquipmentComponent.h"
 #include "Components/ARPGInventoryComponent.h"
+#include "Components/ARPGQuickAccessComponent.h"
 #include "Components/ARPGProgressionComponent.h"
 #include "Components/ARPGClassComponent.h"
 #include "Data/ARPGItemDefinition.h"
@@ -36,7 +37,11 @@ void UARPGEquipmentComponent::BeginPlay()
     Super::BeginPlay();
     if (UARPGInventoryComponent* Inventory = GetOwner() ? GetOwner()->FindComponentByClass<UARPGInventoryComponent>() : nullptr)
         Inventory->OnInventoryChanged.AddDynamic(this, &UARPGEquipmentComponent::HandleInventoryChanged);
-    if (GetOwner() && GetOwner()->HasAuthority()) RefreshEquipmentEffects();
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        RepairExclusiveVisualAttachmentStateAuthority();
+        RefreshEquipmentEffects();
+    }
     RefreshEquipmentVisuals();
 }
 
@@ -71,9 +76,103 @@ bool UARPGEquipmentComponent::IsValidEquippedEntry(const FARPGInventoryEntry& En
     return Entry.EquipmentSlot == Definition->EquipmentSlot;
 }
 
+bool UARPGEquipmentComponent::HasEquipmentVisualIntent(const UARPGItemDefinition* Definition) const
+{
+    return Definition && (Definition->EquippedVisualActorClass || !Definition->EquippedStaticMesh.IsNull() || !Definition->EquippedSkeletalMesh.IsNull());
+}
+
+bool UARPGEquipmentComponent::SharesExclusiveVisualAttachment(const UARPGItemDefinition* A, const UARPGItemDefinition* B) const
+{
+    // Logical equipment slots remain independent (armor/offhand/etc.), but two visible pieces cannot both own
+    // the exact same physical character socket. This closes the Inventory <-> Quick Access handoff gap where
+    // a Tool and Weapon used different gameplay EquipmentSlot tags while both rendered on the same hand socket.
+    if (!A || !B || !bAttachToCharacterMesh || !HasEquipmentVisualIntent(A) || !HasEquipmentVisualIntent(B)) return false;
+
+    const ACharacter* Character = Cast<ACharacter>(GetOwner());
+    const USkeletalMeshComponent* CharacterMesh = Character ? Character->GetMesh() : nullptr;
+    if (!CharacterMesh) return false;
+
+    const FName SocketA = ResolveAttachSocket(A, CharacterMesh);
+    const FName SocketB = ResolveAttachSocket(B, CharacterMesh);
+    return !SocketA.IsNone() && SocketA == SocketB;
+}
+
+bool UARPGEquipmentComponent::RepairExclusiveVisualAttachmentStateAuthority()
+{
+    if (bRepairingExclusiveVisualState || !GetOwner() || !GetOwner()->HasAuthority() || !bAttachToCharacterMesh) return false;
+
+    UARPGInventoryComponent* Inventory = GetOwner()->FindComponentByClass<UARPGInventoryComponent>();
+    const ACharacter* Character = Cast<ACharacter>(GetOwner());
+    const USkeletalMeshComponent* CharacterMesh = Character ? Character->GetMesh() : nullptr;
+    if (!Inventory || !CharacterMesh) return false;
+
+    FGuid PreferredActiveQuickAccessInstance;
+    if (const UARPGQuickAccessComponent* QuickAccess = GetOwner()->FindComponentByClass<UARPGQuickAccessComponent>())
+    {
+        const int32 ActiveIndex = QuickAccess->ActiveSlotNumber - 1;
+        if (QuickAccess->QuickAccessSlots.IsValidIndex(ActiveIndex))
+            PreferredActiveQuickAccessInstance = QuickAccess->QuickAccessSlots[ActiveIndex].ItemInstanceId;
+    }
+
+    TMap<FName, int32> OwnerIndexBySocket;
+    TArray<TPair<FGameplayTag, FGuid>> ClearedEntries;
+
+    for (int32 Index = 0; Index < Inventory->Items.Num(); ++Index)
+    {
+        FARPGInventoryEntry& Entry = Inventory->Items[Index];
+        UARPGItemDefinition* Definition = Inventory->ResolveItemDefinition(Entry);
+        if (!IsValidEquippedEntry(Entry, Definition) || !HasEquipmentVisualIntent(Definition)) continue;
+
+        const FName Socket = ResolveAttachSocket(Definition, CharacterMesh);
+        if (Socket.IsNone()) continue;
+
+        if (int32* ExistingIndex = OwnerIndexBySocket.Find(Socket))
+        {
+            if (!Inventory->Items.IsValidIndex(*ExistingIndex))
+            {
+                *ExistingIndex = Index;
+                continue;
+            }
+
+            FARPGInventoryEntry& Existing = Inventory->Items[*ExistingIndex];
+            const bool bCurrentPreferred = Entry.InstanceId == PreferredActiveQuickAccessInstance;
+            const bool bExistingPreferred = Existing.InstanceId == PreferredActiveQuickAccessInstance;
+            const int32 LoserIndex = (bCurrentPreferred && !bExistingPreferred) ? *ExistingIndex : Index;
+            FARPGInventoryEntry& Loser = Inventory->Items[LoserIndex];
+            ClearedEntries.Emplace(Loser.EquipmentSlot, Loser.InstanceId);
+            Loser.bEquipped = false;
+            Loser.EquipmentSlot = FGameplayTag();
+
+            if (LoserIndex == *ExistingIndex) *ExistingIndex = Index;
+        }
+        else
+        {
+            OwnerIndexBySocket.Add(Socket, Index);
+        }
+    }
+
+    if (ClearedEntries.Num() == 0) return false;
+
+    bRepairingExclusiveVisualState = true;
+    Inventory->OnInventoryChanged.Broadcast();
+    bRepairingExclusiveVisualState = false;
+
+    for (const TPair<FGameplayTag, FGuid>& Cleared : ClearedEntries)
+    {
+        UE_LOG(LogARPG, Warning, TEXT("Repaired conflicting equipped item %s on %s because another equipped visual owns the same physical attachment socket."),
+            *Cleared.Value.ToString(), *GetNameSafe(GetOwner()));
+        if (Cleared.Key.IsValid()) OnEquipmentChanged.Broadcast(Cleared.Key, FGuid());
+    }
+    return true;
+}
+
 void UARPGEquipmentComponent::HandleInventoryChanged()
 {
-    if (GetOwner() && GetOwner()->HasAuthority()) RefreshEquipmentEffects();
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        if (!bRepairingExclusiveVisualState) RepairExclusiveVisualAttachmentStateAuthority();
+        RefreshEquipmentEffects();
+    }
     RefreshEquipmentVisuals();
 }
 
@@ -149,24 +248,73 @@ bool UARPGEquipmentComponent::EquipAuthority(FGuid Id)
         if (!Class || Class->GetClassId() != Definition->RequiredClassId) return false;
     }
 
-    UARPGItemDefinition* ReplacedDefinition = nullptr;
-    for (const FARPGInventoryEntry& Other : Inventory->Items)
+    struct FReplacedEquipment
     {
-        if (Other.InstanceId == Id || !Other.bEquipped || Other.EquipmentSlot != Definition->EquipmentSlot) continue;
-        ReplacedDefinition = Inventory->ResolveItemDefinition(Other);
-        break;
+        int32 InventoryIndex = INDEX_NONE;
+        FGuid InstanceId;
+        FGameplayTag Slot;
+        UARPGItemDefinition* Definition = nullptr;
+        bool bNeedsExplicitClear = false;
+    };
+
+    TArray<FReplacedEquipment> ReplacedItems;
+    for (int32 Index = 0; Index < Inventory->Items.Num(); ++Index)
+    {
+        FARPGInventoryEntry& Other = Inventory->Items[Index];
+        if (Other.InstanceId == Id || !Other.bEquipped || !Other.EquipmentSlot.IsValid()) continue;
+
+        UARPGItemDefinition* OtherDefinition = Inventory->ResolveItemDefinition(Other);
+        if (!OtherDefinition) continue;
+
+        const bool bSameLogicalSlot = Other.EquipmentSlot == Definition->EquipmentSlot;
+        const bool bSamePhysicalAttachment = SharesExclusiveVisualAttachment(Definition, OtherDefinition);
+        if (!bSameLogicalSlot && !bSamePhysicalAttachment) continue;
+
+        FReplacedEquipment& Replaced = ReplacedItems.AddDefaulted_GetRef();
+        Replaced.InventoryIndex = Index;
+        Replaced.InstanceId = Other.InstanceId;
+        Replaced.Slot = Other.EquipmentSlot;
+        Replaced.Definition = OtherDefinition;
+        Replaced.bNeedsExplicitClear = !bSameLogicalSlot && bSamePhysicalAttachment;
+
+        // SetEquipped already atomically clears items in the same logical slot. For a cross-slot physical
+        // collision (for example Equipment.Tool.MainHand vs Equipment.Weapon.MainHand), clear the old
+        // state inside this same authority transaction before the single InventoryChanged broadcast.
+        if (Replaced.bNeedsExplicitClear)
+        {
+            Other.bEquipped = false;
+            Other.EquipmentSlot = FGameplayTag();
+        }
     }
 
     const bool bOk = Inventory->SetEquipped(Id, true, Definition->EquipmentSlot);
-    if (bOk)
+    if (!bOk)
     {
-        RefreshEquipmentEffects();
-        if (ReplacedDefinition) MulticastPlayEquipmentPresentation(ReplacedDefinition, false);
-        MulticastPlayEquipmentPresentation(Definition, true);
-        OnEquipmentChanged.Broadcast(Definition->EquipmentSlot, Id);
+        // The new entry was fully validated above, but restore any cross-slot state defensively if an
+        // unexpected SetEquipped failure occurs so an equip request can never orphan the previous item.
+        for (const FReplacedEquipment& Replaced : ReplacedItems)
+        {
+            if (!Replaced.bNeedsExplicitClear || !Inventory->Items.IsValidIndex(Replaced.InventoryIndex)) continue;
+            FARPGInventoryEntry& Other = Inventory->Items[Replaced.InventoryIndex];
+            if (Other.InstanceId != Replaced.InstanceId) continue;
+            Other.bEquipped = true;
+            Other.EquipmentSlot = Replaced.Slot;
+        }
+        OnEquipmentRequestResult.Broadcast(false, Id);
+        return false;
     }
-    OnEquipmentRequestResult.Broadcast(bOk, Id);
-    return bOk;
+
+    RefreshEquipmentEffects();
+    for (const FReplacedEquipment& Replaced : ReplacedItems)
+    {
+        if (Replaced.Definition) MulticastPlayEquipmentPresentation(Replaced.Definition, false);
+        if (Replaced.bNeedsExplicitClear && Replaced.Slot.IsValid())
+            OnEquipmentChanged.Broadcast(Replaced.Slot, FGuid());
+    }
+    MulticastPlayEquipmentPresentation(Definition, true);
+    OnEquipmentChanged.Broadcast(Definition->EquipmentSlot, Id);
+    OnEquipmentRequestResult.Broadcast(true, Id);
+    return true;
 }
 
 bool UARPGEquipmentComponent::UnequipAuthority(FGuid Id)
@@ -290,26 +438,75 @@ void UARPGEquipmentComponent::RefreshEquipmentVisuals()
     const UARPGInventoryComponent* Inventory = GetOwner()->FindComponentByClass<UARPGInventoryComponent>();
     if (!Inventory) return;
 
+    // Visual safety net: even legacy/corrupt replicated state must never render two equipment actors on the
+    // same physical character socket. Normal authority equips are already repaired in EquipAuthority; this
+    // projection guard prevents a one-frame or old-save double-mesh state from ever reaching the player.
+    FGuid PreferredActiveQuickAccessInstance;
+    if (const UARPGQuickAccessComponent* QuickAccess = GetOwner()->FindComponentByClass<UARPGQuickAccessComponent>())
+    {
+        const int32 ActiveIndex = QuickAccess->ActiveSlotNumber - 1;
+        if (QuickAccess->QuickAccessSlots.IsValidIndex(ActiveIndex))
+            PreferredActiveQuickAccessInstance = QuickAccess->QuickAccessSlots[ActiveIndex].ItemInstanceId;
+    }
+
+    const ACharacter* Character = Cast<ACharacter>(GetOwner());
+    const USkeletalMeshComponent* CharacterMesh = Character ? Character->GetMesh() : nullptr;
+
     TSet<FGuid> Desired;
     TMap<FGuid, FGameplayTag> Slots;
+    TMap<FGuid, UARPGItemDefinition*> Definitions;
+    TMap<FName, FGuid> DesiredOwnerBySocket;
+
     for (const FARPGInventoryEntry& Entry : Inventory->Items)
     {
         UARPGItemDefinition* Definition = Inventory->ResolveItemDefinition(Entry);
         if (!IsValidEquippedEntry(Entry, Definition)) continue;
 
+        FName PhysicalSocket = NAME_None;
+        if (bAttachToCharacterMesh && CharacterMesh && HasEquipmentVisualIntent(Definition))
+            PhysicalSocket = ResolveAttachSocket(Definition, CharacterMesh);
+
+        if (!PhysicalSocket.IsNone())
+        {
+            if (FGuid* ExistingOwner = DesiredOwnerBySocket.Find(PhysicalSocket))
+            {
+                const bool bCurrentIsPreferred = Entry.InstanceId == PreferredActiveQuickAccessInstance;
+                const bool bExistingIsPreferred = *ExistingOwner == PreferredActiveQuickAccessInstance;
+                if (!bCurrentIsPreferred || bExistingIsPreferred)
+                {
+                    UE_LOG(LogARPG, Warning, TEXT("Suppressed duplicate equipment visual for %s on socket '%s': %s and %s were both marked equipped."),
+                        *GetNameSafe(GetOwner()), *PhysicalSocket.ToString(), *ExistingOwner->ToString(), *Entry.InstanceId.ToString());
+                    continue;
+                }
+
+                Desired.Remove(*ExistingOwner);
+                Slots.Remove(*ExistingOwner);
+                Definitions.Remove(*ExistingOwner);
+                *ExistingOwner = Entry.InstanceId;
+            }
+            else
+            {
+                DesiredOwnerBySocket.Add(PhysicalSocket, Entry.InstanceId);
+            }
+        }
+
         Desired.Add(Entry.InstanceId);
         Slots.Add(Entry.InstanceId, Entry.EquipmentSlot);
-        if (!IsValid(GetEquipmentVisual(Entry.InstanceId)))
-        {
-            EquipmentVisualActors.Remove(Entry.InstanceId);
-            CreateEquipmentVisual(Entry.InstanceId, Definition, Entry.EquipmentSlot);
-        }
+        Definitions.Add(Entry.InstanceId, Definition);
     }
 
+    // Destroy stale/conflicting visuals before creating the winner so a physical socket never contains both.
     TArray<FGuid> Existing;
     EquipmentVisualActors.GetKeys(Existing);
-    for (const FGuid& Id : Existing)
-        if (!Desired.Contains(Id)) DestroyEquipmentVisual(Id, Slots.FindRef(Id));
+    for (const FGuid& ExistingId : Existing)
+        if (!Desired.Contains(ExistingId)) DestroyEquipmentVisual(ExistingId);
+
+    for (const FGuid& DesiredId : Desired)
+    {
+        if (IsValid(GetEquipmentVisual(DesiredId))) continue;
+        EquipmentVisualActors.Remove(DesiredId);
+        CreateEquipmentVisual(DesiredId, Definitions.FindRef(DesiredId), Slots.FindRef(DesiredId));
+    }
 }
 
 void UARPGEquipmentComponent::PlayEquipmentPresentationLocal(const UARPGItemDefinition* Definition, bool bEquipping) const

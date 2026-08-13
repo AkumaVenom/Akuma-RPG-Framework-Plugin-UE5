@@ -2,6 +2,8 @@
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGEquipmentComponent.h"
 #include "Components/ARPGStatsComponent.h"
+#include "Components/ARPGItemUseComponent.h"
+#include "Items/ARPGItemUseBehavior.h"
 #include "Data/ARPGItemDefinition.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
@@ -599,62 +601,30 @@ EARPGQuickAccessResult UARPGQuickAccessComponent::UseSlotAuthority(int32 SlotNum
     if (!Definition->bUsable) return EARPGQuickAccessResult::ItemNotUsable;
 
     OutInstanceId = Entry->InstanceId;
-    const FName ItemId = Entry->ItemId;
-    const int32 ConsumeQuantity = FMath::Max(1, Definition->ConsumeQuantity);
-    if (Definition->bConsumeOnUse && Entry->Quantity < ConsumeQuantity) return EARPGQuickAccessResult::InsufficientQuantity;
+    UARPGItemUseComponent* ItemUse = GetOwner()->FindComponentByClass<UARPGItemUseComponent>();
+    if (!ItemUse) return EARPGQuickAccessResult::UseFailed;
 
-    const float Now = GetServerTimeSeconds();
-    const float ExistingCooldownEnd = FMath::Max(Slot.CooldownEndServerTime, CooldownEndByItemId.FindRef(ItemId));
-    if (ExistingCooldownEnd > Now + KINDA_SMALL_NUMBER) return EARPGQuickAccessResult::OnCooldown;
-
-    UARPGStatsComponent* Stats = GetOwner()->FindComponentByClass<UARPGStatsComponent>();
-    const bool bCanRestoreHealth = Stats && Definition->RestoreHealth > 0.f && Stats->Health > 0.f && Stats->Health < Stats->MaxHealth;
-    const bool bCanRestoreMana = Stats && Definition->RestoreMana > 0.f && Stats->Mana < Stats->MaxMana;
-    const bool bCanRestoreStamina = Stats && Definition->RestoreStamina > 0.f && Stats->Stamina < Stats->MaxStamina;
-    const bool bHasGameplayEffect = Definition->UseGameplayEffect != nullptr;
-    if (!bCanRestoreHealth && !bCanRestoreMana && !bCanRestoreStamina && !bHasGameplayEffect)
-        return EARPGQuickAccessResult::NoUsefulEffect;
-
-    bool bAppliedAnything = false;
-    if (Stats)
+    FText FailureReason;
+    const EARPGItemUseResult UseResult = ItemUse->UseItemAuthority(OutInstanceId, EARPGItemUseSource::QuickAccess, SlotNumber, FailureReason);
+    EARPGQuickAccessResult QuickResult = EARPGQuickAccessResult::UseFailed;
+    switch (UseResult)
     {
-        if (bCanRestoreHealth) bAppliedAnything |= Stats->Heal(Definition->RestoreHealth);
-        if (bCanRestoreMana) { Stats->RestoreMana(Definition->RestoreMana); bAppliedAnything = true; }
-        if (bCanRestoreStamina) { Stats->RestoreStamina(Definition->RestoreStamina); bAppliedAnything = true; }
+        case EARPGItemUseResult::Success: QuickResult = EARPGQuickAccessResult::Success; break;
+        case EARPGItemUseResult::ItemUnavailable:
+        case EARPGItemUseResult::InvalidItem: QuickResult = EARPGQuickAccessResult::ItemUnavailable; break;
+        case EARPGItemUseResult::ItemNotUsable: QuickResult = EARPGQuickAccessResult::ItemNotUsable; break;
+        case EARPGItemUseResult::OnCooldown: QuickResult = EARPGQuickAccessResult::OnCooldown; break;
+        case EARPGItemUseResult::InsufficientQuantity: QuickResult = EARPGQuickAccessResult::InsufficientQuantity; break;
+        case EARPGItemUseResult::NoUsefulEffect: QuickResult = EARPGQuickAccessResult::NoUsefulEffect; break;
+        case EARPGItemUseResult::CustomUseRejected:
+        case EARPGItemUseResult::UseFailed:
+        default: QuickResult = EARPGQuickAccessResult::UseFailed; break;
     }
 
-    if (bHasGameplayEffect)
-    {
-        IAbilitySystemInterface* AbilityInterface = Cast<IAbilitySystemInterface>(GetOwner());
-        UAbilitySystemComponent* ASC = AbilityInterface ? AbilityInterface->GetAbilitySystemComponent() : GetOwner()->FindComponentByClass<UAbilitySystemComponent>();
-        if (ASC)
-        {
-            FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
-            Context.AddSourceObject(Definition);
-            FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(Definition->UseGameplayEffect, FMath::Max(0.01f, Definition->UseGameplayEffectLevel), Context);
-            if (Spec.IsValid())
-            {
-                ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
-                bAppliedAnything = true;
-            }
-        }
-    }
-
-    if (!bAppliedAnything) return EARPGQuickAccessResult::UseFailed;
-
-    if (Definition->bConsumeOnUse && !Inventory->RemoveItemInstance(OutInstanceId, ConsumeQuantity))
-        return EARPGQuickAccessResult::UseFailed;
-
-    const float CooldownEnd = Now + FMath::Max(0.f, Definition->UseCooldownSeconds);
-    CooldownEndByItemId.Add(ItemId, CooldownEnd);
-    for (FARPGQuickAccessSlot& OtherSlot : QuickAccessSlots)
-    {
-        if (OtherSlot.ItemId == ItemId) OtherSlot.CooldownEndServerTime = CooldownEnd;
-    }
-
-    MulticastPlayItemUsePresentation(SlotNumber, OutInstanceId, Definition);
-    OnQuickAccessChanged.Broadcast();
-    return EARPGQuickAccessResult::Success;
+    // Preserve the longstanding Quick Access Blueprint presentation event without replaying sound/montage;
+    // the central ItemUse component already multicasts those exactly once.
+    if (QuickResult == EARPGQuickAccessResult::Success) MulticastPlayItemUsePresentation(SlotNumber, OutInstanceId, Definition);
+    return QuickResult;
 }
 
 EARPGQuickAccessResult UARPGQuickAccessComponent::ActivateSlotAuthority(int32 SlotNumber, FGuid& OutInstanceId)
@@ -758,6 +728,21 @@ bool UARPGQuickAccessComponent::ActivateSlot(int32 SlotNumber)
     if (!GetOwner() || !IsValidSlotNumber(SlotNumber)) return false;
     if (!GetOwner()->HasAuthority())
     {
+        if (QuickAccessSlots.IsValidIndex(ToIndex(SlotNumber)) && IsCanonicalSlotForView(SlotNumber))
+        {
+            const FARPGQuickAccessSlot& Slot = QuickAccessSlots[ToIndex(SlotNumber)];
+            if (const FARPGInventoryEntry* Entry = ResolveOwnedEntry(Slot))
+            {
+                if (UARPGItemDefinition* Definition = GetInventory() ? GetInventory()->ResolveItemDefinition(*Entry) : nullptr)
+                {
+                    if (ResolveAction(Definition) == EARPGQuickAccessAction::Use)
+                    {
+                        if (UARPGItemUseComponent* ItemUse = GetOwner()->FindComponentByClass<UARPGItemUseComponent>())
+                            if (!ItemUse->CanUseItemNow(Entry->InstanceId)) return false;
+                    }
+                }
+            }
+        }
         ServerActivateSlot(SlotNumber);
         return true;
     }
@@ -772,6 +757,11 @@ bool UARPGQuickAccessComponent::UseActiveSlot()
     if (!GetOwner()) return false;
     if (!GetOwner()->HasAuthority())
     {
+        if (!IsValidSlotNumber(ActiveSlotNumber) || !QuickAccessSlots.IsValidIndex(ToIndex(ActiveSlotNumber))) return false;
+        const FARPGQuickAccessSlot& Slot = QuickAccessSlots[ToIndex(ActiveSlotNumber)];
+        const FARPGInventoryEntry* Entry = ResolveOwnedEntry(Slot);
+        UARPGItemUseComponent* ItemUse = GetOwner()->FindComponentByClass<UARPGItemUseComponent>();
+        if (!Entry || (ItemUse && !ItemUse->CanUseItemNow(Entry->InstanceId))) return false;
         ServerUseActiveSlot();
         return true;
     }
@@ -918,6 +908,17 @@ int32 UARPGQuickAccessComponent::FindSlotForItemInstance(FGuid ItemInstanceId) c
     return BestSlot;
 }
 
+void UARPGQuickAccessComponent::NotifyItemUsedAuthority(FName ItemId, float CooldownEndServerTime)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || ItemId.IsNone()) return;
+    CooldownEndByItemId.Add(ItemId, CooldownEndServerTime);
+    for (FARPGQuickAccessSlot& Slot : QuickAccessSlots)
+    {
+        if (Slot.ItemId == ItemId) Slot.CooldownEndServerTime = CooldownEndServerTime;
+    }
+    OnQuickAccessChanged.Broadcast();
+}
+
 void UARPGQuickAccessComponent::ReplaceQuickAccessState(const TArray<FARPGQuickAccessSlot>& NewSlots, int32 NewActiveSlotNumber)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
@@ -977,20 +978,8 @@ void UARPGQuickAccessComponent::ClientReceiveActionResult_Implementation(EARPGQu
 void UARPGQuickAccessComponent::PlayItemUsePresentationLocal(int32 SlotNumber, FGuid ItemInstanceId, const UARPGItemDefinition* Definition)
 {
     if (!Definition || !GetOwner() || GetOwner()->GetNetMode() == NM_DedicatedServer) return;
-    if (!Definition->UseSound.IsNull())
-    {
-        if (USoundBase* Sound = Definition->UseSound.LoadSynchronous())
-        {
-            const float PitchLow = FMath::Min(Definition->UseAudioPitchMin, Definition->UseAudioPitchMax);
-            const float PitchHigh = FMath::Max(Definition->UseAudioPitchMin, Definition->UseAudioPitchMax);
-            UGameplayStatics::PlaySoundAtLocation(this, Sound, GetOwner()->GetActorLocation(), FMath::Max(0.f, Definition->UseAudioVolume), FMath::FRandRange(PitchLow, PitchHigh));
-        }
-    }
-    if (!Definition->UseMontage.IsNull())
-    {
-        if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
-            if (UAnimMontage* Montage = Definition->UseMontage.LoadSynchronous()) Character->PlayAnimMontage(Montage);
-    }
+    // Audio/montage/custom presentation is centralized in ItemUse. Keep this legacy event alive for
+    // existing Quick Access Blueprint listeners without causing duplicated presentation.
     OnQuickAccessItemUsed.Broadcast(SlotNumber, ItemInstanceId, const_cast<UARPGItemDefinition*>(Definition));
 }
 

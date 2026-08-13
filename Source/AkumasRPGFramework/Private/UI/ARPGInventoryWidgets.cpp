@@ -274,7 +274,7 @@ FReply UARPGInventoryItemSlotWidget::NativeOnPreviewMouseButtonDown(const FGeome
     if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && SlotView.bOccupied)
     {
         InventoryUI->SelectInventorySlot(SlotView.SlotNumber);
-        InventoryUI->ToggleEquipInventoryItem(SlotView.ItemInstanceId);
+        InventoryUI->ActivateInventoryItem(SlotView.ItemInstanceId);
         return FReply::Handled();
     }
 
@@ -296,7 +296,7 @@ FReply UARPGInventoryItemSlotWidget::NativeOnMouseButtonDown(const FGeometry& In
     if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && SlotView.Source == EARPGInventoryUISlotSource::Inventory && SlotView.bOccupied)
     {
         InventoryUI->SelectInventorySlot(SlotView.SlotNumber);
-        InventoryUI->ToggleEquipInventoryItem(SlotView.ItemInstanceId);
+        InventoryUI->ActivateInventoryItem(SlotView.ItemInstanceId);
         return FReply::Handled();
     }
 
@@ -401,6 +401,7 @@ void UARPGInventoryPanelWidget::NativeOnInitialized()
     Super::NativeOnInitialized();
     EnsureNativeLayoutOrBindings();
     if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleCloseClicked);
+    if (PrimaryActionButton) PrimaryActionButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandlePrimaryActionClicked);
 }
 
 void UARPGInventoryPanelWidget::InitializeInventoryUI(AARPGCharacter* InCharacter, UARPGInventoryUIComponent* InInventoryUIComponent)
@@ -409,6 +410,7 @@ void UARPGInventoryPanelWidget::InitializeInventoryUI(AARPGCharacter* InCharacte
     InventoryUI = InInventoryUIComponent;
     EnsureNativeLayoutOrBindings();
     if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandleCloseClicked);
+    if (PrimaryActionButton) PrimaryActionButton->OnClicked.AddUniqueDynamic(this, &UARPGInventoryPanelWidget::HandlePrimaryActionClicked);
     RebuildInventoryGrid();
     RefreshInventoryUI();
 }
@@ -507,8 +509,20 @@ void UARPGInventoryPanelWidget::EnsureNativeLayoutOrBindings()
         StyleInventoryText(SelectedItemDetailsText, 11, FLinearColor(0.76f, 0.79f, 0.86f, 1.f));
         DetailStack->AddChildToVerticalBox(SelectedItemDetailsText);
 
+        USizeBox* ActionSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("InventoryPrimaryActionSize"));
+        ActionSize->SetWidthOverride(150.f);
+        ActionSize->SetHeightOverride(36.f);
+        if (UVerticalBoxSlot* ActionSlot = DetailStack->AddChildToVerticalBox(ActionSize)) ActionSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+        PrimaryActionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("PrimaryActionButton"));
+        PrimaryActionText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PrimaryActionText"));
+        PrimaryActionText->SetJustification(ETextJustify::Center);
+        StyleInventoryText(PrimaryActionText, 13);
+        PrimaryActionButton->AddChild(PrimaryActionText);
+        PrimaryActionButton->SetVisibility(ESlateVisibility::Collapsed);
+        ActionSize->SetContent(PrimaryActionButton);
+
         UTextBlock* HelpText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("InventoryHelpText"));
-        HelpText->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryHelp", "Drag an item to Quick Access to assign it. Drag Quick Access slots to rearrange them. Drag a Quick Access item away to clear it. Right-click an equippable inventory item to equip/unequip."));
+        HelpText->SetText(NSLOCTEXT("AkumasRPGFramework", "InventoryHelp", "Select an item and use the action button, or right-click it: equipment equips/unequips and usable items activate immediately. Drag an item to Quick Access to assign it. Drag Quick Access slots to rearrange them or drag one away to clear it."));
         HelpText->SetAutoWrapText(true);
         StyleInventoryText(HelpText, 10, FLinearColor(0.58f, 0.62f, 0.70f, 1.f));
         if (UVerticalBoxSlot* HelpSlot = MainStack->AddChildToVerticalBox(HelpText)) HelpSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
@@ -520,6 +534,8 @@ void UARPGInventoryPanelWidget::EnsureNativeLayoutOrBindings()
         if (!SelectedItemNameText) SelectedItemNameText = Cast<UTextBlock>(GetWidgetFromName(TEXT("SelectedItemNameText")));
         if (!SelectedItemDetailsText) SelectedItemDetailsText = Cast<UTextBlock>(GetWidgetFromName(TEXT("SelectedItemDetailsText")));
         if (!CloseButton) CloseButton = Cast<UButton>(GetWidgetFromName(TEXT("CloseButton")));
+        if (!PrimaryActionButton) PrimaryActionButton = Cast<UButton>(GetWidgetFromName(TEXT("PrimaryActionButton")));
+        if (!PrimaryActionText) PrimaryActionText = Cast<UTextBlock>(GetWidgetFromName(TEXT("PrimaryActionText")));
     }
 }
 
@@ -596,6 +612,27 @@ void UARPGInventoryPanelWidget::UpdateSelectionText()
     if (SelectedItemNameText)
         SelectedItemNameText->SetText(SelectedSlotView.bOccupied ? SelectedSlotView.DisplayName : NSLOCTEXT("AkumasRPGFramework", "InventoryNoSelection", "Select an item"));
 
+    if (PrimaryActionButton)
+    {
+        const UARPGItemDefinition* Definition = SelectedSlotView.ItemDefinition;
+        const bool bCanEquip = SelectedSlotView.bOccupied && Definition && Definition->bEquippable && Definition->EquipmentSlot.IsValid();
+        const bool bCanUse = SelectedSlotView.bOccupied && Definition && Definition->bUsable;
+        const bool bPreferUse = bCanUse && Definition->QuickAccessAction == EARPGQuickAccessAction::Use;
+        const bool bActionIsUse = bCanUse && (bPreferUse || !bCanEquip);
+        PrimaryActionButton->SetVisibility((bCanEquip || bCanUse) ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+        const bool bUseAvailableNow = !bActionIsUse || (InventoryUI && InventoryUI->CanUseInventoryItemNow(SelectedSlotView.ItemInstanceId));
+        PrimaryActionButton->SetIsEnabled(!bActionIsUse || (SelectedSlotView.CooldownRemaining <= KINDA_SMALL_NUMBER && bUseAvailableNow));
+        if (PrimaryActionText)
+        {
+            if (bActionIsUse)
+                PrimaryActionText->SetText(SelectedSlotView.CooldownRemaining > KINDA_SMALL_NUMBER
+                    ? FText::Format(NSLOCTEXT("AkumasRPGFramework", "InventoryUseCooldownAction", "Use ({0}s)"), FText::AsNumber(FMath::CeilToInt(SelectedSlotView.CooldownRemaining)))
+                    : NSLOCTEXT("AkumasRPGFramework", "InventoryUseAction", "Use"));
+            else if (bCanEquip)
+                PrimaryActionText->SetText(SelectedSlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryUnequipAction", "Unequip") : NSLOCTEXT("AkumasRPGFramework", "InventoryEquipAction", "Equip"));
+        }
+    }
+
     if (SelectedItemDetailsText)
     {
         if (!SelectedSlotView.bOccupied)
@@ -613,6 +650,13 @@ void UARPGInventoryPanelWidget::UpdateSelectionText()
             SelectedSlotView.bBound ? NSLOCTEXT("AkumasRPGFramework", "InventoryBoundDetail", "   Bound") : FText::GetEmpty(),
             SelectedSlotView.bEquipped ? NSLOCTEXT("AkumasRPGFramework", "InventoryEquippedDetail", "   Equipped") : FText::GetEmpty()));
     }
+}
+
+void UARPGInventoryPanelWidget::HandlePrimaryActionClicked()
+{
+    if (!InventoryUI || !SelectedSlotView.bOccupied || !SelectedSlotView.ItemInstanceId.IsValid()) return;
+    InventoryUI->ActivateInventoryItem(SelectedSlotView.ItemInstanceId);
+    RefreshInventoryUI();
 }
 
 void UARPGInventoryPanelWidget::RequestCloseInventoryUI()

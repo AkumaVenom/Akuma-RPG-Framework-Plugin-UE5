@@ -5,6 +5,8 @@
 #include "Components/ARPGCombatComponent.h"
 #include "Components/ARPGProgressionComponent.h"
 #include "Components/ARPGInventoryComponent.h"
+#include "Components/ARPGItemUseComponent.h"
+#include "Items/ARPGItemUseBehavior.h"
 #include "Components/ARPGEquipmentComponent.h"
 #include "Components/ARPGQuickAccessComponent.h"
 #include "Components/ARPGCurrencyComponent.h"
@@ -43,6 +45,7 @@ AARPGCharacter::AARPGCharacter()
     Combat = CreateDefaultSubobject<UARPGCombatComponent>(TEXT("Combat"));
     Progression = CreateDefaultSubobject<UARPGProgressionComponent>(TEXT("Progression"));
     Inventory = CreateDefaultSubobject<UARPGInventoryComponent>(TEXT("Inventory"));
+    ItemUse = CreateDefaultSubobject<UARPGItemUseComponent>(TEXT("ItemUse"));
     Equipment = CreateDefaultSubobject<UARPGEquipmentComponent>(TEXT("Equipment"));
     QuickAccess = CreateDefaultSubobject<UARPGQuickAccessComponent>(TEXT("QuickAccess"));
     Currencies = CreateDefaultSubobject<UARPGCurrencyComponent>(TEXT("Currencies"));
@@ -193,6 +196,17 @@ bool AARPGCharacter::UseActiveQuickAccessItem()
 {
     return QuickAccess ? QuickAccess->UseActiveSlot() : false;
 }
+
+bool AARPGCharacter::UseInventoryItem(FGuid ItemInstanceId)
+{
+    return ItemUse ? ItemUse->UseItem(ItemInstanceId, EARPGItemUseSource::Blueprint, 0) : false;
+}
+
+bool AARPGCharacter::UseFirstInventoryItemById(FName ItemId)
+{
+    return ItemUse ? ItemUse->UseFirstItemById(ItemId, EARPGItemUseSource::Blueprint) : false;
+}
+
 
 bool AARPGCharacter::StartWoodcuttingFromView()
 {

@@ -11,6 +11,7 @@ class UARPGStatsComponent;
 class UARPGCombatComponent;
 class UARPGProgressionComponent;
 class UARPGInventoryComponent;
+class UARPGItemUseComponent;
 class UARPGEquipmentComponent;
 class UARPGQuickAccessComponent;
 class UARPGCurrencyComponent;
@@ -54,6 +55,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGCombatComponent> Combat;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGProgressionComponent> Progression;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGInventoryComponent> Inventory;
+    /** Server-authoritative generic consumable/custom item-use pipeline shared by Inventory UI and Quick Access. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGItemUseComponent> ItemUse;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGEquipmentComponent> Equipment;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGQuickAccessComponent> QuickAccess;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGCurrencyComponent> Currencies;
@@ -98,6 +101,10 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access|Input") bool QuickAccessNext();
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access|Input") bool QuickAccessPrevious();
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access|Input") bool UseActiveQuickAccessItem();
+
+    // Direct item-use helpers. These work even when the item is not assigned to Quick Access.
+    UFUNCTION(BlueprintCallable, Category="ARPG|Item Use|Input") bool UseInventoryItem(FGuid ItemInstanceId);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Item Use|Input") bool UseFirstInventoryItemById(FName ItemId);
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcuttingFromView();
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool StartWoodcutting(AARPGTree* Tree);

@@ -1,3 +1,30 @@
+## Full-Vitals Consumable Guard (v2.13.2)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Full Health/Mana/Stamina protection | Implemented | Pure vital restoratives cannot succeed when all configured vital targets are already full. |
+| Inventory local preflight | Implemented | The ready Use button disables and direct Inventory use returns false before sending an unnecessary RPC. |
+| Quick Access local preflight | Implemented | Hotbar activation refuses a pure vital consumable locally when it has no useful restoration target. |
+| Authority delta validation | Implemented | Consumption/cooldown/presentation require an actual positive vital change or another independent successful effect. |
+| Mixed-effect compatibility | Implemented | GAS/custom behavior items remain eligible at full vitals because their independent effect may still be useful. |
+
+## Equipment Physical-Socket Exclusivity (v2.13.1)
+
+- Central Equipment authority prevents two visible equipment items from owning the same resolved skeletal-mesh socket even when logical EquipmentSlot tags differ.
+- Inventory, Quick Access, starting equipment and direct Blueprint equip requests share the same replacement rule.
+- Authority self-repairs duplicate same-socket equipped state from old saves/inconsistent data, with active Quick Access preferred when resolving a tie.
+- Visual projection suppresses duplicate same-socket actors during recovery.
+- Different sockets remain independently equippable.
+
+## Generic Item Use (v2.13.0)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Direct Inventory item use | Implemented | Ready Inventory Use button/right-click and Character Blueprint helpers; no hotbar assignment required. |
+| Built-in consumables | Implemented | Health/Mana/Stamina restore, GAS effect, consume quantity, cooldown, montage and sound. |
+| Per-item Blueprint behavior | Implemented | Assign an `ARPGItemUseBehavior` class on an Item Definition for custom authoritative logic and cosmetic presentation. |
+| Unified Quick Access use | Implemented | Hotbar Use delegates to the same ItemUse authority path and shares cooldown/consumption validation. |
+
 ## Ready Inventory + Quick Access UI (v2.12.2)
 
 | System | Status | Notes |

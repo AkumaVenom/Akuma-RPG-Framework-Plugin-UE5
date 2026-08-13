@@ -8,6 +8,34 @@ The design goal is simple: create content with Data Assets, assign components/de
 
 > **Build status:** source framework alpha. The code has passed repository-level structural validation in the generation environment, but it has **not** been compiled against your local UE 5.8 installation here. A real UE 5.8 Development Editor build and in-project PIE/runtime QA are required before shipping.
 
+## 2.13.3-alpha Full-Vitals Hard-Gate Fix
+
+v2.13.3 fixes the real loophole left by v2.13.2. A vital-restoration item could still be accepted at full Health/Mana/Stamina whenever the same Item Definition also had a Gameplay Effect or custom Item Use Behavior, because those secondary effects were allowed to bypass the vital-use guard. That is now **blocked by default**.
+
+If an item has any built-in `Restore Health`, `Restore Mana`, or `Restore Stamina` value configured, at least one of those configured vitals must have meaningful missing value before Inventory, Quick Access, or the authoritative server can use/consume it. Secondary GAS/custom effects no longer make a full-vital potion consumable unless the designer explicitly enables **Allow Other Effects When Restored Vitals Are Full** for an intentionally mixed item such as healing food plus an independent buff.
+
+Gameplay Effect success is also no longer inferred from merely creating a valid effect spec. Item Use now checks `FActiveGameplayEffectHandle::WasSuccessfullyApplied()` so a Gameplay Effect rejected by tags, immunity, or other GAS requirements cannot falsely count as a successful use and consume the item.
+
+## 2.13.2-alpha Full-Vitals Consumable Guard Fix
+
+v2.13.2 closes the consumable-use loophole where a Health/Mana/Stamina restoration item could still be treated as usable from the client/UI while the relevant vital was already full. Pure vital-restoration consumables now perform a local advisory preflight before Inventory or Quick Access sends the use request, and authority independently performs the same full-vital validation before any effect, cooldown, presentation or consumption can succeed.
+
+Built-in vital restoration is now measured by the **actual value delta** applied on authority rather than assuming that calling a restore helper means an effect occurred. `Heal()` also reports success only when Health genuinely increases. If every vital configured on a pure restoration item is already full, the result is `NoUsefulEffect`, the item quantity is unchanged, cooldown is not started, and no successful-use montage/sound/presentation is played. Mixed items that also contain a GAS Gameplay Effect or custom `ARPGItemUseBehavior` remain eligible at full vitals because those independent effects may still be useful.
+
+> **Superseded by v2.13.3:** the mixed-effect bypass above proved too permissive for ordinary potions. Current behavior blocks configured vital restoration at full vitals by default even when secondary effects are present, with an explicit per-item opt-in for intentional exceptions.
+
+## 2.13.1-alpha Equipment Physical-Socket Exclusivity Fix
+
+v2.13.1 fixes an Inventory <-> Quick Access equipment handoff edge case where two equippable items could remain equipped at once when they used different logical `EquipmentSlot` gameplay tags (for example Tool vs Weapon) but both attached their visible mesh to the same physical character socket. The central Equipment component now treats a shared resolved visual attachment socket as an exclusive physical channel: equipping the new visible item retires the old one in the same authoritative transaction regardless of whether the request came from Inventory, Quick Access, starting equipment or a direct Blueprint `Equip Item` call.
+
+Authority now also self-repairs legacy/corrupt saved equipment state that already contains two visible items on one socket, and a second visual-projection safety guard prevents both meshes from ever rendering during recovery. When a conflict has to be resolved, the active Quick Access item is preferred; unrelated equipment on different sockets (for example right-hand weapon + left-hand shield/armor) remains independent. No new reflected Blueprint API is required for this fix.
+
+## 2.13.0-alpha Generic Item Use + Blueprint Item Behaviors
+
+v2.13 promotes consumables from a Quick-Access-specific path into a shared **ItemUse** system on every `AARPGCharacter`. Health/Mana/Stamina potions, food and GAS-effect items remain zero-Blueprint setup through `ARPGItemDefinition`, while unusual items can now assign an `ARPGItemUseBehavior` Blueprint class with authoritative **Can Use Item** / **Execute Item Use** events and a cosmetic **Play Item Use Presentation** event.
+
+The ready Inventory UI now exposes a real context-sensitive **Use / Equip / Unequip** action button and right-click action. Usable items can be activated directly from Inventory without first occupying a hotbar slot. Inventory, Quick Access and direct Blueprint calls all route through the same server validation, exact runtime InstanceId ownership, consume-after-success and item-type cooldown pipeline. See `Docs/ITEM_USE.md`.
+
 ## 2.12.2-alpha Inventory viewport hit-test ownership fix
 
 v2.12.2 fixes the actual cause of the Inventory panel being visible but completely unable to receive clicks while the Quick Access HUD remained interactive. The Quick Access HUD is intentionally layered above Inventory for Inventory -> hotbar drag/drop, but its top-level `UUserWidget` fills the viewport. Leaving that top-level widget `Visible` made the entire invisible full-screen Quick Access layer hit-testable, so pointer input never reached the lower-Z Inventory widget.

@@ -1,3 +1,42 @@
+## v2.13.3-alpha — Full-Vitals Hard-Gate Fix
+
+- Fixed the actual v2.13.2 loophole where any configured `UseGameplayEffect` or `Item Use Behavior Class` bypassed the full Health/Mana/Stamina protection on an otherwise vital-restoring consumable.
+- Built-in `Restore Health` / `Restore Mana` / `Restore Stamina` are now a hard usefulness gate by default on both client preflight and server authority. At least one configured restored vital must be missing before use can proceed.
+- Added opt-in Item Definition setting **Allow Other Effects When Restored Vitals Are Full** for intentionally mixed heal+buff/custom items that should remain usable after their restored vitals are full. Default is disabled to prevent accidental potion waste.
+- Gameplay Effects now count as applied only when `FActiveGameplayEffectHandle::WasSuccessfullyApplied()` confirms application; merely creating a valid spec no longer consumes an item when GAS rejects the effect.
+- Preserved consume-after-success, cooldown, presentation, Inventory UI, Quick Access, custom-only item behavior and all previous equipment/UI systems.
+
+## v2.13.2-alpha — Full-Vitals Consumable Guard Fix
+- Pure Health/Mana/Stamina restoration items are locally preflighted before Inventory/Quick Access sends a use RPC.
+- Authority rejects `NoUsefulEffect` when all configured vital-restoration targets are already full.
+- Consumption, cooldown and presentation happen only after a real vital delta or another independent effect succeeds.
+- `Heal()` now returns true only when Health actually increased.
+- Inventory Use button disables when the selected pure vital consumable has no useful target.
+
+## v2.13.1-alpha — Equipment Physical-Socket Exclusivity Fix
+
+- Fixed Inventory and Quick Access equipment being able to leave two visible held meshes equipped simultaneously when the Item Definitions used different logical `EquipmentSlot` tags but resolved to the same physical character attachment socket.
+- Moved the protection into the central `UARPGEquipmentComponent`, so Inventory equip, Quick Access activation, starting equipment and direct Blueprint `Equip Item` calls all use the same exclusivity rule.
+- Cross-slot same-socket replacements are cleared inside the same authority transaction before the Inventory changed broadcast; the replaced slot receives an empty equipment-change notification and the new item becomes the sole socket owner.
+- Added authority self-repair for legacy/inconsistent saved equipment state that already contains same-socket duplicates; the active Quick Access item wins the repair tie when available.
+- Added a client/local visual projection safety net: legacy or inconsistent state can never render two `AARPGEquipmentVisualActor` instances on the same resolved socket. The active Quick Access item wins if a legacy conflict must be projected.
+- Different physical sockets remain independent, preserving weapon + offhand/armor combinations.
+- Added `Tools/test_equipment_visual_exclusivity_model.py` regression coverage.
+- No new reflected Blueprint properties/functions were added for this fix.
+
+## v2.13.0-alpha — Generic Item Use + Blueprint Item Behaviors
+
+- Added inherited replicated `ARPGItemUseComponent` to every `AARPGCharacter` as the single authority path for usable inventory items.
+- Added direct `Use Inventory Item` and `Use First Inventory Item By Id` Character Blueprint helpers; items no longer need a Quick Access assignment to be used.
+- Added Blueprintable `ARPGItemUseBehavior` with `Can Use Item`, authoritative `Execute Item Use`, and cosmetic `Play Item Use Presentation` hooks assignable per Item Definition.
+- Preserved zero-Blueprint consumables: Health/Mana/Stamina restoration, Gameplay Effect, consume quantity, cooldown, montage and sound are now executed by ItemUse.
+- Consumption occurs only after at least one configured/custom effect succeeds; full-vitals, cooldown, insufficient quantity and custom rejection do not consume the item.
+- Added owner-only replicated item-type cooldown state and kept Quick Access cooldown projection compatible.
+- Quick Access Use now delegates to ItemUse rather than maintaining a second consumable implementation.
+- Ready Inventory UI now has context-sensitive `PrimaryActionButton` / `PrimaryActionText` bindings for Use, Equip and Unequip, with right-click using the same action.
+- Usable Inventory slots expose cooldown remaining and the ready Use button disables/counts down while the item is cooling down.
+- Added `Docs/ITEM_USE.md`, Item Use model coverage and source-validator guards.
+
 # Akuma RPG Framework Changelog
 
 ## v2.12.2-alpha — Inventory Viewport Hit-Test Ownership Fix

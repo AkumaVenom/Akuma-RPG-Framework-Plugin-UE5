@@ -1,5 +1,12 @@
 # Quick Access / Active Item Slots — v2.2.3-alpha.2
 
+
+## v2.13 unified Item Use authority
+
+Quick Access still resolves `Auto` as Equip for equippable items and Use for `bUsable` items, but the Use branch now delegates to the same `ARPGItemUseComponent` used by direct Inventory activation. This preserves hotbar Blueprint action-result events while removing duplicate consumable logic. Item-type cooldowns are synchronized back to Quick Access slots for the existing UI projection.
+
+Per-item custom behavior is authored on the Item Definition through **Item Use Behavior Class**. See `ITEM_USE.md`.
+
 ## Active-slot replacement (Blueprint-compatible hotfix)
 
 Replacing the item in the currently active slot with another Equip-action item immediately refreshes the held weapon/tool. This behavior is implemented only in the private component `.cpp`; the public/reflected Quick Access header is unchanged from 2.2.3-alpha.1 to preserve existing Blueprint nodes and casts. Consumables are not auto-used by assignment.
@@ -274,6 +281,8 @@ Then assign the actual runtime items to those slots through Starting Items or th
 That keeps Blueprint input extremely small while the plugin owns all runtime GUID validation, equipment switching, consumable use, replication, save/load repair, cooldown and presentation behavior.
 
 ## Exclusive active weapon/tool handoff
+
+As of **v2.13.1**, the central Equipment component also enforces physical attachment exclusivity outside Quick Access. An item equipped from Inventory cannot remain visible in the same hand when a different Quick Access item takes that same resolved socket, and the reverse direction is protected as well.
 
 Quick Access is an active held-item channel by default. With **Exclusive Active Quick Access Equipment** enabled, activating a different equippable Quick Access item first unequips the runtime item previously activated through Quick Access, even when the two Item Definitions use different logical `EquipmentSlot` tags such as Tool and Weapon. This prevents two hand-held visuals/effects from remaining active at once while leaving unrelated armor/offhand equipment untouched.
 

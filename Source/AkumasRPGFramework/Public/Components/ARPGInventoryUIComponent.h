@@ -10,6 +10,7 @@ class AARPGCharacter;
 class APlayerController;
 class UARPGInventoryComponent;
 class UARPGQuickAccessComponent;
+class UARPGItemUseComponent;
 
 /**
  * Local player Inventory + Quick Access UI owner.
@@ -70,6 +71,12 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Actions") bool SwapQuickAccessSlots(int32 FirstSlotNumber, int32 SecondSlotNumber);
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Actions") bool ClearQuickAccessSlot(int32 SlotNumber, bool bUnequipIfActive=true);
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Actions") bool ActivateQuickAccessSlot(int32 SlotNumber);
+    /** Context-sensitive primary action: equippable -> equip/unequip, usable -> use directly from Inventory. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Actions") bool ActivateInventoryItem(FGuid ItemInstanceId);
+    /** Directly uses a usable item without requiring a Quick Access assignment. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Actions") bool UseInventoryItem(FGuid ItemInstanceId);
+    /** Local UI preflight used to disable/reject unusable full-vital consumables before an RPC is sent. */
+    UFUNCTION(BlueprintPure, Category="ARPG|Inventory UI|Actions") bool CanUseInventoryItemNow(FGuid ItemInstanceId) const;
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Actions") bool ToggleEquipInventoryItem(FGuid ItemInstanceId);
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory UI|Actions") void SelectInventorySlot(int32 SlotNumber);
 
@@ -88,13 +95,16 @@ private:
     UFUNCTION() void HandleInventoryChanged();
     UFUNCTION() void HandleQuickAccessChanged();
     UFUNCTION() void HandleActiveQuickAccessSlotChanged(int32 SlotNumber, FName ItemId, FGuid ItemInstanceId);
+    UFUNCTION() void HandleItemUseCooldownsChanged();
 
     bool ResolveLocalPlayer(AARPGCharacter*& OutCharacter, APlayerController*& OutPlayerController) const;
     UARPGInventoryComponent* GetInventory() const;
     UARPGQuickAccessComponent* GetQuickAccess() const;
+    UARPGItemUseComponent* GetItemUse() const;
     void BindRuntimeEvents();
     void UnbindRuntimeEvents();
     void UpdateCooldownRefreshTimer();
+    void HandleCooldownRefreshTick();
     void StopCooldownRefreshTimer();
     void ApplyOpenInputMode(APlayerController* PlayerController);
     void RestoreClosedInputMode(APlayerController* PlayerController);

@@ -117,7 +117,9 @@ bool UARPGStatsComponent::Heal(float Amount)
     if (!GetOwner() || !GetOwner()->HasAuthority() || Amount <= 0.f || Health <= 0.f) return false;
     const float Old = Health;
     Health = FMath::Clamp(Health + Amount, 0.f, MaxHealth);
-    OnHealthChanged.Broadcast(Health, Health - Old);
+    const float AppliedDelta = Health - Old;
+    if (AppliedDelta <= KINDA_SMALL_NUMBER) return false;
+    OnHealthChanged.Broadcast(Health, AppliedDelta);
     return true;
 }
 

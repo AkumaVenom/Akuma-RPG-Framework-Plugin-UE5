@@ -1,5 +1,12 @@
 # Complete Inventory + Quick Access UI — v2.12.2-alpha
 
+
+## v2.13 direct item use
+
+The ready Inventory panel now includes a context-sensitive primary action button. Selecting a usable item shows **Use**; selecting equipment shows **Equip** or **Unequip**. Right-click performs the same action. Usable items call the inherited `ItemUse` component directly and therefore do not need to be assigned to Quick Access first.
+
+Custom Inventory Widget Blueprints can bind standard children named `PrimaryActionButton` and `PrimaryActionText` to keep this behavior without Blueprint glue. See `ITEM_USE.md` for Health Potion setup and per-item Blueprint behavior classes.
+
 v2.12 adds a ready-to-use local player Inventory + Quick Access presentation layer over the existing replicated `ARPGInventoryComponent`, `ARPGEquipmentComponent` and `ARPGQuickAccessComponent`. It does not create a second inventory or hotbar authority path.
 ## v2.12.2 viewport hit-test ownership fix
 

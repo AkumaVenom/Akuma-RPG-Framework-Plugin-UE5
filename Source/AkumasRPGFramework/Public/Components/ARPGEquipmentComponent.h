@@ -57,9 +57,13 @@ protected:
     UARPGItemDefinition* ResolveItemDefinition(FName ItemId) const;
     UARPGItemDefinition* ResolveItemDefinition(const FARPGInventoryEntry& Entry) const;
     bool IsValidEquippedEntry(const FARPGInventoryEntry& Entry, const UARPGItemDefinition* Definition) const;
+    bool HasEquipmentVisualIntent(const UARPGItemDefinition* Definition) const;
+    bool SharesExclusiveVisualAttachment(const UARPGItemDefinition* A, const UARPGItemDefinition* B) const;
+    bool RepairExclusiveVisualAttachmentStateAuthority();
     FName ResolveAttachSocket(const UARPGItemDefinition* Definition, const class USkeletalMeshComponent* CharacterMesh) const;
     void PlayEquipmentPresentationLocal(const UARPGItemDefinition* Definition, bool bEquipping) const;
 
     TMap<FGuid, FActiveGameplayEffectHandle> ActiveEquipmentEffects;
     TMap<FGuid, TWeakObjectPtr<AARPGEquipmentVisualActor>> EquipmentVisualActors;
+    bool bRepairingExclusiveVisualState = false;
 };

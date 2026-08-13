@@ -90,6 +90,9 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access|Persistence", meta=(BlueprintAuthorityOnly)) void ReplaceQuickAccessState(const TArray<FARPGQuickAccessSlot>& NewSlots, int32 NewActiveSlotNumber);
     UFUNCTION(BlueprintCallable, Category="ARPG|Quick Access", meta=(BlueprintAuthorityOnly)) void RefreshRuntimeBindings();
 
+    /** Internal cooldown projection hook used by the generic ItemUse component; intentionally not reflected. */
+    void NotifyItemUsedAuthority(FName ItemId, float CooldownEndServerTime);
+
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

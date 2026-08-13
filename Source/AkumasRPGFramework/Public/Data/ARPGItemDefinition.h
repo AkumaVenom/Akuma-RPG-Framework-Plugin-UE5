@@ -13,6 +13,7 @@ class UAnimMontage;
 class UStaticMesh;
 class USkeletalMesh;
 class USoundBase;
+class UARPGItemUseBehavior;
 
 UCLASS(BlueprintType)
 class AKUMASRPGFRAMEWORK_API UARPGItemDefinition : public UARPGDefinitionBase
@@ -38,8 +39,17 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Vitals", meta=(EditCondition="bUsable", ClampMin="0.0")) float RestoreHealth = 0.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Vitals", meta=(EditCondition="bUsable", ClampMin="0.0")) float RestoreMana = 0.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Vitals", meta=(EditCondition="bUsable", ClampMin="0.0")) float RestoreStamina = 0.f;
+    /**
+     * Safe-by-default consumable rule. When this item restores any framework vital, at least one configured
+     * vital must actually be missing before the item can be used. Enable only for intentionally mixed items
+     * whose independent Gameplay Effect/custom behavior should remain usable even while all restored vitals are full.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Vitals", meta=(EditCondition="bUsable", DisplayName="Allow Other Effects When Restored Vitals Are Full"))
+    bool bAllowOtherEffectsWhenRestoredVitalsFull = false;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Effects", meta=(EditCondition="bUsable")) TSubclassOf<UGameplayEffect> UseGameplayEffect;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Effects", meta=(EditCondition="bUsable", ClampMin="0.01")) float UseGameplayEffectLevel = 1.f;
+    /** Optional item-specific Blueprint logic. Create a Blueprint Class derived from ARPGItemUseBehavior and assign it here. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Custom Behavior", meta=(EditCondition="bUsable", DisplayName="Item Use Behavior Class")) TSubclassOf<UARPGItemUseBehavior> UseBehaviorClass;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable")) TSoftObjectPtr<UAnimMontage> UseMontage;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable")) TSoftObjectPtr<USoundBase> UseSound;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable", ClampMin="0.0")) float UseAudioVolume = 1.f;

@@ -1,5 +1,12 @@
 # Equipment & Starting Inventory — v2.2.1-alpha
 
+## Physical attachment exclusivity (v2.13.1)
+
+Visible equipment now has a second exclusivity rule in addition to logical `EquipmentSlot`: two equipped items cannot own the same resolved character attachment socket at the same time. This is automatic and source-agnostic. If a Stone Axe uses `Equipment.Tool.MainHand` and an Iron Sword uses `Equipment.Weapon.MainHand` but both resolve to `weapon_r`, equipping either one retires the other before the replacement visual is created.
+
+This applies to Inventory actions, Quick Access activation, starting equipment and direct `Equip Item` Blueprint calls. Legacy/saved state is repaired on authority if two visible equipped entries already claim one socket, and the visual projection separately refuses to display both during recovery. Items on different physical sockets remain independent, so normal weapon/offhand/armor combinations are unaffected. For deterministic authoring, set the intended `Attach Socket` on each visible equipment Item Definition; fallback hand sockets remain supported.
+
+
 Akuma's RPG Framework v2.1 makes item/equipment authoring designer-facing. The replicated `Runtime Items` array remains read-only because it contains generated instance GUIDs, equipped state and save data. Use `Starting Items` to author default player/NPC loadouts.
 
 

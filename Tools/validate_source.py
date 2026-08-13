@@ -810,18 +810,14 @@ else:
     ):
         if required not in qh22 and required not in qc22:
             issues.append(f"v2.2 Quick Access missing required API/runtime path: {required}")
+    item_use_cpp_v213 = root / "Private" / "Components" / "ARPGItemUseComponent.cpp"
+    item_use_runtime = item_use_cpp_v213.read_text(errors="replace") if item_use_cpp_v213.exists() else ""
     for required in (
         "ResolveOwnedEntry",
         "Inventory->ResolveItemDefinition(*Entry)",
         "Inventory->IsItemInstanceEquipped",
         "Equipment->EquipItem",
         "Definition->bUsable",
-        "Definition->bConsumeOnUse",
-        "Inventory->RemoveItemInstance",
-        "Definition->UseGameplayEffect",
-        "Stats->Heal",
-        "Stats->RestoreMana",
-        "Stats->RestoreStamina",
         "MulticastPlayItemUsePresentation",
         "CooldownEndByItemId",
         "FindOwnedEntryByIdExcluding",
@@ -832,6 +828,18 @@ else:
     ):
         if required not in qc22:
             issues.append(f"v2.2 Quick Access runtime missing: {required}")
+    # v2.13 centralizes actual consumable execution in ItemUse; accept either the old Quick Access
+    # location or the new shared authority component while keeping every legacy guarantee checked.
+    for required in (
+        "Definition->bConsumeOnUse",
+        "Inventory->RemoveItemInstance",
+        "Definition->UseGameplayEffect",
+        "Stats->Heal",
+        "Stats->RestoreMana",
+        "Stats->RestoreStamina",
+    ):
+        if required not in qc22 and required not in item_use_runtime:
+            issues.append(f"v2.2 consumable runtime missing after ItemUse centralization: {required}")
     if "ResolveDefinitionById" in qc22:
         issues.append("v2.2 Quick Access must resolve actions from owned runtime inventory entries, not project Data Asset lookup alone")
     # v2.2.1 invariant: the exact same runtime inventory GUID can never occupy multiple Quick Access slots.
@@ -1010,8 +1018,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21202 or descriptor.get("VersionName") != "2.12.2-alpha":
-        issues.append("package descriptor must identify v2.12.2-alpha")
+    if descriptor.get("Version") != 21303 or descriptor.get("VersionName") != "2.13.3-alpha":
+        issues.append("package descriptor must identify v2.13.3-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1463,6 +1471,200 @@ else:
     for required in ("Inventory item -> Quick Access slot", "Quick Access slot -> Quick Access slot", "Clear Slot And Unequip Active", "No permanent UI/component Tick"):
         if required not in inv_doc:
             issues.append(f"v2.12 Inventory UI documentation missing behavior: {required}")
+
+# v2.13 complete server-authoritative Item Use system + custom Blueprint behavior.
+item_use_behavior_h = root / "Public" / "Items" / "ARPGItemUseBehavior.h"
+item_use_behavior_cpp = root / "Private" / "Items" / "ARPGItemUseBehavior.cpp"
+item_use_h = root / "Public" / "Components" / "ARPGItemUseComponent.h"
+item_use_cpp = root / "Private" / "Components" / "ARPGItemUseComponent.cpp"
+if not all(p.exists() for p in (item_use_behavior_h, item_use_behavior_cpp, item_use_h, item_use_cpp)):
+    issues.append("v2.13 requires ARPGItemUseBehavior and ARPGItemUseComponent public/private sources")
+else:
+    iubh = item_use_behavior_h.read_text(errors="replace")
+    iucpp = item_use_cpp.read_text(errors="replace")
+    iuh = item_use_h.read_text(errors="replace")
+    for required in (
+        "EARPGItemUseResult",
+        "FARPGItemUseContext",
+        "CanUseItem",
+        "ExecuteItemUse",
+        "PlayItemUsePresentation",
+        "Blueprintable",
+    ):
+        if required not in iubh:
+            issues.append(f"v2.13 custom Item Use behavior missing: {required}")
+    for required in (
+        "UseItem(FGuid ItemInstanceId",
+        "UseFirstItemById",
+        "UseItemAuthority",
+        "COND_OwnerOnly",
+        "ServerUseItem",
+        "ClientReceiveItemUseResult",
+        "MulticastPlayItemUsePresentation",
+    ):
+        if required not in iuh and required not in iucpp:
+            issues.append(f"v2.13 Item Use component missing API/network path: {required}")
+    for required in (
+        "CustomBehavior->CanUseItem",
+        "CustomBehavior->ExecuteItemUse",
+        "Definition->RestoreHealth",
+        "Definition->RestoreMana",
+        "Definition->RestoreStamina",
+        "Definition->UseGameplayEffect",
+        "Inventory->RemoveItemInstance",
+        "SetCooldownAuthority",
+        "QuickAccess->NotifyItemUsedAuthority",
+    ):
+        if required not in iucpp:
+            issues.append(f"v2.13 Item Use authoritative runtime missing: {required}")
+
+if item_header.exists():
+    ih213 = item_header.read_text(errors="replace")
+    if "UseBehaviorClass" not in ih213 or "Item Use Behavior Class" not in ih213:
+        issues.append("v2.13 Item Definition must expose the custom Item Use Behavior Class")
+
+if character_header.exists() and character_cpp.exists():
+    ch213 = character_header.read_text(errors="replace")
+    cc213 = character_cpp.read_text(errors="replace")
+    for required in ("TObjectPtr<UARPGItemUseComponent> ItemUse", "UseInventoryItem(FGuid", "UseFirstInventoryItemById"):
+        if required not in ch213:
+            issues.append(f"v2.13 ARPGCharacter Item Use exposure missing: {required}")
+    if 'CreateDefaultSubobject<UARPGItemUseComponent>(TEXT("ItemUse"))' not in cc213:
+        issues.append("v2.13 ARPGCharacter must create ItemUse automatically")
+
+inventory_ui_h213 = root / "Public" / "Components" / "ARPGInventoryUIComponent.h"
+inventory_ui_cpp213 = root / "Private" / "Components" / "ARPGInventoryUIComponent.cpp"
+inventory_widgets_h213 = root / "Public" / "UI" / "ARPGInventoryWidgets.h"
+inventory_widgets_cpp213 = root / "Private" / "UI" / "ARPGInventoryWidgets.cpp"
+if all(p.exists() for p in (inventory_ui_h213, inventory_ui_cpp213, inventory_widgets_h213, inventory_widgets_cpp213)):
+    iuih213 = inventory_ui_h213.read_text(errors="replace")
+    iuic213 = inventory_ui_cpp213.read_text(errors="replace")
+    iwh213 = inventory_widgets_h213.read_text(errors="replace")
+    iwc213 = inventory_widgets_cpp213.read_text(errors="replace")
+    for required in ("ActivateInventoryItem", "UseInventoryItem"):
+        if required not in iuih213 or required not in iuic213:
+            issues.append(f"v2.13 Inventory UI direct-use action missing: {required}")
+    for required in ("PrimaryActionButton", "PrimaryActionText", "HandlePrimaryActionClicked"):
+        if required not in iwh213 or required not in iwc213:
+            issues.append(f"v2.13 ready Inventory Use button missing: {required}")
+
+# v2.13.1 equipment physical-socket exclusivity: Inventory, Quick Access and direct Equipment requests
+# must converge on one physical attachment owner even when logical EquipmentSlot tags differ.
+equipment_h_2131 = root / "Public" / "Components" / "ARPGEquipmentComponent.h"
+equipment_cpp_2131 = root / "Private" / "Components" / "ARPGEquipmentComponent.cpp"
+if not equipment_h_2131.exists() or not equipment_cpp_2131.exists():
+    issues.append("v2.13.1 equipment physical-socket exclusivity source is missing")
+else:
+    eh2131 = equipment_h_2131.read_text(errors="replace")
+    ec2131 = equipment_cpp_2131.read_text(errors="replace")
+    for required in (
+        "HasEquipmentVisualIntent",
+        "SharesExclusiveVisualAttachment",
+        "RepairExclusiveVisualAttachmentStateAuthority",
+    ):
+        if required not in eh2131 or required not in ec2131:
+            issues.append(f"v2.13.1 equipment exclusivity helper missing: {required}")
+    for required in (
+        "const bool bSamePhysicalAttachment = SharesExclusiveVisualAttachment",
+        "Other.bEquipped = false",
+        "Other.EquipmentSlot = FGameplayTag()",
+        "bNeedsExplicitClear",
+        "DesiredOwnerBySocket",
+        "PreferredActiveQuickAccessInstance",
+        "Suppressed duplicate equipment visual",
+        "bRepairingExclusiveVisualState",
+        "Repaired conflicting equipped item",
+    ):
+        if required not in ec2131:
+            issues.append(f"v2.13.1 equipment exclusivity runtime path missing: {required}")
+
+readme_2131 = plugin_root / "README.md"
+if readme_2131.exists():
+    readme_text_2131 = readme_2131.read_text(errors="replace")
+    splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
+    if splash not in readme_text_2131[:500]:
+        issues.append("README GitHub splash must remain at the top of the document")
+    if "2.13.1-alpha Equipment Physical-Socket Exclusivity Fix" not in readme_text_2131:
+        issues.append("README must document v2.13.1 equipment exclusivity fix")
+
+# v2.13.2 full-vitals consumable guard: local preflight and authority must agree that pure
+# Health/Mana/Stamina restoratives cannot be used when none of their configured vitals can increase.
+item_use_h_2132 = root / "Public" / "Components" / "ARPGItemUseComponent.h"
+item_use_cpp_2132 = root / "Private" / "Components" / "ARPGItemUseComponent.cpp"
+stats_cpp_2132 = root / "Private" / "Components" / "ARPGStatsComponent.cpp"
+quick_cpp_2132 = root / "Private" / "Components" / "ARPGQuickAccessComponent.cpp"
+inv_ui_h_2132 = root / "Public" / "Components" / "ARPGInventoryUIComponent.h"
+inv_ui_cpp_2132 = root / "Private" / "Components" / "ARPGInventoryUIComponent.cpp"
+widgets_cpp_2132 = root / "Private" / "UI" / "ARPGInventoryWidgets.cpp"
+if all(p.exists() for p in (item_use_h_2132, item_use_cpp_2132, stats_cpp_2132, quick_cpp_2132, inv_ui_h_2132, inv_ui_cpp_2132, widgets_cpp_2132)):
+    iuh2132 = item_use_h_2132.read_text(errors="replace")
+    iuc2132 = item_use_cpp_2132.read_text(errors="replace")
+    stc2132 = stats_cpp_2132.read_text(errors="replace")
+    qac2132 = quick_cpp_2132.read_text(errors="replace")
+    iuih2132 = inv_ui_h_2132.read_text(errors="replace")
+    iuic2132 = inv_ui_cpp_2132.read_text(errors="replace")
+    iwc2132 = widgets_cpp_2132.read_text(errors="replace")
+    for required in ("CanUseItemNow(FGuid", "HasUsefulBuiltInVitalRestore"):
+        if required not in iuh2132 or required not in iuc2132:
+            issues.append(f"v2.13.2 ItemUse full-vital preflight missing: {required}")
+    for required in (
+        "ARPGItemUseVitalTolerance",
+        "ARPGCanRestoreVital",
+        "Health is already full.",
+        "Mana is already full.",
+        "Stamina is already full.",
+        "Stats->Health > Before + KINDA_SMALL_NUMBER",
+        "Stats->Mana > Before + KINDA_SMALL_NUMBER",
+        "Stats->Stamina > Before + KINDA_SMALL_NUMBER",
+        "if (!CanUseItemNow(ItemInstanceId)) return false",
+    ):
+        if required not in iuc2132:
+            issues.append(f"v2.13.2 authority/delta guard missing: {required}")
+    if "AppliedDelta <= KINDA_SMALL_NUMBER" not in stc2132:
+        issues.append("v2.13.2 Heal must report success only for a real positive Health delta")
+    if "CanUseItemNow(Entry->InstanceId)" not in qac2132:
+        issues.append("v2.13.2 Quick Access must locally preflight pure consumables")
+    if "CanUseInventoryItemNow" not in iuih2132 or "CanUseInventoryItemNow" not in iuic2132:
+        issues.append("v2.13.2 Inventory UI must expose/use local consumable preflight")
+    if "CanUseInventoryItemNow(SelectedSlotView.ItemInstanceId)" not in iwc2132:
+        issues.append("v2.13.2 Inventory Use button must disable when the selected consumable has no useful vital target")
+
+readme_2132 = plugin_root / "README.md"
+if readme_2132.exists():
+    readme_text_2132 = readme_2132.read_text(errors="replace")
+    if "2.13.2-alpha Full-Vitals Consumable Guard Fix" not in readme_text_2132:
+        issues.append("README must document v2.13.2 full-vitals consumable guard")
+
+# v2.13.3 full-vitals hard gate: secondary Gameplay Effects/custom behavior must not silently
+# bypass configured Health/Mana/Stamina restoration usefulness unless the Item Definition opts in.
+item_def_h_2133 = root / "Public" / "Data" / "ARPGItemDefinition.h"
+if item_def_h_2133.exists() and item_use_h_2132.exists() and item_use_cpp_2132.exists():
+    idh2133 = item_def_h_2133.read_text(errors="replace")
+    iuh2133 = item_use_h_2132.read_text(errors="replace")
+    iuc2133 = item_use_cpp_2132.read_text(errors="replace")
+    if "bAllowOtherEffectsWhenRestoredVitalsFull = false" not in idh2133:
+        issues.append("v2.13.3 Item Definition must default mixed-effect full-vital bypass to disabled")
+    for required in ("HasConfiguredBuiltInVitalRestore", "ShouldBlockForFullConfiguredVitals", "BuildFullVitalsFailureReason"):
+        if required not in iuh2133 or required not in iuc2133:
+            issues.append(f"v2.13.3 full-vital hard-gate helper missing: {required}")
+    for required in (
+        "if (ShouldBlockForFullConfiguredVitals(Definition, Stats))",
+        "bAllowOtherEffectsWhenRestoredVitalsFull",
+        "AppliedHandle.WasSuccessfullyApplied()",
+    ):
+        if required not in iuc2133:
+            issues.append(f"v2.13.3 authority/GameplayEffect success guard missing: {required}")
+    if iuc2133.find("if (ShouldBlockForFullConfiguredVitals(Definition, Stats))") > iuc2133.find("CustomBehavior->CanUseItem"):
+        issues.append("v2.13.3 authority full-vital guard must execute before custom item-use behavior")
+
+readme_2133 = plugin_root / "README.md"
+if readme_2133.exists():
+    readme_text_2133 = readme_2133.read_text(errors="replace")
+    if "2.13.3-alpha Full-Vitals Hard-Gate Fix" not in readme_text_2133:
+        issues.append("README must document v2.13.3 full-vitals hard-gate fix")
+    splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
+    if splash not in readme_text_2133[:500]:
+        issues.append("README GitHub splash must remain at the top of the document")
 
 markers = []
 for p in source_files:

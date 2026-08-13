@@ -3,6 +3,8 @@
 #include "Actors/ARPGCharacter.h"
 #include "Components/ARPGEquipmentComponent.h"
 #include "Components/ARPGInventoryComponent.h"
+#include "Components/ARPGItemUseComponent.h"
+#include "Items/ARPGItemUseBehavior.h"
 #include "Components/ARPGQuickAccessComponent.h"
 #include "Data/ARPGItemDefinition.h"
 #include "GameFramework/PlayerController.h"
@@ -45,6 +47,12 @@ UARPGQuickAccessComponent* UARPGInventoryUIComponent::GetQuickAccess() const
     return GetOwner() ? GetOwner()->FindComponentByClass<UARPGQuickAccessComponent>() : nullptr;
 }
 
+UARPGItemUseComponent* UARPGInventoryUIComponent::GetItemUse() const
+{
+    if (const AARPGCharacter* Character = Cast<AARPGCharacter>(GetOwner())) return Character->ItemUse;
+    return GetOwner() ? GetOwner()->FindComponentByClass<UARPGItemUseComponent>() : nullptr;
+}
+
 void UARPGInventoryUIComponent::HandleOwnerControlChanged()
 {
     if (!GetWorld() || GetWorld()->GetNetMode() == NM_DedicatedServer) return;
@@ -75,11 +83,13 @@ void UARPGInventoryUIComponent::BindRuntimeEvents()
     if (bEventsBound) return;
     UARPGInventoryComponent* Inventory = GetInventory();
     UARPGQuickAccessComponent* QuickAccess = GetQuickAccess();
-    if (!Inventory || !QuickAccess) return;
+    UARPGItemUseComponent* ItemUse = GetItemUse();
+    if (!Inventory || !QuickAccess || !ItemUse) return;
 
     Inventory->OnInventoryChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleInventoryChanged);
     QuickAccess->OnQuickAccessChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleQuickAccessChanged);
     QuickAccess->OnActiveQuickAccessSlotChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleActiveQuickAccessSlotChanged);
+    ItemUse->OnItemUseCooldownsChanged.AddUniqueDynamic(this, &UARPGInventoryUIComponent::HandleItemUseCooldownsChanged);
     bEventsBound = true;
 }
 
@@ -93,6 +103,8 @@ void UARPGInventoryUIComponent::UnbindRuntimeEvents()
         QuickAccess->OnQuickAccessChanged.RemoveDynamic(this, &UARPGInventoryUIComponent::HandleQuickAccessChanged);
         QuickAccess->OnActiveQuickAccessSlotChanged.RemoveDynamic(this, &UARPGInventoryUIComponent::HandleActiveQuickAccessSlotChanged);
     }
+    if (UARPGItemUseComponent* ItemUse = GetItemUse())
+        ItemUse->OnItemUseCooldownsChanged.RemoveDynamic(this, &UARPGInventoryUIComponent::HandleItemUseCooldownsChanged);
     bEventsBound = false;
 }
 
@@ -221,17 +233,13 @@ void UARPGInventoryUIComponent::RefreshInventoryUI()
         }
         ActiveInventoryWidget->RefreshInventoryUI();
     }
+    UpdateCooldownRefreshTimer();
 }
 
 void UARPGInventoryUIComponent::RefreshQuickAccessUI()
 {
-    if (!ActiveQuickAccessWidget || !ActiveQuickAccessWidget->IsInViewport() || !bShowQuickAccessHUD)
-    {
-        StopCooldownRefreshTimer();
-        return;
-    }
-
-    ActiveQuickAccessWidget->RefreshQuickAccessUI();
+    if (ActiveQuickAccessWidget && ActiveQuickAccessWidget->IsInViewport() && bShowQuickAccessHUD)
+        ActiveQuickAccessWidget->RefreshQuickAccessUI();
     UpdateCooldownRefreshTimer();
 }
 
@@ -277,6 +285,17 @@ bool UARPGInventoryUIComponent::GetInventorySlotView(int32 SlotNumber, FARPGInve
         OutView.DisplayName = OutView.ItemDefinition->DisplayName.IsEmpty() ? FText::FromName(Entry.ItemId) : OutView.ItemDefinition->DisplayName;
         OutView.Description = OutView.ItemDefinition->Description;
         OutView.Rarity = OutView.ItemDefinition->Rarity;
+        if (OutView.ItemDefinition->bUsable)
+        {
+            if (const UARPGItemUseComponent* ItemUse = GetItemUse())
+            {
+                OutView.CooldownRemaining = ItemUse->GetCooldownRemaining(Entry.ItemId);
+                const float CooldownTotal = FMath::Max(0.f, OutView.ItemDefinition->UseCooldownSeconds);
+                OutView.CooldownPercent = CooldownTotal > KINDA_SMALL_NUMBER
+                    ? FMath::Clamp(OutView.CooldownRemaining / CooldownTotal, 0.f, 1.f)
+                    : 0.f;
+            }
+        }
     }
     else
     {
@@ -381,16 +400,42 @@ bool UARPGInventoryUIComponent::ActivateQuickAccessSlot(int32 SlotNumber)
     return bAccepted;
 }
 
-bool UARPGInventoryUIComponent::ToggleEquipInventoryItem(FGuid ItemInstanceId)
+bool UARPGInventoryUIComponent::CanUseInventoryItemNow(FGuid ItemInstanceId) const
+{
+    const AARPGCharacter* Character = Cast<AARPGCharacter>(GetOwner());
+    return Character && Character->ItemUse && Character->ItemUse->CanUseItemNow(ItemInstanceId);
+}
+
+bool UARPGInventoryUIComponent::UseInventoryItem(FGuid ItemInstanceId)
 {
     AARPGCharacter* Character = Cast<AARPGCharacter>(GetOwner());
-    if (!Character || !Character->Inventory || !Character->Equipment || !ItemInstanceId.IsValid()) return false;
+    if (!Character || !Character->Inventory || !Character->ItemUse || !ItemInstanceId.IsValid()) return false;
+    UARPGItemDefinition* Definition = Character->Inventory->GetItemDefinitionForInstance(ItemInstanceId);
+    if (!Definition || !Definition->bUsable || !Character->ItemUse->CanUseItemNow(ItemInstanceId)) return false;
+
+    const bool bAccepted = Character->ItemUse->UseItem(ItemInstanceId, EARPGItemUseSource::InventoryUI, 0);
+    if (bAccepted)
+    {
+        RefreshInventoryUI();
+        RefreshQuickAccessUI();
+    }
+    return bAccepted;
+}
+
+bool UARPGInventoryUIComponent::ActivateInventoryItem(FGuid ItemInstanceId)
+{
+    AARPGCharacter* Character = Cast<AARPGCharacter>(GetOwner());
+    if (!Character || !Character->Inventory || !ItemInstanceId.IsValid()) return false;
 
     UARPGItemDefinition* Definition = Character->Inventory->GetItemDefinitionForInstance(ItemInstanceId);
     if (!Definition) return false;
 
+    const bool bPreferUse = Definition->bUsable && Definition->QuickAccessAction == EARPGQuickAccessAction::Use;
+    if (bPreferUse) return UseInventoryItem(ItemInstanceId);
+
     if (Definition->bEquippable && Definition->EquipmentSlot.IsValid())
     {
+        if (!Character->Equipment) return false;
         const bool bAccepted = Character->Inventory->IsItemInstanceEquipped(ItemInstanceId)
             ? Character->Equipment->UnequipItem(ItemInstanceId)
             : Character->Equipment->EquipItem(ItemInstanceId);
@@ -402,13 +447,15 @@ bool UARPGInventoryUIComponent::ToggleEquipInventoryItem(FGuid ItemInstanceId)
         return bAccepted;
     }
 
-    // Usable inventory items remain authoritative through the existing Quick Access use path.
-    if (Definition->bUsable && Character->QuickAccess)
-    {
-        const int32 ExistingSlot = Character->QuickAccess->FindSlotForItemInstance(ItemInstanceId);
-        return ExistingSlot > 0 ? Character->QuickAccess->ActivateSlot(ExistingSlot) : false;
-    }
+    if (Definition->bUsable) return UseInventoryItem(ItemInstanceId);
     return false;
+}
+
+bool UARPGInventoryUIComponent::ToggleEquipInventoryItem(FGuid ItemInstanceId)
+{
+    // Kept for Blueprint compatibility. v2.13 makes this the same context-sensitive primary action
+    // the native Inventory UI has always intended: equipment toggles, usable items use directly.
+    return ActivateInventoryItem(ItemInstanceId);
 }
 
 void UARPGInventoryUIComponent::SelectInventorySlot(int32 SlotNumber)
@@ -434,23 +481,42 @@ void UARPGInventoryUIComponent::HandleActiveQuickAccessSlotChanged(int32 SlotNum
     RefreshQuickAccessUI();
 }
 
+void UARPGInventoryUIComponent::HandleItemUseCooldownsChanged()
+{
+    RefreshInventoryUI();
+    RefreshQuickAccessUI();
+}
+
 void UARPGInventoryUIComponent::UpdateCooldownRefreshTimer()
 {
-    if (!GetWorld() || !ActiveQuickAccessWidget || !bShowQuickAccessHUD)
-    {
-        StopCooldownRefreshTimer();
-        return;
-    }
+    if (!GetWorld()) return;
 
     bool bNeedsCooldownRefresh = false;
-    const int32 SlotCount = GetQuickAccessDisplaySlotCount();
-    for (int32 SlotNumber = 1; SlotNumber <= SlotCount; ++SlotNumber)
+    if (ActiveQuickAccessWidget && ActiveQuickAccessWidget->IsInViewport() && bShowQuickAccessHUD)
     {
-        FARPGInventoryUISlotView View;
-        if (GetQuickAccessSlotView(SlotNumber, View) && View.CooldownRemaining > KINDA_SMALL_NUMBER)
+        const int32 SlotCount = GetQuickAccessDisplaySlotCount();
+        for (int32 SlotNumber = 1; SlotNumber <= SlotCount; ++SlotNumber)
         {
-            bNeedsCooldownRefresh = true;
-            break;
+            FARPGInventoryUISlotView View;
+            if (GetQuickAccessSlotView(SlotNumber, View) && View.CooldownRemaining > KINDA_SMALL_NUMBER)
+            {
+                bNeedsCooldownRefresh = true;
+                break;
+            }
+        }
+    }
+
+    if (!bNeedsCooldownRefresh && IsInventoryUIOpen())
+    {
+        const int32 SlotCount = GetInventoryDisplaySlotCount();
+        for (int32 SlotNumber = 1; SlotNumber <= SlotCount; ++SlotNumber)
+        {
+            FARPGInventoryUISlotView View;
+            if (GetInventorySlotView(SlotNumber, View) && View.CooldownRemaining > KINDA_SMALL_NUMBER)
+            {
+                bNeedsCooldownRefresh = true;
+                break;
+            }
         }
     }
 
@@ -460,13 +526,20 @@ void UARPGInventoryUIComponent::UpdateCooldownRefreshTimer()
         if (!TimerManager.IsTimerActive(CooldownRefreshTimer))
         {
             const float Interval = FMath::Clamp(CooldownRefreshInterval, 0.05f, 1.f);
-            TimerManager.SetTimer(CooldownRefreshTimer, this, &UARPGInventoryUIComponent::RefreshQuickAccessUI, Interval, true, Interval);
+            TimerManager.SetTimer(CooldownRefreshTimer, this, &UARPGInventoryUIComponent::HandleCooldownRefreshTick, Interval, true, Interval);
         }
     }
     else
     {
         StopCooldownRefreshTimer();
     }
+}
+
+void UARPGInventoryUIComponent::HandleCooldownRefreshTick()
+{
+    if (ActiveInventoryWidget && ActiveInventoryWidget->IsInViewport()) ActiveInventoryWidget->RefreshInventoryUI();
+    if (ActiveQuickAccessWidget && ActiveQuickAccessWidget->IsInViewport() && bShowQuickAccessHUD) ActiveQuickAccessWidget->RefreshQuickAccessUI();
+    UpdateCooldownRefreshTimer();
 }
 
 void UARPGInventoryUIComponent::StopCooldownRefreshTimer()

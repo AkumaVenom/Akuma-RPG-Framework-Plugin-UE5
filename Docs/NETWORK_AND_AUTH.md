@@ -1,5 +1,10 @@
 # Networking, Login and Authority
 
+
+### Generic Item Use authority (v2.13)
+
+`ARPGItemUseComponent` is replicated and performs all usable-item mutation on the server. Client Inventory UI / Quick Access / Blueprint calls only submit an exact runtime InstanceId. Authority re-resolves that instance from the owned Inventory, checks usability, quantity and item-type cooldown, runs optional custom Blueprint validation/effect logic, applies built-in vital/GAS effects, consumes only after success, and then multicasts cosmetic presentation. Cooldown state is owner-only replicated for local UI.
+
 ## Single-player-first account flow
 
 The Account Subsystem provides local profile creation/login using username/password input.

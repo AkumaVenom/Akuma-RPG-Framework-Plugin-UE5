@@ -141,6 +141,9 @@ public:
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UTextBlock> SelectedItemNameText;
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UTextBlock> SelectedItemDetailsText;
     UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UButton> CloseButton;
+    /** Context-sensitive ready action: Equip/Unequip for equipment, Use for usable items. */
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UButton> PrimaryActionButton;
+    UPROPERTY(BlueprintReadOnly, Transient, Category="ARPG|Inventory UI|Bindings") TObjectPtr<UTextBlock> PrimaryActionText;
 
 protected:
     virtual void NativeOnInitialized() override;
@@ -153,6 +156,7 @@ private:
     TArray<TObjectPtr<UARPGInventoryItemSlotWidget>> RuntimeSlots;
 
     UFUNCTION() void HandleCloseClicked();
+    UFUNCTION() void HandlePrimaryActionClicked();
     void EnsureNativeLayoutOrBindings();
     void RebuildInventoryGrid();
     void UpdateSelectionText();
