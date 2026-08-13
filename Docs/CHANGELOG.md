@@ -1,3 +1,43 @@
+## v2.15.2-alpha — Pivot-Aware Ground Placement & Structural Height Fix
+
+- Fixed bottom-pivot foundations floating above Landscape in both ghost preview and final placement because v2.15.0/2.15.1 blindly added `PlacementBounds.Z` to every ground hit.
+- Ground placement now anchors the actual Build Mesh bottom-center to the traced surface from its real Static Mesh local bounds; bottom, center and corner pivots are supported automatically.
+- Rotation/grid snapping preserve the visible footprint anchor instead of rotating/snapping around an arbitrary actor pivot.
+- Placement collision validation now centers its authored half-extents on the Build Mesh bounds center, while support traces originate from the visible bottom anchor.
+- Standard vertical structural snaps now resolve target/incoming mesh min/max bounds for foundation→wall, same-plane pieces, wall stacks, wall→floor/ceiling/roof and story-height attachments.
+- Preserved `PlacementOffset` as an explicit local designer override after automatic ground anchoring.
+- Added regression coverage for bottom-pivot and center-pivot 150 cm foundations and guards against reintroducing the old `ImpactNormal * PlacementBounds.Z` lift.
+- No reflected Blueprint API names changed.
+- Refreshed the root README into a concise project overview and moved detailed release history to this changelog; updated feature/documentation navigation for the current crafting/durability/building/UI systems.
+
+## v2.15.1-alpha — UE5.8.1 Settlement Compile Compatibility Fix
+
+- Fixed `ARPGBuildingComponent.cpp` using `FOverlapResult::GetActor()` with only the forward declaration visible by explicitly including UE5.8's `Engine/OverlapResult.h`.
+- Fixed native Storage and Production widget layout helpers passing reflected `TObjectPtr<UVerticalBox>` bindings to incompatible `UVerticalBox*&` lambda parameters.
+- Fixed C4456 warnings-as-errors in structure item transfer handlers by using distinct Storage/Station panel local names.
+- Added settlement compile-regression guards for all three failures while preserving building, snapping, storage, production, persistence and UI behavior from v2.15.0-alpha.
+
+## v2.15.0-alpha — Settlement Building, Structural Snapping, Storage & Production UI
+
+- Promoted the existing low-level Building backend into a complete player build-mode workflow with local ghost preview, live placement result, ready Build Menu and Placement HUD.
+- Expanded `ARPGBuildPieceDefinition` with Foundation/Wall/WindowWall/Window/Doorway/Door/Floor/Ceiling/Roof/Stair/Pillar/Storage/Production/Decoration/Custom kinds, direct mesh authoring, categories, bounds, snapping, construction and utility settings.
+- Added native actor fallback so ordinary structural pieces require only a Build Piece Data Asset + mesh; Door, Storage and Production automatically select specialised framework actors when Actor Class is empty.
+- Added structural snap generation for foundation continuation, wall-family edges/stacks, window/door inserts, floors/ceilings/roofs, roof continuation, stairs and pillars, plus custom accepted-incoming snap transforms for unusual kits.
+- Build placement is server-authoritative: server re-resolves snapping and revalidates distance, collision, support/slope, resources, faction and territory before committing materials/spawning. Duplicate Build Cost lines aggregate by stable ItemId.
+- Hardened multiplayer placement defaults: authority rejects definitions outside the character Build Catalog unless explicitly opted in, and snapping to an existing runtime build requires modification access by default.
+- Added local-only `ARPGBuildPreviewActor` with collisionless Build/Preview mesh, valid/invalid materials and generic PreviewOpacity/PreviewTint/PlacementValid material parameters.
+- Added replicated timed construction with synchronized server time, upward mesh reveal, optional ConstructionProgress/BuildProgress material scalar, configurable construction collision and start/complete audio. Build actors tick only while constructing.
+- Added replicated `ARPGBuildDoorActor` with authority/faction access, smooth open/close, optional auto-close and persisted open state; doors tick only while moving.
+- Added ready `Demolish Built Structure` view interaction with authoritative modification checks and configurable Data Asset demolition refund.
+- Added inherited local `BuildingUI` component and reskinnable native Build Menu, Build Piece Row, Placement HUD, Storage Panel, Structure Item Row, Production Panel and Station Recipe Row widget classes.
+- Added ready persistent Storage UI and exact-instance transfer RPCs; clicked durable/runtime items preserve the intended InstanceId/condition instead of ambiguously transferring another copy by ItemId. Legacy ItemId transfer APIs remain compatible.
+- Added data-driven Production build pieces: assign a Crafting Station Definition directly on the Build Piece asset to create a furnace/workbench with no actor Blueprint.
+- Hardened station crafting with strict Required Station Tag enforcement, duplicate ingredient aggregation, rollback-safe input/fuel transactions, whole-output capacity simulation and rollback-safe fuel+output completion.
+- Added ready Production UI with Player, Input+Fuel, Recipes and Output columns, queue controls and live progress. Wood-tagged fuel + Ore -> Ingot furnace flow is documented and functional through existing recipe/Inventory systems.
+- World save schema advanced to v5 for incomplete-construction remaining time and door state while preserving storage contents, station queues/output and previous durability migration behavior.
+- Added `Tools/test_building_settlement_system_model.py` regression coverage and expanded `Docs/BUILDING_CRAFTING.md`.
+- Preserved the README splash at the top and all v2.14 Item Management, crafting, durability, repair, Inventory/Quick Access and Item Use behavior.
+
 ## v2.14.0-alpha — Player Crafting, Functional Durability, Repair & Tabbed Item Management UI
 
 - Added inherited replicated `UARPGCraftingComponent` to every `AARPGCharacter`; no permanent Tick.

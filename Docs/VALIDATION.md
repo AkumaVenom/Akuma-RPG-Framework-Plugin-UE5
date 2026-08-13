@@ -1,3 +1,18 @@
+## v2.15.0 settlement building / storage / production validation
+
+Repository validation now additionally checks that:
+
+- the inherited player Building/BuildingUI path exposes the Build Catalog and ready build/placement/structure UI classes;
+- placement ghosts are local-only/collisionless while the server independently re-resolves snap transforms and validates resources/range/collision/support/faction/territory;
+- standard structural snap coverage includes foundations, wall/window/door families, floors/ceilings/roofs, roof continuation and stairs, with custom snap transforms remaining available;
+- timed construction uses synchronized server time, material/reveal presentation and Tick only while construction is incomplete;
+- native door state is replicated, access-controlled and persisted;
+- storage/furnace transfer UI uses exact runtime InstanceIds so durable item identity/condition is preserved;
+- station-required recipes reject missing/wrong stations, duplicate ingredients aggregate, and input/fuel/output transactions contain rollback/capacity guards;
+- world save schema v5 persists remaining construction time and door state while retaining existing storage/station/durability behavior.
+
+`Tools/test_building_settlement_system_model.py` covers this integration alongside the complete prior framework regression suite. These checks are static/model checks, **not** an UnrealHeaderTool/MSVC/PIE compile/runtime result. A real UE 5.8.1 Development Editor build and multiplayer/standalone placement test remains the acceptance step.
+
 ## v2.7.1 spawned Free-Roam navigation readiness
 
 Static/model validation additionally checks that:

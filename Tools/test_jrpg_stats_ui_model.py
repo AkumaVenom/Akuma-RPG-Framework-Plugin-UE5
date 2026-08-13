@@ -13,6 +13,7 @@ widget_cpp = (private / "UI/ARPGStatsPanelWidget.cpp").read_text(errors="replace
 character_h = (public / "Actors/ARPGCharacter.h").read_text(errors="replace")
 character_cpp = (private / "Actors/ARPGCharacter.cpp").read_text(errors="replace")
 readme = (ROOT / "README.md").read_text(errors="replace")
+changelog = (ROOT / "Docs" / "CHANGELOG.md").read_text(errors="replace")
 
 # Inherited authoring + one-call player API.
 assert "TObjectPtr<UARPGStatsUIComponent> StatsUI" in character_h
@@ -82,6 +83,6 @@ assert "FInputModeGameOnly" in component_cpp
 lines = readme.splitlines()
 splash = '<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/42618c54-4728-4a36-9d18-9e2b8181c455" />'
 assert splash in lines[:6], "GitHub README splash must remain at the top"
-assert "2.11.0-alpha complete ready-to-use JRPG Stats UI" in readme
+assert "v2.11.0-alpha — Complete Ready-to-Use JRPG Stats UI" in changelog
 
 print("Complete JRPG Stats UI model: PASS")

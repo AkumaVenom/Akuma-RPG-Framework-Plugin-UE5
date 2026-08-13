@@ -1,76 +1,543 @@
-# Building, Factions, Storage and Crafting
+# Settlement Building, Storage & Production — v2.15
 
-## Player and faction ownership
+v2.15 promotes the framework's original low-level build actors into a complete player-facing settlement workflow. The gameplay state is authoritative; the placement ghost and menus are local presentation.
 
-Every runtime build piece has a stable Building ID and an `ARPGFactionOwnershipComponent`.
+## What is ready
 
-A player-built structure can inherit:
+Every `AARPGCharacter` inherits:
 
-- owning account ID
-- owning character ID
-- owning faction ID
+- `Building` — replicated authority/placement component and exposed Build Catalog.
+- `BuildingUI` — local ready build menu, placement HUD, storage UI and production-station UI.
+- `Interaction` — player-owned RPC route for storage transfer, production queues, doors and demolition.
 
-The default ready player faction is `Player`.
+The standard build-piece kinds are:
 
-Build definitions expose faction/reputation placement requirements and access/damage policy. This lets the same rules drive player houses, faction forts, doors, chests, crafting stations, guards and future turrets.
+`Foundation`, `Wall`, `WindowWall`, `Window`, `Doorway`, `Door`, `Floor`, `Ceiling`, `Roof`, `Stair`, `Pillar`, `Storage`, `Production`, `Decoration`, `Custom`.
 
-## Territory
+Common pieces need **no build-actor Blueprint**. Assign a mesh on an `ARPGBuildPieceDefinition` and leave `Actor Class` empty; the framework chooses the native build actor. `Door`, `Storage` and `Production` automatically choose their specialised native actors.
 
-Use `ARPGFactionTerritoryVolume` to restrict placement in a region. A territory can allow/deny the owning faction, allies, neutrals and hostiles, with optional reputation requirements.
+---
 
-## Placement
+## 1. Create resource Item Definitions
 
-`ARPGBuildingComponent` provides:
+Create normal `ARPGItemDefinition` Data Assets for settlement resources, for example:
 
-- range validation
-- resource validation/consumption
-- faction/territory validation
-- grid snapping
-- collision/bounds validation
-- optional support validation
-- authoritative spawn
-- owner/faction initialization
-- build event routing
+- `DA_Item_Wood`
+- `DA_Item_Stone`
+- `DA_Item_MetalOre`
+- `DA_Item_MetalIngot`
 
-Use Blueprint/UMG to draw your preferred ghost/preview material while calling `EvaluatePlacement` continuously; only the final `RequestPlacePiece` is authoritative.
+Give them stable Definition IDs such as `Wood`, `Stone`, `MetalOre`, `MetalIngot`.
 
-## Build actors
+For furnace fuel, give Wood a Gameplay Tag such as:
 
-`ARPGBuildPieceActor` provides persistent IDs, health, upgrade level, repair/demolish and faction-aware damage/modify checks.
+`Item.Fuel.Wood`
 
-`ARPGStorageActor` derives from it, so a placeable chest is both a structure and an inventory container.
+The fuel system is tag based, so later you can permit Coal, Charcoal, Magic Fuel, etc. by using the recipe's desired fuel tag/design.
 
-`ARPGCraftingStationActor` derives from storage, so a furnace/workbench can also have persistent structure ownership, input storage and output storage.
+---
 
-## Furnace recipe pattern
+## 2. Create a Build Piece Data Asset
 
-Create item definitions:
+Content Browser:
 
-- Ore item, e.g. `Item_IronOre`
-- Fuel item with a tag such as `Item.Fuel.Coal`
-- Output item, e.g. `Item_IronIngot`
+**Right-click → Miscellaneous → Data Asset → `ARPGBuildPieceDefinition`**
 
-Create a recipe:
+Example:
 
-- Inputs: Iron Ore x2
-- Outputs: Iron Ingot x1
+`DA_Build_WoodFoundation`
+
+Recommended values:
+
+### Identity
+
+- Definition Id: `Build_WoodFoundation`
+- Display Name: `Wood Foundation`
+- Build Category: `Wood`
+- Piece Kind: `Foundation`
+- optional Material Tier gameplay tag: e.g. `Building.Material.Wood`
+
+### Actor
+
+- Build Mesh: your foundation Static Mesh
+- Preview Mesh: optional; leave empty to reuse Build Mesh
+- Actor Class: **leave empty** unless you intentionally need a custom actor subclass
+
+### Cost
+
+Add Build Cost entries using the **Item asset picker**:
+
+- Wood × 4
+
+The old ItemId field still resolves older content, but new content should select the Item Definition asset directly.
+
+### Placement
+
+Typical modular starter values:
+
+- Snap Placement: true
+- Requires Snap Target: false for foundations
+- Requires Support: true
+- Allow Ground Placement: true
+- Snap Size: match the real module width/depth used by the kit (for example `300` for a 300×300 foundation)
+- Standard Wall Height: match the real wall-module height (for example `300`)
+- Placement Bounds: set this to the actual half-extents used for collision validation
+- Rotation Step Degrees: `90`
+- Generate Standard Snap Points: true
+
+`Placement Bounds` is important. It drives authoritative overlap/support validation, so tune it to the real mesh rather than leaving a huge generic box around a narrow object.
+
+### Ground placement and mesh pivots (v2.15.2+)
+
+Do **not** use `Placement Offset Z` just to compensate for a bottom-pivot foundation. Ground placement automatically reads the selected **Build Mesh** bounds and anchors its visible bottom-center to the traced landscape/support surface. A bottom-pivot mesh receives zero artificial lift; a centered mesh receives only its real half-height; corner pivots are also handled through the visible footprint anchor. `Placement Bounds` remains the collision-validation half-extents and is no longer used as an unconditional visual ground lift. Use `Placement Offset` only when you intentionally want an authored local offset.
+
+### Construction
+
+- `Construction Seconds = 0` → instant building
+- `Construction Seconds > 0` → timed construction
+
+For example:
+
+- Wood Foundation: `0` or `0.25`
+- Stone Foundation: `1.5`
+- Metal Foundation: `2.5`
+
+Timed construction grows/reveals the mesh from `Construction Start Scale Z` to full size. Materials can optionally expose a scalar parameter named by `Construction Progress Material Parameter` (default `ConstructionProgress`) or `BuildProgress` to create a custom hologram/dissolve/assembly material effect.
+
+The framework also exposes Construction Start/Complete sounds.
+
+---
+
+## 3. Recommended starter structural kit
+
+Use consistent module dimensions across a kit. Set `Snap Size` to the real horizontal module size used by the meshes (for example `300` for a 300×300 foundation or `400` for a 400×400 kit), and set `Standard Wall Height` to the real wall-module height.
+
+| Data Asset | Piece Kind | Typical Cost | Requires Snap Target | Ground Placement |
+|---|---|---:|---|---|
+| Wood Foundation | Foundation | Wood ×4 | No | Yes |
+| Wood Wall | Wall | Wood ×2 | Yes | Usually No |
+| Wood Window Wall | WindowWall | Wood ×2 | Yes | Usually No |
+| Wood Window | Window | Wood ×1 | Yes | No |
+| Wood Doorway | Doorway | Wood ×2 | Yes | Usually No |
+| Wood Door | Door | Wood ×1 | Yes | No |
+| Wood Floor | Floor | Wood ×2 | Yes | Usually No |
+| Wood Ceiling | Ceiling | Wood ×2 | Yes | No |
+| Wood Roof | Roof | Wood ×3 | Yes | No |
+| Wood Stair | Stair | Wood ×3 | Yes | Usually No |
+| Wood Pillar | Pillar | Wood ×2 | Yes or project choice | Optional |
+| Wood Chest | Storage | Wood ×8 | No | Yes |
+| Primitive Furnace | Production | Stone ×15 + Wood ×5 | No | Yes |
+
+Repeat the same structural definitions for Stone/Metal while changing Build Mesh, costs, health, construction duration and material tier.
+
+Example Stone Wall:
+
+- Piece Kind: Wall
+- Build Cost: Stone ×5
+- Max Health: higher than Wood
+- Requires Snap Target: true
+- Construction Seconds: `1.25`
+
+Example Metal Wall:
+
+- Piece Kind: Wall
+- Build Cost: Metal Ingot ×4
+- Max Health: higher than Stone
+- Construction Seconds: `2.0`
+
+This produces the intended game loop:
+
+`gather Wood/Stone → build starter settlement → smelt Ore → obtain Metal Ingots → unlock/author stronger Metal structures`.
+
+---
+
+## 4. Standard snapping
+
+The native snap graph covers the ordinary modular relationships automatically:
+
+- Foundation → adjacent Foundation
+- Foundation/Floor/Ceiling → wall, window-wall and doorway edges
+- Foundation → one-story Floor/Ceiling/Roof
+- Wall family → neighbouring/stacked Wall family
+- Wall family → top Floor/Ceiling/Roof
+- WindowWall → Window insert
+- Doorway → Door insert
+- Roof → neighbouring Roof
+- horizontal modules → Stair orientations
+- Pillar → wall-family connections
+
+The local preview searches nearby completed build actors and chooses the closest compatible snap transform inside `Snap Capture Distance`.
+
+**The server performs the snap and placement validation again.** A locally green ghost is prediction/presentation, not authority.
+
+### Custom kit shapes
+
+For triangular foundations, half walls, curved walls, gates, special roof ridges or unusual meshes:
+
+- keep or disable `Generate Standard Snap Points`
+- add `Custom Snap Points`
+- set each `Incoming Placement Transform`
+- optionally restrict `Accepted Incoming Kinds`
+
+The transform is authored relative to the already-built target piece.
+
+---
+
+## 5. Add pieces to the player's ready Build Menu
+
+Open the Player Blueprint derived from `AARPGCharacter`.
+
+Select inherited component:
+
+**Building → Catalogue → Build Catalog**
+
+Add the Build Piece Data Assets in the order you want them displayed.
+
+The native Build Menu groups them using each piece's `Build Category`, so a useful catalog can be organised as:
+
+- Wood
+- Stone
+- Metal
+- Utility
+- Production
+- Decoration
+
+The row automatically shows icon/name/cost/buildable count and disables placement naturally through the validation path when resources are missing.
+
+---
+
+## 6. Recommended player input wiring
+
+No Create Widget graph is required. Bind your project input actions to the inherited `AARPGCharacter` Blueprint-callable wrappers.
+
+```text
+B Pressed / Build Action
+    -> Toggle Build Menu UI
+
+Left Mouse / Confirm Build
+    -> Confirm Build Placement
+
+R / Rotate Build
+    -> Rotate Build Placement (Direction = 1)
+
+Mouse Wheel Down / Next Build Piece
+    -> Next Build Piece
+
+Mouse Wheel Up / Previous Build Piece
+    -> Previous Build Piece
+
+Right Mouse or Escape / Cancel Build
+    -> Cancel Build Placement
+
+E / Interact
+    -> Interact Built Structure
+
+Delete / Demolish Build
+    -> Demolish Built Structure
+```
+
+`Interact Built Structure` performs the ready view trace:
+
+- Door → toggle door
+- Storage → open storage transfer UI
+- Production → open station/furnace UI
+
+`Demolish Built Structure` performs the same ready view trace for a player-modifiable runtime build, routes the request through the authoritative Interaction component, destroys it only after access checks pass, and applies the Build Piece Definition's configured demolition refund.
+
+Your project can use Enhanced Input, legacy input, controller mappings, or another routing layer; these functions are deliberately input-system agnostic.
+
+If you drag directly from the inherited **Building component reference** instead of calling the Character convenience wrappers, the component-native node names are:
+
+- `Confirm Preview Placement` — same underlying placement confirm action.
+- `Rotate Preview` — same underlying rotation action.
+- `Select Next Build Piece` / `Select Previous Build Piece` — catalogue cycling while in build mode.
+- `End Build Mode` — cancel placement and return directly to gameplay without reopening the Build Menu.
+
+A useful control split is **B = reopen/toggle Build Menu** and **C/Escape = Building → End Build Mode** for a clean return to gameplay.
+
+---
+
+### Safe multiplayer defaults
+
+The inherited `Building` component ships with conservative authority defaults:
+
+- **Allow Unlisted Build Requests = false** — the server only accepts Build Piece Definitions that are actually present in that character's `Build Catalog`. A client cannot submit an arbitrary Build Piece asset by reference.
+- **Require Snap Target Modification Access = true** — snapping a new structure to an existing runtime build requires modification rights on that target. This prevents a player from extending another player's private structure just because they can reach one of its snap sockets.
+
+Projects that intentionally use a dynamic/public building model can expose different policy, but keeping these defaults is recommended for normal multiplayer settlements.
+
+---
+
+## 7. Placement preview
+
+When build mode starts the framework spawns a local-only `ARPGBuildPreviewActor`.
+
+It:
+
+- never replicates
+- has no collision
+- uses Preview Mesh or Build Mesh fallback
+- follows the player view trace
+- uses structural snapping when a compatible piece is close
+- reflects resource/support/collision/territory validity
+- exposes generic material parameters `PreviewOpacity`, `PreviewTint`, `PlacementValid`
+- supports optional explicit Valid/Invalid Preview Material overrides on the `Building` component
+
+The placement HUD shows selected piece, cost, current placement status and controls.
+
+---
+
+## 8. Timed construction presentation
+
+Every placed `ARPGBuildPieceActor` replicates construction state using synchronized server time.
+
+`Construction Seconds = 0` finishes immediately.
+
+For timed structures:
+
+1. resources are committed on successful authoritative placement
+2. the replicated structure is spawned
+3. its mesh begins at `Construction Start Scale Z`
+4. the visible mesh grows upward over the configured duration
+5. optional `ConstructionProgress` / `BuildProgress` material scalar advances 0→1
+6. collision is disabled during construction by default
+7. the piece becomes fully interactive/supporting when complete
+
+The actor only ticks while construction is active.
+
+Construction progress is included in the world save. Saving/reloading a structure that had 4 seconds remaining restores those remaining seconds rather than restarting from zero or instantly completing it.
+
+---
+
+## 9. Functional doors
+
+For a Door definition:
+
+- Piece Kind: `Door`
+- Requires Snap Target: true
+- Build Mesh: door mesh
+- leave Actor Class empty
+
+A Doorway automatically exposes the standard Door snap.
+
+The native `ARPGBuildDoorActor` provides:
+
+- replicated open/closed state
+- faction/ownership access checks
+- configurable open yaw
+- smooth transition duration
+- optional auto close
+- save/load of open state
+- Tick only during door movement
+
+For unusual pivots/hinges, make a Blueprint child of `ARPGBuildDoorActor` and adjust the component/pivot arrangement or exposed settings.
+
+---
+
+## 10. Functional storage container
+
+Create another `ARPGBuildPieceDefinition`:
+
+- Piece Kind: `Storage`
+- Build Mesh: chest/container mesh
+- Storage Slots: e.g. `48`
+- Build Cost: e.g. Wood ×8
+- Actor Class: empty
+
+The framework automatically spawns `ARPGStorageActor`.
+
+After construction, look at the container and call `Interact Built Structure`.
+
+The ready native Storage UI opens with:
+
+**PLAYER INVENTORY** | **STORAGE**
+
+Each runtime row has transfer-one and transfer-all controls. Transfers go through the player-owned authoritative Interaction RPC.
+
+v2.15 transfers the **exact clicked runtime InstanceId**, so two damaged swords with different durability cannot be confused merely because they share an ItemId. Durable/bound runtime state remains intact through storage.
+
+Storage contents and ownership are already part of world persistence.
+
+---
+
+## 11. Build a working Wood-fuel Furnace
+
+The Furnace is simply a Production build piece + Crafting Station Definition + station-only recipe.
+
+### A. Wood fuel
+
+On `DA_Item_Wood` add Item Tag:
+
+`Item.Fuel.Wood`
+
+### B. Metal Ore and Metal Ingot
+
+Create:
+
+- `DA_Item_MetalOre`
+- `DA_Item_MetalIngot`
+
+### C. Furnace recipe
+
+Create `ARPGRecipeDefinition`:
+
+`DA_Recipe_SmeltMetalIngot`
+
+Suggested setup:
+
+**Inputs**
+- Metal Ore ×2
+
+**Outputs**
+- Metal Ingot ×1
+
+**Requirements**
 - Required Station Tag: `Station.Furnace`
-- Craft Seconds: your desired duration
-- Consumes Fuel: true
-- Fuel Tag: `Item.Fuel.Coal`
-- Fuel Per Craft: 1
 
-Create a crafting station definition:
+**Timing**
+- Craft Seconds: e.g. `5`
+
+**Station Fuel**
+- Consumes Fuel: true
+- Fuel Tag: `Item.Fuel.Wood`
+- Fuel Per Craft: `1`
+
+### D. Furnace station definition
+
+Create `ARPGCraftingStationDefinition`:
+
+`DA_Station_Furnace`
+
+Set:
 
 - Station Tag: `Station.Furnace`
+- Recipes: add `DA_Recipe_SmeltMetalIngot`
+- Input Slots: e.g. `16`
+- Output Slots: e.g. `16`
 - Use Station Inventory For Inputs: true
 - Fuel Comes From Station Inventory: true
-- Process While Offline: true/false as desired
+- Process While Offline: project preference
 
-Players can deposit ore/fuel through the same storage interaction flow, queue the recipe, and withdraw finished output from the Output Inventory.
+### E. Furnace build piece
 
-## Persistence
+Create `ARPGBuildPieceDefinition`:
 
-Runtime build pieces and their linked containers are stored in the world save. The save record includes transform, health, upgrade level, player/faction ownership, storage items, station output and crafting queue state.
+`DA_Build_Furnace`
 
-When offline processing is enabled, elapsed time is restored into the queue when the station is loaded. Fuel/output capacity can still block completion, which prevents offline processing from inventing resources or overflowing the output inventory.
+Set:
+
+- Piece Kind: `Production`
+- Build Category: `Production`
+- Build Mesh: furnace mesh
+- Build Cost: Stone ×15, Wood ×5
+- Station Definition: `DA_Station_Furnace`
+- Construction Seconds: e.g. `4`
+- Actor Class: empty
+
+Add it to the player's `Building -> Build Catalog`.
+
+### F. Runtime flow
+
+1. Build Furnace.
+2. Wait for construction to complete if timed.
+3. Look at Furnace and call `Interact Built Structure`.
+4. Transfer Metal Ore from Player → `INPUT + FUEL`.
+5. Transfer Wood from Player → `INPUT + FUEL`.
+6. Press the Metal Ingot recipe row.
+7. Station queues the recipe on authority.
+8. One fuel unit is consumed per successful craft completion.
+9. Metal Ingot appears under `OUTPUT`.
+10. Transfer output back to Player.
+11. Metal Ingot can now be consumed by Metal building-piece Build Costs or ordinary Crafting recipes.
+
+Station recipe validation is strict: a recipe requiring `Station.Furnace` cannot run on an untagged/wrong station. Duplicate ingredient lines are aggregated and input/fuel/output mutations are rollback-safe against unexpected partial failures.
+
+---
+
+## 12. Ready UI classes / reskinning
+
+Select inherited **BuildingUI** on the player Blueprint.
+
+It exposes:
+
+- Build Menu Widget Class
+- Build Piece Row Widget Class
+- Placement HUD Widget Class
+- Storage Widget Class
+- Crafting Station Widget Class
+- Structure Item Row Widget Class
+- Station Recipe Row Widget Class
+
+Native ready classes:
+
+- `UARPGBuildMenuWidget`
+- `UARPGBuildPieceRowWidget`
+- `UARPGBuildPlacementHUDWidget`
+- `UARPGStoragePanelWidget`
+- `UARPGCraftingStationPanelWidget`
+- `UARPGStructureItemRowWidget`
+- `UARPGStationRecipeRowWidget`
+
+Create Widget Blueprint subclasses of those classes and select them on `BuildingUI`. Standard named child bindings and `BP_On...Updated/Refreshed` events let you replace the visual design while retaining the native logic.
+
+The ready panels use no permanent UI Tick. The production UI uses a short timer only while open to animate live craft progress; inventory/queue events rebuild content.
+
+---
+
+## 13. Multiplayer authority
+
+Local client:
+
+- build menu
+- ghost preview
+- placement HUD
+- storage/furnace presentation
+
+Authority/server:
+
+- re-resolves snap transform
+- validates distance/collision/support/faction/territory
+- validates and consumes Build Cost
+- spawns replicated structure
+- owns construction completion
+- owns doors
+- owns storage transfers
+- owns furnace inputs/fuel/output/queue
+- owns demolition/refund
+
+The server does not trust the preview's green/red result or an arbitrary client transform.
+
+---
+
+## 14. Persistence
+
+World save schema v5 stores:
+
+- stable Building ID
+- definition ID / actor class
+- transform
+- health / upgrade level
+- owner account/character/faction
+- construction complete state / remaining build seconds
+- door open state
+- storage contents
+- furnace/station input contents
+- output contents
+- craft queue/progress timestamps
+
+Offline station elapsed time can resume when enabled. Output capacity and fuel requirements can still block completion instead of inventing resources.
+
+---
+
+## 15. Performance rules
+
+The ready implementation avoids permanent ticking:
+
+- `BuildingComponent` ticks only while local build mode is active.
+- placement preview actor has no Tick.
+- build piece ticks only while timed construction is incomplete.
+- door ticks only while opening/closing.
+- production station ticks only while it has queue work.
+- production UI progress timer exists only while that UI is open.
+
+Completed static structures therefore do not each carry a permanent framework gameplay Tick.

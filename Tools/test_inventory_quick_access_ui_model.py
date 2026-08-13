@@ -15,6 +15,7 @@ qa_cpp = (PRI / "Components" / "ARPGQuickAccessComponent.cpp").read_text(errors=
 character_h = (PUB / "Actors" / "ARPGCharacter.h").read_text(errors="replace")
 character_cpp = (PRI / "Actors" / "ARPGCharacter.cpp").read_text(errors="replace")
 readme = (ROOT / "README.md").read_text(errors="replace")
+changelog = (ROOT / "Docs" / "CHANGELOG.md").read_text(errors="replace")
 doc = (ROOT / "Docs" / "INVENTORY_UI.md").read_text(errors="replace")
 
 # Base character integration and one-call input API.
@@ -137,7 +138,7 @@ for token in (
 lines = readme.splitlines()
 splash = '<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/42618c54-4728-4a36-9d18-9e2b8181c455" />'
 assert splash in lines[:6]
-assert "2.12.2-alpha Inventory viewport hit-test ownership fix" in readme
+assert "v2.12.2-alpha — Inventory Viewport Hit-Test Ownership Fix" in changelog
 for token in ("Inventory item -> Quick Access slot", "Quick Access slot -> Quick Access slot", "Clear Slot And Unequip Active", "No permanent UI/component Tick"):
     assert token in doc, token
 

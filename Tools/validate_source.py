@@ -9,6 +9,16 @@ issues = []
 warnings = []
 source_files = [p for p in root.rglob("*") if p.suffix in {".h", ".cpp"}]
 
+readme_path_global = plugin_root / "README.md"
+changelog_path_global = plugin_root / "Docs" / "CHANGELOG.md"
+readme_text_global = readme_path_global.read_text(errors="replace") if readme_path_global.exists() else ""
+changelog_text_global = changelog_path_global.read_text(errors="replace") if changelog_path_global.exists() else ""
+
+def release_documented(token: str) -> bool:
+    """Release history may live in the concise README or the dedicated changelog."""
+    return token in readme_text_global or token in changelog_text_global
+
+
 for p in source_files:
     s = p.read_text(errors="replace")
     t = re.sub(r"//.*", "", s)
@@ -1018,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21400 or descriptor.get("VersionName") != "2.14.0-alpha":
-        issues.append("package descriptor must identify v2.14.0-alpha")
+    if descriptor.get("Version") != 21502 or descriptor.get("VersionName") != "2.15.2-alpha":
+        issues.append("package descriptor must identify v2.15.2-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1584,8 +1594,8 @@ if readme_2131.exists():
     splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
     if splash not in readme_text_2131[:500]:
         issues.append("README GitHub splash must remain at the top of the document")
-    if "2.13.1-alpha Equipment Physical-Socket Exclusivity Fix" not in readme_text_2131:
-        issues.append("README must document v2.13.1 equipment exclusivity fix")
+    if not release_documented("2.13.1-alpha — Equipment Physical-Socket Exclusivity Fix"):
+        issues.append("README or Docs/CHANGELOG.md must document v2.13.1 equipment exclusivity fix")
 
 # v2.13.2 full-vitals consumable guard: local preflight and authority must agree that pure
 # Health/Mana/Stamina restoratives cannot be used when none of their configured vitals can increase.
@@ -1632,8 +1642,8 @@ if all(p.exists() for p in (item_use_h_2132, item_use_cpp_2132, stats_cpp_2132, 
 readme_2132 = plugin_root / "README.md"
 if readme_2132.exists():
     readme_text_2132 = readme_2132.read_text(errors="replace")
-    if "2.13.2-alpha Full-Vitals Consumable Guard Fix" not in readme_text_2132:
-        issues.append("README must document v2.13.2 full-vitals consumable guard")
+    if not release_documented("2.13.2-alpha — Full-Vitals Consumable Guard Fix"):
+        issues.append("README or Docs/CHANGELOG.md must document v2.13.2 full-vitals consumable guard")
 
 # v2.13.3 full-vitals hard gate: secondary Gameplay Effects/custom behavior must not silently
 # bypass configured Health/Mana/Stamina restoration usefulness unless the Item Definition opts in.
@@ -1660,8 +1670,8 @@ if item_def_h_2133.exists() and item_use_h_2132.exists() and item_use_cpp_2132.e
 readme_2133 = plugin_root / "README.md"
 if readme_2133.exists():
     readme_text_2133 = readme_2133.read_text(errors="replace")
-    if "2.13.3-alpha Full-Vitals Hard-Gate Fix" not in readme_text_2133:
-        issues.append("README must document v2.13.3 full-vitals hard-gate fix")
+    if not release_documented("2.13.3-alpha — Full-Vitals Hard-Gate Fix"):
+        issues.append("README or Docs/CHANGELOG.md must document v2.13.3 full-vitals hard-gate fix")
     splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
     if splash not in readme_text_2133[:500]:
         issues.append("README GitHub splash must remain at the top of the document")
@@ -1770,9 +1780,113 @@ if any('Units="px"' in p.read_text(errors="replace") for p in source_files):
 readme_2140 = plugin_root / "README.md"
 if readme_2140.exists():
     rt = readme_2140.read_text(errors="replace")
-    if "2.14.0-alpha" not in rt: issues.append("README must document v2.14.0 crafting/durability/repair update")
+    if not release_documented("2.14.0-alpha"): issues.append("README or Docs/CHANGELOG.md must document v2.14.0 crafting/durability/repair update")
     splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
     if splash not in rt[:500]: issues.append("README GitHub splash must remain at the top of the document")
+
+
+# v2.15.0 settlement building + structural snapping + storage/production ready UI.
+build_def_2150 = root / "Public" / "Data" / "ARPGBuildPieceDefinition.h"
+build_h_2150 = root / "Public" / "Building" / "ARPGBuildingComponent.h"
+build_cpp_2150 = root / "Private" / "Building" / "ARPGBuildingComponent.cpp"
+build_actor_h_2150 = root / "Public" / "Building" / "ARPGBuildPieceActor.h"
+build_actor_cpp_2150 = root / "Private" / "Building" / "ARPGBuildPieceActor.cpp"
+preview_cpp_2150 = root / "Private" / "Building" / "ARPGBuildPreviewActor.cpp"
+door_h_2150 = root / "Public" / "Building" / "ARPGBuildDoorActor.h"
+door_cpp_2150 = root / "Private" / "Building" / "ARPGBuildDoorActor.cpp"
+bui_h_2150 = root / "Public" / "Components" / "ARPGBuildingUIComponent.h"
+bui_cpp_2150 = root / "Private" / "Components" / "ARPGBuildingUIComponent.cpp"
+bwidgets_h_2150 = root / "Public" / "UI" / "ARPGBuildingWidgets.h"
+bwidgets_cpp_2150 = root / "Private" / "UI" / "ARPGBuildingWidgets.cpp"
+interaction_h_2150 = root / "Public" / "Components" / "ARPGInteractionComponent.h"
+interaction_cpp_2150 = root / "Private" / "Components" / "ARPGInteractionComponent.cpp"
+character_h_2150 = root / "Public" / "Actors" / "ARPGCharacter.h"
+character_cpp_2150 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+station_h_2150 = root / "Public" / "Crafting" / "ARPGCraftingStationActor.h"
+station_cpp_2150 = root / "Private" / "Crafting" / "ARPGCraftingStationActor.cpp"
+paths_2150 = (build_def_2150, build_h_2150, build_cpp_2150, build_actor_h_2150, build_actor_cpp_2150,
+              preview_cpp_2150, door_h_2150, door_cpp_2150, bui_h_2150, bui_cpp_2150,
+              bwidgets_h_2150, bwidgets_cpp_2150, interaction_h_2150, interaction_cpp_2150, character_h_2150, character_cpp_2150, station_h_2150, station_cpp_2150)
+if all(p.exists() for p in paths_2150):
+    bdh = build_def_2150.read_text(errors="replace"); bh = build_h_2150.read_text(errors="replace"); bc = build_cpp_2150.read_text(errors="replace")
+    bah = build_actor_h_2150.read_text(errors="replace"); bac = build_actor_cpp_2150.read_text(errors="replace")
+    pc = preview_cpp_2150.read_text(errors="replace"); dh = door_h_2150.read_text(errors="replace"); dc = door_cpp_2150.read_text(errors="replace")
+    buih = bui_h_2150.read_text(errors="replace"); buic = bui_cpp_2150.read_text(errors="replace")
+    bwh = bwidgets_h_2150.read_text(errors="replace"); bwc = bwidgets_cpp_2150.read_text(errors="replace")
+    inh = interaction_h_2150.read_text(errors="replace"); inc = interaction_cpp_2150.read_text(errors="replace")
+    ch215 = character_h_2150.read_text(errors="replace"); cc215 = character_cpp_2150.read_text(errors="replace")
+    sth = station_h_2150.read_text(errors="replace"); stc = station_cpp_2150.read_text(errors="replace")
+    for required in ("Foundation", "Wall", "WindowWall", "Window", "Doorway", "Door", "Floor", "Ceiling", "Roof", "Stair", "Storage", "Production", "BuildMesh", "BuildCost", "ConstructionSeconds", "CustomSnapPoints", "StationDefinition"):
+        if required not in bdh: issues.append(f"v2.15.0 build-piece authoring missing: {required}")
+    for required in ("BuildCatalog", "BeginBuildMode", "ConfirmPreviewPlacement", "RotatePreview", "NextBuildPiece", "PreviousBuildPiece", "ServerPlacePiece", "FindBestSnapTransform", "bAllowUnlistedBuildRequests", "bRequireSnapTargetModificationAccess"):
+        if required not in bh and required not in bc: issues.append(f"v2.15.0 player build mode missing: {required}")
+    pa = bc[bc.find("bool UARPGBuildingComponent::PlacePieceAuthority"):]
+    for required in ("ResolvePlacementTransform", "EvaluatePlacementInternal", "ConsumeBuildResources"):
+        if required not in pa: issues.append(f"v2.15.0 authoritative placement must revalidate: {required}")
+    for required in ("BuildCatalog.ContainsByPredicate", "SnapTarget->CanActorModify(Owner)"):
+        if required not in bc: issues.append(f"v2.15.0 authority/ownership placement guard missing: {required}")
+    for required in ("HasUnequippedItem", "RemoveUnequippedItem", "ARPGAggregateBuildCosts"):
+        if required not in bc: issues.append(f"v2.15.0 building resource transaction missing: {required}")
+    if '#include "Engine/OverlapResult.h"' not in bc:
+        issues.append("v2.15.1 UE5.8.1 compile fix missing: FOverlapResult requires Engine/OverlapResult.h")
+    if "UVerticalBox*&OutBox" in bwc:
+        issues.append("v2.15.1 UE5.8.1 compile fix missing: reflected TObjectPtr UI bindings cannot bind to UVerticalBox*&")
+    if "TObjectPtr<UVerticalBox>&OutBox" not in bwc:
+        issues.append("v2.15.1 UE5.8.1 compile fix missing: native Storage/Production UI helper must accept TObjectPtr<UVerticalBox>&")
+    if "UARPGStoragePanelWidget*P=" in bwc or "UARPGCraftingStationPanelWidget*P=" in bwc:
+        issues.append("v2.15.1 UE5.8.1 compile fix missing: transfer handler local shadowing must not return")
+    for required in ("ARPGGetBuildPieceBottomAnchorLocal", "Hit.ImpactPoint - DesiredRotation.RotateVector(BottomAnchorLocal)", "PlacementBoundsCenter", "BottomAnchor + FVector::UpVector * ProbeLift"):
+        if required not in bc: issues.append(f"v2.15.2 pivot-aware ground placement missing: {required}")
+    if "Hit.ImpactNormal * FMath::Max(0.f, SelectedBuildPiece->PlacementBounds.Z)" in bc:
+        issues.append("v2.15.2 ground placement must not blindly lift every mesh by PlacementBounds.Z")
+    for required in ("ARPGGetBuildDefinitionLocalBounds", "IncomingOnTargetTopZ", "AlignBottomPlaneZ", "TargetMax.Z + WallHeight - IncomingMin.Z"):
+        if required not in bac: issues.append(f"v2.15.2 pivot-aware structural snap math missing: {required}")
+    for required in ("GetSnapTransformsFor", "WindowWall", "Doorway", "EARPGBuildPieceKind::Roof && IncomingKind == EARPGBuildPieceKind::Roof", "IncomingKind == EARPGBuildPieceKind::Stair"):
+        if required not in bac: issues.append(f"v2.15.0 structural snapping missing: {required}")
+    for required in ("ConstructionStartServerTime", "ConstructionDuration", "GetConstructionProgress01"):
+        if required not in bah: issues.append(f"v2.15.0 construction replication missing: {required}")
+    for required in ("GetServerWorldTimeSeconds", "ConstructionStartScaleZ", "SetScalarParameterValueOnMaterials", "SetActorTickEnabled(true)", "SetActorTickEnabled(false)"):
+        if required not in bac: issues.append(f"v2.15.0 construction presentation/performance missing: {required}")
+    for required in ("bReplicates = false", "SetActorEnableCollision(false)", "PlacementValid"):
+        if required not in pc: issues.append(f"v2.15.0 local placement preview missing: {required}")
+    for required in ("ToggleDoor", "ReplicatedUsing=OnRep_DoorOpen", "RestoreDoorOpenState"):
+        if required not in dh and required not in dc: issues.append(f"v2.15.0 functional door missing: {required}")
+    for required in ("BuildMenuWidgetClass", "PlacementHUDWidgetClass", "StorageWidgetClass", "CraftingStationWidgetClass", "StructureItemRowWidgetClass", "StationRecipeRowWidgetClass", "DemolishBuiltStructureFromView"):
+        if required not in buih: issues.append(f"v2.15.0 exposed BuildingUI reskin class missing: {required}")
+    for required in ("UARPGBuildMenuWidget", "UARPGBuildPlacementHUDWidget", "UARPGStoragePanelWidget", "UARPGCraftingStationPanelWidget"):
+        if required not in bwh or required not in bwc: issues.append(f"v2.15.0 ready building/structure UI missing: {required}")
+    for required in ("TransferItemInstanceTo",):
+        if required not in inv_h_2140.read_text(errors="replace") or required not in inv_cpp_2140.read_text(errors="replace"):
+            issues.append(f"v2.15.0 exact-instance storage transfer missing: {required}")
+    for required in ("DepositToStorageInstance", "WithdrawFromStorageInstance", "WithdrawStationOutputInstance", "ToggleBuiltDoor", "DemolishBuilding", "QueueCraft"):
+        if required not in inh or required not in inc: issues.append(f"v2.15.0 authoritative structure interaction missing: {required}")
+    for required in ("ServerDemolishBuilding",):
+        if required not in inh: issues.append(f"v2.15.0 authoritative structure interaction RPC declaration missing: {required}")
+    for required in ("ServerDemolishBuilding_Implementation",):
+        if required not in inc: issues.append(f"v2.15.0 authoritative structure interaction RPC implementation missing: {required}")
+    for required in ("DemolishBuiltStructure",):
+        if required not in ch215 or required not in cc215: issues.append(f"v2.15.0 character building input wrapper missing: {required}")
+    for required in ("ARPGAggregateRecipeAmounts", "ARPGCanFitResolvedOutputs", "ConsumeFuelForCraft", "ReplaceInventory(Before)", "StationDefinition->StationTag.MatchesTagExact"):
+        if required not in stc: issues.append(f"v2.15.0 production transaction hardening missing: {required}")
+    station_can = stc[stc.find("bool AARPGCraftingStationActor::CanUseRecipe"):stc.find("bool AARPGCraftingStationActor::ConsumeRecipeInputs")]
+    if "!StationDefinition || !StationDefinition->StationTag.IsValid()" not in station_can:
+        issues.append("v2.15.0 station-required recipes must reject missing/wrong station definitions")
+    svh215 = save_h_2140.read_text(errors="replace"); svc215 = save_cpp_2140.read_text(errors="replace"); th215 = types_h_2140.read_text(errors="replace")
+    for required in ("bConstructionComplete", "ConstructionRemainingSeconds", "bDoorOpen"):
+        if required not in th215: issues.append(f"v2.15.0 building persistence state missing: {required}")
+    if svh215.count("SaveVersion = 5") < 2:
+        issues.append("v2.15.0 world save schema must be v5 while character save remains v5")
+    for required in ("RestoreConstructionState", "RestoreDoorOpenState", "ProcessOfflineElapsed()"):
+        if required not in svc215: issues.append(f"v2.15.0 world-load integration missing: {required}")
+else:
+    issues.append("v2.15.0 settlement building/storage/production source set is incomplete")
+
+readme_2150 = plugin_root / "README.md"
+if readme_2150.exists():
+    rt215 = readme_2150.read_text(errors="replace")
+    if not release_documented("2.15.0-alpha — Settlement Building"): issues.append("README or Docs/CHANGELOG.md must document v2.15.0 settlement building update")
+    splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
+    if splash not in rt215[:500]: issues.append("README GitHub splash must remain at the top of the document")
 
 markers = []
 for p in source_files:

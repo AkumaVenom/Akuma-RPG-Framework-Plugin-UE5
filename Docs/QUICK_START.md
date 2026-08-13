@@ -88,6 +88,26 @@ For a Stone Axe recipe, create `ARPGRecipeDefinition`, set Inputs to Wood x2 and
 
 Durability is stored on the exact runtime Inventory item instance. Broken equipment cannot equip and can automatically unequip when it reaches zero. See `Docs/CRAFTING_DURABILITY_REPAIR.md`.
 
+## 2D. Settlement Building + Storage + Furnace
+
+Every `AARPGCharacter` owns inherited **Building** and **BuildingUI** components. Create `ARPGBuildPieceDefinition` Data Assets, assign a Build Mesh + resource Build Cost, then add them to `Building -> Build Catalog`. Leave Actor Class empty for standard pieces; the framework automatically selects native Door, Storage and Production actors when appropriate.
+
+Recommended input calls:
+
+```text
+Build Menu -> Toggle Build Menu UI
+Place -> Confirm Build Placement
+Rotate -> Rotate Build Placement (1)
+Next/Previous -> Next Build Piece / Previous Build Piece
+Cancel -> Cancel Build Placement
+Interact -> Interact Built Structure
+Demolish -> Demolish Built Structure
+```
+
+Keep **Allow Unlisted Build Requests** disabled and **Require Snap Target Modification Access** enabled for the normal multiplayer-safe defaults. `Demolish Built Structure` only succeeds for a modifiable runtime build and uses the Build Piece Definition's configured refund.
+
+For a furnace, tag Wood with `Item.Fuel.Wood`, create a station-only recipe such as Metal Ore x2 -> Metal Ingot x1 with Required Station Tag `Station.Furnace`, enable fuel consumption, add that recipe to an `ARPGCraftingStationDefinition`, then assign the Station Definition to a `Production` Build Piece. The built station's ready UI handles Player/Input+Fuel/Recipes/Output transfer and queue progress. See `Docs/BUILDING_CRAFTING.md`.
+
 ## 3. Use the supplied GameMode/Controller/GameState
 
 For the complete default flow, derive project classes from:

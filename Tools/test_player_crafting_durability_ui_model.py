@@ -76,7 +76,7 @@ assert transfer_body.find("if (Definition && Definition->bUsesDurability)") < tr
 
 # Durability persists in new saves and legacy pre-durability saves are migrated once to authored max.
 assert "SaveGame) float Durability" in types_h
-assert "SaveVersion = 5" in save_h and "SaveVersion = 4" in save_h
+assert save_h.count("SaveVersion = 5") >= 2  # v2.15 world save advanced to schema 5; character save remains 5
 assert "ARPGMigrateLegacyInventoryDurability" in save_cpp
 assert "Save->SaveVersion < 5" in save_cpp
 assert "Save->SaveVersion<4" in save_cpp
@@ -121,8 +121,9 @@ assert "Crafting->IsCrafting()" in ui_comp
 
 # README splash regression and major version docs.
 readme = (ROOT / "README.md").read_text(errors="replace")
+changelog = (ROOT / "Docs" / "CHANGELOG.md").read_text(errors="replace")
 assert '<img width="1672" height="941" alt="AumaRPGFWSplash"' in readme[:500]
-assert "2.14.0-alpha Player Crafting, Durability, Repair & Tabbed Item Management UI" in readme
+assert "v2.14.0-alpha — Player Crafting, Functional Durability, Repair & Tabbed Item Management UI" in changelog
 assert (ROOT / "Docs/CRAFTING_DURABILITY_REPAIR.md").exists()
 
 print("Player crafting + durability + repair + tabbed Item Management UI model: PASS")

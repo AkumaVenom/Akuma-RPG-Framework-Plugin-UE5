@@ -1,3 +1,20 @@
+## Settlement Building, Storage & Production (v2.15.2)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Player build mode | Implemented | Inherited Building + local BuildingUI, ready catalog, local ghost, live validation, rotate/next/previous/confirm/cancel. |
+| Pivot-aware ground placement | Implemented | v2.15.2 anchors the real Build Mesh bounds to the traced surface so bottom/center/corner pivots place flush; validation/support/vertical snaps use the same mesh-aware anchor. |
+| Structural snapping | Implemented | Standard modular snaps for foundations, walls/window walls/doorways, window/door inserts, floors/ceilings/roofs, roof continuation, stairs/pillars; custom snap transforms supported. |
+| Authoritative placement | Implemented | Server re-resolves transform/snap and validates catalog membership, snap-target modification access, resources, range, collision, support/slope, faction and territory before spawn. |
+| Timed construction | Implemented | Instant or synchronized timed builds, upward reveal, material progress parameters, audio, construction collision policy, persistence. |
+| Functional doors | Implemented | Replicated animated open/close, access policy, optional auto-close and world-save state. |
+| Demolition/refund | Implemented | Ready view action routes through authoritative Interaction, requires modify access and applies configurable build-cost refund. |
+| Persistent storage UI | Implemented | Ready Player/Storage transfer panel; exact runtime InstanceId transfer preserves durable item identity/condition. |
+| Production/furnace | Implemented | Production build piece selects Crafting Station Definition; ready Player/Input+Fuel/Recipes/Output UI, fuel tags, queues, offline processing. |
+| Furnace transaction safety | Implemented | Strict station tag, aggregated inputs, transactional input/fuel/output, whole-output capacity simulation. |
+| Building UI reskinning | Implemented | Build menu/row, placement HUD, storage panel/item row, station panel/recipe row classes exposed on BuildingUI. |
+| Building persistence | Implemented | IDs, transform, health, ownership, construction remaining time, door state, storage, production input/output/queue. |
+
 ## Player Crafting, Durability, Repair & Item Management UI (v2.14.0)
 
 | Feature | Status | Notes |
@@ -22,7 +39,7 @@
 | Inventory local preflight | Implemented | The ready Use button disables and direct Inventory use returns false before sending an unnecessary RPC. |
 | Quick Access local preflight | Implemented | Hotbar activation refuses a pure vital consumable locally when it has no useful restoration target. |
 | Authority delta validation | Implemented | Consumption/cooldown/presentation require an actual positive vital change or another independent successful effect. |
-| Mixed-effect compatibility | Implemented | GAS/custom behavior items remain eligible at full vitals because their independent effect may still be useful. |
+| Mixed-effect compatibility | Implemented | v2.13.3 hard-gates configured vital restoration at full vitals by default; intentional mixed items can explicitly opt into secondary-effect use. |
 
 ## Equipment Physical-Socket Exclusivity (v2.13.1)
 
@@ -97,7 +114,7 @@
 | Blueprint presentation hooks | Implemented | State delegate + overridable event for emissive materials, sounds, animation and project-specific FX. |
 | Large-town runtime cost | Implemented | No permanent per-lamp Tick and no duplicate per-lamp replicated clock; derives cosmetic state from replicated Day/Night cycle. |
 
-# Feature Matrix — v2.6.0 Ambient NPC Social Interactions
+## Core Framework Feature Matrix
 
 Legend:
 
@@ -141,15 +158,15 @@ Legend:
 | Production Internet auth | Foundation | Must be supplied by a trusted backend/platform provider; intentionally not faked by local SaveGame authentication. |
 | Direct IP hosting/join | Implemented | Listen-server open-level flow, configurable port, direct ClientTravel join. |
 | LAN discovery/NAT traversal | Foundation | Direct LAN IP works; service/session discovery and NAT traversal require an online subsystem/provider. |
-| Character saves | Implemented | Character identity/state, vitals, progression, JRPG stat allocation/unspent Attribute Points, inventory/equipment, Quick Access slots/active slot, quests, skills, Slayer, reputation, currencies, pets, group and mounts. |
-| World saves | Implemented | Runtime player buildings, ownership, health/upgrades, storage, crafting queues/output and dungeon progress. |
-| Building | Implemented | Snapping, validation, cost consumption, support/collision, health, repair/demolish and faction rules. |
-| Build preview UI/material | Foundation | Placement evaluation API is exposed; project supplies preferred ghost mesh/material UX. |
-| Storage/chests | Implemented | Shared inventory model, faction-aware access and persistent contents. |
-| Crafting/production | Implemented | Recipes, queues, station/player inputs, fuel tags, outputs, skill XP, quest events and offline elapsed processing. |
+| Character saves | Implemented | Character identity/state, vitals, progression, JRPG stat allocation/unspent Attribute Points, inventory/equipment/durability, Quick Access, quests, skills, Slayer, reputation, currencies, pets, groups, mounts and active personal crafting state. |
+| World saves | Implemented | Runtime structures, ownership, health, construction state, doors, storage contents, production input/output/queues and dungeon progress. |
+| Building | Implemented | Ready catalogue/ghost placement, pivot-aware ground anchoring, structural snapping, authoritative validation/costs, timed construction, doors, demolition/refunds and faction/territory rules. |
+| Build preview UI/material | Implemented | Local ghost actor, valid/invalid material overrides, placement HUD, live placement status and exposed material parameters; project can replace/reskin presentation. |
+| Storage/chests | Implemented | Shared inventory model, faction-aware access, persistent contents, ready Player/Storage UI and exact runtime InstanceId transfers. |
+| Crafting/production | Implemented | Personal crafting plus station recipes/queues, input/fuel/output inventories, fuel tags, transaction-safe outputs, skill XP, quest events and offline elapsed processing. |
 | Mounts | Implemented | Unlock, summon/ride, movement capability flags, animation hooks and save state. |
 | Party/raid groups | Foundation | Replicated group membership/role/subgroup state and chat integration; full matchmaking/social backend remains project-level. |
-| UMG/UI skin | Foundation | All key data/delegates are Blueprint exposed; visual UI assets are intentionally supplied by the game. |
+| Ready/reskinnable UI | Implemented | Native defaults exist for Inventory/Quick Access, Stats, NPC Info, Crafting/Repair, Building, Storage and Production; exposed Widget Classes/events support project reskins. |
 
 
 ## v2.2 Quick Access additions
