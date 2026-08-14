@@ -4,6 +4,7 @@
 #include "ARPGBuildDoorActor.generated.h"
 
 class USceneComponent;
+class UBoxComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FARPGDoorStateChanged, bool, bOpen);
 
@@ -15,6 +16,8 @@ class AKUMASRPGFRAMEWORK_API AARPGBuildDoorActor : public AARPGBuildPieceActor
 public:
     AARPGBuildDoorActor();
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Door") TObjectPtr<USceneComponent> DoorPivot;
+    /** Native gameplay collision for the moving door slab. This is independent of imported mesh simple-collision quality. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Door|Collision") TObjectPtr<UBoxComponent> DoorCollision;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Door", meta=(ClampMin="-180.0", ClampMax="180.0", Units="deg")) float OpenYaw = 90.f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Door", meta=(ClampMin="0.01", Units="s")) float TransitionSeconds = 0.25f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Door") bool bAutoClose = false;
@@ -32,11 +35,16 @@ public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 protected:
     UFUNCTION() void OnRep_DoorOpen();
+    virtual void RefreshDefinitionPresentation() override;
+    virtual void RefreshConstructionPresentation(bool bForce = false) override;
 private:
     float DoorAlpha = 0.f;
     float DoorTargetAlpha = 0.f;
     FTimerHandle AutoCloseTimer;
     void BeginDoorTransition();
     void ApplyDoorPose();
+    void RefreshDoorGeometry();
+    void RefreshDoorCollisionState();
     void HandleAutoClose();
+    FVector DoorHingeLocal = FVector::ZeroVector;
 };

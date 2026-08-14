@@ -64,8 +64,20 @@ FString UARPGAccountSubsystem::GetCurrentAccountSlotPrefix() const { return bLog
 
 bool UARPGAccountSubsystem::RegisterCharacterId(FGuid CharacterId)
 {
-    if (!bLoggedIn || !CharacterId.IsValid()) return false;
+    if (!CharacterId.IsValid()) return false;
     UARPGAccountIndexSave* Index = LoadIndex(); if (!Index) return false;
+
+    // The framework supports a no-login local Guest profile. Before v2.15.12 Guest characters were
+    // never indexed, so BeginPlay generated a different CharacterId after every restart. Building
+    // ownership is intentionally CharacterId-based when no AccountId exists, which made correctly
+    // loaded Guest structures look foreign and therefore fail modification/snap access checks.
+    if (!bLoggedIn)
+    {
+        if (Index->GuestCharacterId == CharacterId) return true;
+        Index->GuestCharacterId = CharacterId;
+        return SaveIndex(Index);
+    }
+
     FARPGLocalAccountRecord* Account = Index->Accounts.FindByPredicate([&](const FARPGLocalAccountRecord& A){ return A.AccountId == CurrentAccountId; });
     if (!Account) return false;
     Account->CharacterIds.AddUnique(CharacterId); Account->LastCharacterId = CharacterId; return SaveIndex(Index);
@@ -73,16 +85,24 @@ bool UARPGAccountSubsystem::RegisterCharacterId(FGuid CharacterId)
 
 TArray<FGuid> UARPGAccountSubsystem::GetRegisteredCharacterIds() const
 {
-    if (!bLoggedIn) return {};
     UARPGAccountIndexSave* Index = LoadIndex(); if (!Index) return {};
+    if (!bLoggedIn)
+    {
+        TArray<FGuid> GuestIds;
+        if (Index->GuestCharacterId.IsValid())
+        {
+            GuestIds.Add(Index->GuestCharacterId);
+        }
+        return GuestIds;
+    }
     const FARPGLocalAccountRecord* Account = Index->Accounts.FindByPredicate([&](const FARPGLocalAccountRecord& A){ return A.AccountId == CurrentAccountId; });
     return Account ? Account->CharacterIds : TArray<FGuid>();
 }
 
 FGuid UARPGAccountSubsystem::GetLastCharacterId() const
 {
-    if (!bLoggedIn) return FGuid();
     UARPGAccountIndexSave* Index = LoadIndex(); if (!Index) return FGuid();
+    if (!bLoggedIn) return Index->GuestCharacterId;
     const FARPGLocalAccountRecord* Account = Index->Accounts.FindByPredicate([&](const FARPGLocalAccountRecord& A){ return A.AccountId == CurrentAccountId; });
     return Account ? Account->LastCharacterId : FGuid();
 }

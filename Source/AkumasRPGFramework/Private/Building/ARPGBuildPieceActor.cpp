@@ -46,6 +46,25 @@ static void ARPGGetBuildDefinitionLocalBounds(const UARPGBuildPieceDefinition* P
     OutMax = FVector::ZeroVector;
 }
 
+static FVector ARPGGetCenteredInsertTranslation(
+    const FVector& TargetMin,
+    const FVector& TargetMax,
+    const FVector& IncomingMin,
+    const FVector& IncomingMax)
+{
+    const FVector TargetCenter = (TargetMin + TargetMax) * 0.5f;
+    const FVector IncomingCenter = (IncomingMin + IncomingMax) * 0.5f;
+
+    // Door/window inserts should align by their visible geometry rather than assuming the two assets
+    // share an actor pivot. Center the incoming visible bounds in the target's XY envelope and align
+    // the incoming visible bottom to the target visible bottom. This keeps bottom-, center- and
+    // corner-pivot modular kits compatible without forcing a hand-authored snap offset.
+    return FVector(
+        TargetCenter.X - IncomingCenter.X,
+        TargetCenter.Y - IncomingCenter.Y,
+        TargetMin.Z - IncomingMin.Z);
+}
+
 AARPGBuildPieceActor::AARPGBuildPieceActor()
 {
     bReplicates = true;
@@ -122,7 +141,10 @@ void AARPGBuildPieceActor::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
     if (bConstructionComplete)
     {
-        SetActorTickEnabled(false);
+        // Construction no longer owns Tick once complete. Do not disable Tick here: specialised
+        // derived build actors (notably doors) may deliberately enable it for their own short-lived
+        // runtime animation. RefreshConstructionPresentation() already disables the construction Tick
+        // when construction completes, so leaving an explicitly re-enabled derived Tick alone is safe.
         return;
     }
     RefreshConstructionPresentation();
@@ -310,7 +332,15 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, -Step, AlignTopPlaneZ)));
             }
 
-            // Wall-family pieces sit with their actual mesh bottom on the target's actual top.
+            // Wall-family pieces use a canonical story seam, not the visible top of every horizontal
+            // slab. Foundations are the ground support, so first-story walls sit on the Foundation
+            // top. Upper Floor/Ceiling/Roof pieces are *inter-story boundary volumes*: their bottom
+            // plane is the story grid shared by the lower wall top and the next wall bottom. Anchoring
+            // upper walls to the slab top would add the slab thickness (for example 18 cm) to every
+            // storey, producing the visible horizontal gaps and making Floor-first construction differ
+            // from Wall-stack-first construction. Let the slab overlap the first few centimetres of the
+            // upper wall frame instead; that exact seam is already validated as legitimate occupancy.
+            //
             // Logical wall convention: actor local X is the wall run and actor local +Y is the
             // authored front/exterior side after MeshRelativeTransform. Each support-edge yaw must
             // therefore rotate +Y toward that edge's outward normal. In UE yaw space +90 rotates
@@ -318,10 +348,15 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
             // with their geometric edge; swapping them turns the two X-edge walls inside-out.
             if (ARPGIsWallLike(IncomingKind))
             {
-                AddLocal(FTransform(FRotator(0.f,   0.f, 0.f), FVector(0.f,  Half, IncomingOnTargetTopZ)));
-                AddLocal(FTransform(FRotator(0.f, 180.f, 0.f), FVector(0.f, -Half, IncomingOnTargetTopZ)));
-                AddLocal(FTransform(FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingOnTargetTopZ)));
-                AddLocal(FTransform(FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingOnTargetTopZ)));
+                const float IncomingWallStoryBaseZ =
+                    TargetKind == EARPGBuildPieceKind::Foundation
+                        ? IncomingOnTargetTopZ
+                        : AlignBottomPlaneZ;
+
+                AddLocal(FTransform(FRotator(0.f,   0.f, 0.f), FVector(0.f,  Half, IncomingWallStoryBaseZ)));
+                AddLocal(FTransform(FRotator(0.f, 180.f, 0.f), FVector(0.f, -Half, IncomingWallStoryBaseZ)));
+                AddLocal(FTransform(FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingWallStoryBaseZ)));
+                AddLocal(FTransform(FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingWallStoryBaseZ)));
             }
 
             if (IncomingKind == EARPGBuildPieceKind::Stair && TargetKind != EARPGBuildPieceKind::Roof)
@@ -386,9 +421,15 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
             }
 
             if (TargetKind == EARPGBuildPieceKind::Doorway && IncomingKind == EARPGBuildPieceKind::Door)
-                AddLocal(FTransform::Identity);
+            {
+                const FVector InsertTranslation = ARPGGetCenteredInsertTranslation(TargetMin, TargetMax, IncomingMin, IncomingMax);
+                AddLocal(FTransform(FRotator::ZeroRotator, InsertTranslation));
+            }
             if (TargetKind == EARPGBuildPieceKind::WindowWall && IncomingKind == EARPGBuildPieceKind::Window)
-                AddLocal(FTransform::Identity);
+            {
+                const FVector InsertTranslation = ARPGGetCenteredInsertTranslation(TargetMin, TargetMax, IncomingMin, IncomingMax);
+                AddLocal(FTransform(FRotator::ZeroRotator, InsertTranslation));
+            }
         }
 
         if (TargetKind == EARPGBuildPieceKind::Pillar && ARPGIsWallLike(IncomingKind))

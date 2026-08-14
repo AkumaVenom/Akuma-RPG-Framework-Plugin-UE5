@@ -62,8 +62,8 @@ protected:
     UFUNCTION() void OnRep_Definition();
     UFUNCTION() void OnRep_Health(float OldHealth);
     UFUNCTION() void OnRep_ConstructionState();
-    void RefreshDefinitionPresentation();
-    void RefreshConstructionPresentation(bool bForce = false);
+    virtual void RefreshDefinitionPresentation();
+    virtual void RefreshConstructionPresentation(bool bForce = false);
     void CompleteConstructionAuthority();
     float GetAuthoritativeServerTime() const;
 private:

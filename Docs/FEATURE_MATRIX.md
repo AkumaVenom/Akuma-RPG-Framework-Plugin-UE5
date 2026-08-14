@@ -1,20 +1,24 @@
-## Settlement Building, Storage & Production (v2.15.6)
+## Settlement Building, Storage & Production (v2.15.23)
 
 | Feature | Status | Notes |
 |---|---|---|
 | Player build mode | Implemented | Inherited Building + local BuildingUI, ready catalog, local ghost, live validation, rotate/next/previous/confirm/cancel. |
 | Pivot-aware ground placement | Implemented | v2.15.2 anchors the real Build Mesh bounds to the traced surface so bottom/center/corner pivots place flush; validation/support/vertical snaps use the same mesh-aware anchor. |
 | Data-driven mesh orientation | Implemented | v2.15.3 exposes per-piece `Mesh Relative Transform` so imported art can be rotated/offset/scaled inside the native build actor without reimporting meshes; ghost/final presentation and transformed bounds stay in parity while structural snapping retains stable logical actor axes. |
-| Structural snapping | Implemented | Standard modular snaps for foundations, walls/window walls/doorways, straight/stacked/90-degree wall corners, window/door inserts, floors/ceilings/roofs, roof continuation, stairs/pillars; custom snap transforms supported. v2.15.4 selectively permits authored overlap only at transforms advertised by the structural snap graph; v2.15.5 enforces consistent directional wall facing on all support edges and first-story same-slot support ownership; v2.15.6 makes upper-story vertical Wall-family stacks own their shared slot and inherit the supporting wall's facing deterministically. |
+| Structural snapping | Implemented | Standard modular snaps for foundations, wall/window/door families, floors/ceilings/roofs, stairs/pillars and custom snap transforms. Preview and authority resolve the same structural graph; full-view semantic acquisition is used for Door/Window openings. |
+| Multi-storey build-order symmetry | Implemented | Upper slabs and Wall-family pieces can be authored in either order when they describe the same story seam. v2.15.20 uses the slab bottom/story plane so physical slab thickness does not create vertical gaps or cumulative storey drift. |
+| Logical structural occupancy | Implemented | Build-vs-build blocking uses authored `PlacementBounds`/semantic grid slots rather than decorative mesh collision. Valid wall continuations, L-corners, vertical stacks and Wall/Floor seams are accepted; duplicate/interior-crossing logical occupancy remains blocked. |
+| Multi-cell Wall-family facing | Implemented | v2.15.23 resolves perimeter ownership from occupied horizontal cells and uses the owning support's **native Wall socket yaw** for authored facing. Shared interior edges preserve vertical/selected native facing instead of inventing an exterior. |
+| Hosted Door/Window inserts | Implemented | Doors/Windows are hosted by Doorway/WindowWall sockets and are structurally transparent to later valid host seams. Build order is commutative around the host, while duplicate inserts and unrelated conflicts remain blocked. |
 | Authoritative placement | Implemented | Server re-resolves transform/snap and validates catalog membership, snap-target modification access, resources, range, collision, support/slope, faction and territory before spawn. |
 | Timed construction | Implemented | Instant or synchronized timed builds, upward reveal, material progress parameters, audio, construction collision policy, persistence. |
-| Functional doors | Implemented | Replicated animated open/close, access policy, optional auto-close and world-save state. |
+| Functional doors | Implemented | Replicated animated open/close, access policy, optional auto-close and world-save state. v2.15.10 fixes completed-build Tick ownership and adds a native moving slab collider; v2.15.11 makes the physical hinge side data-driven (`Left` / `Right`) from transformed visible bounds so art kits rotate around the correct jamb without mesh-pivot hacks. |
 | Demolition/refund | Implemented | Ready view action routes through authoritative Interaction, requires modify access and applies configurable build-cost refund. |
 | Persistent storage UI | Implemented | Ready Player/Storage transfer panel; exact runtime InstanceId transfer preserves durable item identity/condition. |
 | Production/furnace | Implemented | Production build piece selects Crafting Station Definition; ready Player/Input+Fuel/Recipes/Output UI, fuel tags, queues, offline processing. |
 | Furnace transaction safety | Implemented | Strict station tag, aggregated inputs, transactional input/fuel/output, whole-output capacity simulation. |
 | Building UI reskinning | Implemented | Build menu/row, placement HUD, storage panel/item row, station panel/recipe row classes exposed on BuildingUI. |
-| Building persistence | Implemented | IDs, transform, health, ownership, construction remaining time, door state, storage, production input/output/queue. |
+| Building persistence | Implemented | IDs, transform, health, ownership, construction remaining time, door state, storage, production input/output/queue. v2.15.12 persists a stable Guest Character ID and safely migrates the unambiguous single-local-player legacy Guest ownership case so loaded structures remain valid modification/snap targets after restart. |
 
 ## Player Crafting, Durability, Repair & Item Management UI (v2.14.0)
 

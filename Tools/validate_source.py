@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21506 or descriptor.get("VersionName") != "2.15.6-alpha":
-        issues.append("package descriptor must identify v2.15.6-alpha")
+    if descriptor.get("Version") != 21523 or descriptor.get("VersionName") != "2.15.23-alpha":
+        issues.append("package descriptor must identify v2.15.23-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1816,6 +1816,49 @@ if all(p.exists() for p in paths_2150):
     inh = interaction_h_2150.read_text(errors="replace"); inc = interaction_cpp_2150.read_text(errors="replace")
     ch215 = character_h_2150.read_text(errors="replace"); cc215 = character_cpp_2150.read_text(errors="replace")
     sth = station_h_2150.read_text(errors="replace"); stc = station_cpp_2150.read_text(errors="replace")
+    # v2.15.20 inter-story no-gap contract: upper horizontal Wall-family sockets anchor to the
+    # slab bottom/story plane, while Foundation walls still anchor to the Foundation top. This keeps
+    # Floor-first and Wall-stack-first construction vertically identical and prevents slab thickness
+    # from accumulating into facade gaps.
+    for required in (
+        "const float IncomingWallStoryBaseZ",
+        "TargetKind == EARPGBuildPieceKind::Foundation",
+        "? IncomingOnTargetTopZ",
+        ": AlignBottomPlaneZ",
+        "FVector(0.f,  Half, IncomingWallStoryBaseZ)",
+        "canonical story seam",
+    ):
+        if required not in bac:
+            issues.append(f"v2.15.20 canonical story-plane Wall snap missing: {required}")
+    # v2.15.23 resolves Wall-family facade direction from occupied horizontal cells while preserving
+    # each support's own native wall-socket yaw. This makes 1x2/2x2/larger footprints independent of
+    # camera side and removes the unsafe mesh-front-axis re-derivation introduced during upper-story polish.
+    for required in (
+        "ARPGTryGetHorizontalWallFacingClaim",
+        "occupied cell tells us WHICH side is outside",
+        "own native Wall socket tells us the",
+        "actual authored yaw",
+        "multi-cell aware",
+        "1x2, 2x2 or larger foundation footprint",
+        "bFoundHorizontalClaim && !bAmbiguousHorizontalClaim",
+        "Rotation.Yaw = FirstNativeYaw",
+        "interior partition",
+        "Rotation.Yaw = VerticalSupport->GetActorRotation().Yaw",
+    ):
+        if required not in bc:
+            issues.append(f"v2.15.23 multi-cell native Wall-facing resolution missing: {required}")
+    # v2.15.22 also validates hosted inserts in reverse so a Door/Window cannot block a later valid
+    # Wall/Floor/Ceiling/Roof seam around its verified Doorway/WindowWall host.
+    for required in (
+        "ARPGInsertActorMatchesHost",
+        "ARPGHostedInsertAllowsStructuralNeighbor",
+        "Reverse hosted-insert rule",
+        "bNeighborIsInsert && bIncomingIsStructural",
+        "ARPGIsInsertSnapPair(CandidateHost->Definition->PieceKind, NeighborKind)",
+        "!BuildNeighbor->CanActorModify(Owner) || !ResolvedHost->CanActorModify(Owner)",
+    ):
+        if required not in bc:
+            issues.append(f"v2.15.22 reverse hosted-insert structural validation missing: {required}")
     for required in ("Foundation", "Wall", "WindowWall", "Window", "Doorway", "Door", "Floor", "Ceiling", "Roof", "Stair", "Storage", "Production", "BuildMesh", "BuildCost", "ConstructionSeconds", "CustomSnapPoints", "StationDefinition"):
         if required not in bdh: issues.append(f"v2.15.0 build-piece authoring missing: {required}")
     for required in ("BuildCatalog", "BeginBuildMode", "ConfirmPreviewPlacement", "RotatePreview", "NextBuildPiece", "PreviousBuildPiece", "ServerPlacePiece", "FindBestSnapTransform", "bAllowUnlistedBuildRequests", "bRequireSnapTargetModificationAccess"):
@@ -1853,14 +1896,39 @@ if all(p.exists() for p in paths_2150):
         if required not in bac: issues.append(f"v2.15.4 wall L-corner snap graph missing: {required}")
     for required in ("ARPGIsValidSnappedBuildNeighbor", "Neighbor->GetSnapTransformsFor", "PlacementCollisionClearance + 0.5f", "BuildNeighbor->CanActorModify(Owner)"):
         if required not in bc: issues.append(f"v2.15.4 selective snapped-neighbour overlap validation missing: {required}")
-    for required in ("FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingOnTargetTopZ)", "FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingOnTargetTopZ)", "actor local +Y is the", "front/exterior side"):
+    for required in ("FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingWallStoryBaseZ)", "FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingWallStoryBaseZ)", "actor local +Y is the", "front/exterior side"):
         if required not in bac: issues.append(f"v2.15.5 directional support-edge wall facing fix missing: {required}")
     for required in ("ARPGGetSnapCandidateSemanticPriority", "ARPGIsHorizontalStructuralKind", "SameSlotTolerance", "bSamePhysicalSlot", "bBetterSemanticOwner", "SemanticPriority < BestSemanticPriority"):
         if required not in bc: issues.append(f"v2.15.5+ same-slot snap semantic priority missing: {required}")
-    for required in ("TargetLocalLocation", "HorizontalOffsetSq", "RelativeYawDelta", "bVerticalStackCandidate", "StackFacingToleranceDegrees", "supporting wall below owns this exact column and facing"):
+    for required in ("TargetLocalLocation", "HorizontalOffsetSq", "RelativeYawDelta", "bVerticalStackCandidate", "StackFacingToleranceDegrees", "direct wall below remains the second-best semantic owner"):
         if required not in bc: issues.append(f"v2.15.6 vertical wall-stack facing ownership missing: {required}")
     if "inherits the supporting wall's world facing as well as its structural column" not in bac:
         issues.append("v2.15.6 vertical wall stack must explicitly inherit the support wall facing")
+    for required in ("ARPGGetCenteredInsertTranslation", "TargetCenter.X - IncomingCenter.X", "TargetCenter.Y - IncomingCenter.Y", "TargetMin.Z - IncomingMin.Z"):
+        if required not in bac: issues.append(f"v2.15.7 pivot-aware insert alignment missing: {required}")
+    for required in ("ARPGIsInsertSnapPair", "ARPGDistanceSquaredToBuildPieceBounds", "InsertAimDistSq", "CaptureMetricSq", "SemanticTieBreak"):
+        if required not in bc: issues.append(f"v2.15.7 insert target-bounds snap capture missing: {required}")
+    for required in ("ARPGSegmentIntersectsLocalBox", "ARPGFindViewDirectedInsertSnap", "ARPGHasClearInsertAimPath", "ProbeLocals[]", "TActorIterator<AARPGBuildPieceActor>", "LineTraceSingleByChannel", "FMath::Min(InsertAimDistSq, CandidateDistSq)"):
+        if required not in bc: issues.append(f"v2.15.9 deterministic full-view insert targeting missing: {required}")
+    for forbidden in ("BlockingHitDistance", "VisibleDistanceLimit"):
+        if forbidden in bc: issues.append(f"v2.15.9 insert targeting must not be truncated by generic placement-hit state: {forbidden}")
+    for required in ("ARPGIsUpperHorizontalStructuralKind", "ARPGDistanceSquaredToDefinitionBoundsAtTransform", "HorizontalFootprintDistSq", "bHorizontalFootprintCapture", "ARPGRotationsPreservePlacementFootprint", "Piece->PlacementBounds.X - Piece->PlacementBounds.Y", "same physical slot can be advertised"):
+        if required not in bc: issues.append(f"v2.15.13 upper-horizontal multi-support placement polish missing: {required}")
+    for required in ("ARPGIsValidUpperHorizontalWallSeamNeighbor", "bPreStackedUpperWallAtStorySeam", "bSupportingWallBelow", "bWallBuiltOnSlabTop", "ARPGWallOccupiesHorizontalStructuralEdge", "Floor-first and Wall-stack-first construction produce the same valid result"):
+        if required not in bc: issues.append(f"v2.15.14 inter-story Floor/Wall seam validation missing: {required}")
+    for required in ("ARPGIsValidWallUnderUpperHorizontalSeamNeighbor", "WallTopZ - HorizontalBottomZ", "Inverse story-bay seam", "upper slab is a legitimate"):
+        if required not in bc: issues.append(f"v2.15.15 wall-between-upper-slabs seam validation missing: {required}")
+    neighbor_fn = bc[bc.find("static bool ARPGIsValidSnappedBuildNeighbor"):bc.find("UARPGBuildingComponent::UARPGBuildingComponent")]
+    if "if (NeighborCandidates.Num() == 0) return false;" in neighbor_fn:
+        issues.append("v2.15.16 inter-story seam fallbacks are still unreachable when a neighbour has zero native candidates")
+    for required in ("valid inter-story relationships are", "ARPGIsValidUpperHorizontalWallSeamNeighbor(Neighbor, IncomingPiece, IncomingFinal)", "ARPGIsValidWallUnderUpperHorizontalSeamNeighbor(Neighbor, IncomingPiece, IncomingFinal)"):
+        if required not in neighbor_fn: issues.append(f"v2.15.16 symmetric inter-story fallback validation missing: {required}")
+    for required in ("FARPGPlacementOBB", "ARPGMakePlacementOBB", "ARPGPlacementOBBsOverlap", "ARPGPlacementVolumesOverlapMeaningfully", "ARPGYawAxesEquivalent", "ARPGWallOccupiesHorizontalStructuralEdge", "!ARPGPlacementVolumesOverlapMeaningfully(BuildNeighbor, Piece, Final)"):
+        if required not in bc: issues.append(f"v2.15.17 logical structural occupancy collision fix missing: {required}")
+    if "Delta - 180.f" not in bc:
+        issues.append("v2.15.17 wall structural-axis validation must accept 180-degree front/back equivalence")
+    for required in ("EARPGStructuralOccupancyRelation", "ARPGClassifyWallWallStructuralOccupancy", "ARPGClassifyWallHorizontalStructuralOccupancy", "ARPGClassifyStandardStructuralOccupancy", "semantic grid occupancy before falling back to raw OBB penetration"):
+        if required not in bc: issues.append(f"v2.15.18 semantic structural-slot collision fix missing: {required}")
     for required in ("GetSnapTransformsFor", "WindowWall", "Doorway", "EARPGBuildPieceKind::Roof && IncomingKind == EARPGBuildPieceKind::Roof", "IncomingKind == EARPGBuildPieceKind::Stair"):
         if required not in bac: issues.append(f"v2.15.0 structural snapping missing: {required}")
     for required in ("ConstructionStartServerTime", "ConstructionDuration", "GetConstructionProgress01"):
@@ -1871,6 +1939,16 @@ if all(p.exists() for p in paths_2150):
         if required not in pc: issues.append(f"v2.15.0 local placement preview missing: {required}")
     for required in ("ToggleDoor", "ReplicatedUsing=OnRep_DoorOpen", "RestoreDoorOpenState"):
         if required not in dh and required not in dc: issues.append(f"v2.15.0 functional door missing: {required}")
+    for required in ("DoorCollision", "UBoxComponent", "RefreshDefinitionPresentation() override", "RefreshConstructionPresentation(bool bForce = false) override"):
+        if required not in dh: issues.append(f"v2.15.10 native door collision/presentation hook missing: {required}")
+    for required in ("DoorCollision->SetCollisionProfileName(TEXT(\"BlockAll\"))", "Definition->DoorHingeSide == EARPGBuildDoorHingeSide::Left", "bHingeOnLeft ? LocalMax.X : LocalMin.X", "PivotTranslation = DoorHingeLocal - DoorRotation.RotateVector(DoorHingeLocal)", "DoorPivot->SetRelativeLocationAndRotation(PivotTranslation, DoorRotation)", "ECollisionEnabled::QueryAndPhysics"):
+        if required not in dc: issues.append(f"v2.15.11 door hinge/motion/collision implementation missing: {required}")
+    for required in ("enum class EARPGBuildDoorHingeSide", "Left UMETA(DisplayName=\"Left\")", "Right UMETA(DisplayName=\"Right\")", "DoorHingeSide = EARPGBuildDoorHingeSide::Left"):
+        if required not in bdh: issues.append(f"v2.15.11 data-driven Door hinge definition missing: {required}")
+    door_tick = bac[bac.find("void AARPGBuildPieceActor::Tick"):bac.find("void AARPGBuildPieceActor::CompleteConstructionAuthority")]
+    complete_branch = door_tick[door_tick.find("if (bConstructionComplete)"):door_tick.find("RefreshConstructionPresentation();")] if "if (bConstructionComplete)" in door_tick else ""
+    if "SetActorTickEnabled(false)" in complete_branch:
+        issues.append("v2.15.10 completed base build Tick must not cancel specialised Door animation Tick")
     for required in ("BuildMenuWidgetClass", "PlacementHUDWidgetClass", "StorageWidgetClass", "CraftingStationWidgetClass", "StructureItemRowWidgetClass", "StationRecipeRowWidgetClass", "DemolishBuiltStructureFromView"):
         if required not in buih: issues.append(f"v2.15.0 exposed BuildingUI reskin class missing: {required}")
     for required in ("UARPGBuildMenuWidget", "UARPGBuildPlacementHUDWidget", "UARPGStoragePanelWidget", "UARPGCraftingStationPanelWidget"):
@@ -1898,6 +1976,30 @@ if all(p.exists() for p in paths_2150):
         issues.append("v2.15.0 world save schema must be v5 while character save remains v5")
     for required in ("RestoreConstructionState", "RestoreDoorOpenState", "ProcessOfflineElapsed()"):
         if required not in svc215: issues.append(f"v2.15.0 world-load integration missing: {required}")
+
+    # v2.15.12 persistent build ownership reload: Guest/no-login identity must survive restarts so
+    # loaded build pieces continue to pass the unchanged SnapTarget->CanActorModify authority guard.
+    account_cpp_21512 = root / "Private" / "Subsystems" / "ARPGAccountSubsystem.cpp"
+    persistence_h_21512 = root / "Public" / "Components" / "ARPGPersistenceComponent.h"
+    persistence_cpp_21512 = root / "Private" / "Components" / "ARPGPersistenceComponent.cpp"
+    if not account_cpp_21512.exists() or not persistence_h_21512.exists() or not persistence_cpp_21512.exists():
+        issues.append("v2.15.12 Guest/build ownership persistence source set is incomplete")
+    else:
+        acc21512 = account_cpp_21512.read_text(errors="replace")
+        ph21512 = persistence_h_21512.read_text(errors="replace")
+        pc21512 = persistence_cpp_21512.read_text(errors="replace")
+        if "FGuid GuestCharacterId" not in svh215:
+            issues.append("v2.15.12 stable GuestCharacterId account-index state is missing")
+        for required in ("Index->GuestCharacterId = CharacterId", "if (!bLoggedIn) return Index->GuestCharacterId"):
+            if required not in acc21512: issues.append(f"v2.15.12 Guest identity account path missing: {required}")
+        if "bDeferredGuestIdentityRecoveryOnce" not in ph21512:
+            issues.append("v2.15.12 one-frame legacy Guest identity recovery guard is missing")
+        for required in ("if (Last.IsValid())", "Character->CharacterId = Last", "SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad)", "Accounts->RegisterCharacterId(Character->CharacterId)"):
+            if required not in pc21512: issues.append(f"v2.15.12 stable Guest character auto-load missing: {required}")
+        if "Last.IsValid() && Accounts->IsLoggedIn()" in pc21512:
+            issues.append("v2.15.12 must not discard a valid Guest CharacterId solely because no account login is active")
+        for required in ("ARPGRecoverLegacyGuestWorldOwnerIdentity", "PlayerCharacterCount != 1 || !SoleLocalPlayer", "LegacyGuestOwnerIds.Num() != 1", "Accounts->RegisterCharacterId(StableGuestId)", "Record.OwnerCharacterId = StableGuestId", "SoleLocalPlayer->CharacterId = StableGuestId", "ARPGRecoverLegacyGuestWorldOwnerIdentity(W, Save)"):
+            if required not in svc215: issues.append(f"v2.15.12 legacy Guest building-owner migration missing: {required}")
 else:
     issues.append("v2.15.0 settlement building/storage/production source set is incomplete")
 
@@ -1905,6 +2007,18 @@ readme_2150 = plugin_root / "README.md"
 if readme_2150.exists():
     rt215 = readme_2150.read_text(errors="replace")
     if not release_documented("2.15.0-alpha — Settlement Building"): issues.append("README or Docs/CHANGELOG.md must document v2.15.0 settlement building update")
+    if not release_documented("v2.15.12-alpha — Persistent Build Ownership Reload Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.12 persistent build ownership reload fix")
+    if not release_documented("v2.15.13-alpha — Multi-Support Upper Floor Snap & Collision Polish"): issues.append("README or Docs/CHANGELOG.md must document v2.15.13 upper-floor snap/collision polish")
+    if not release_documented("v2.15.14-alpha — Inter-Story Floor/Wall Seam Build-Order Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.14 inter-story Floor/Wall seam fix")
+    if not release_documented("v2.15.15-alpha — Wall Between Upper Floors Structural Seam Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.15 wall-between-upper-slabs seam fix")
+    if not release_documented("v2.15.16-alpha — Symmetric Inter-Story Seam Fallback Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.16 symmetric inter-story seam fallback fix")
+    if not release_documented("v2.15.17-alpha — Logical Structural Occupancy Collision Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.17 logical structural occupancy collision root fix")
+    if not release_documented("v2.15.18-alpha — Semantic Structural Slot Collision Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.18 semantic structural-slot collision root fix")
+    if not release_documented("v2.15.19-alpha - Upper-Story Wall Facing + Insert Host Occupancy Polish"): issues.append("README or Docs/CHANGELOG.md must document v2.15.19 upper-story wall facing and insert host occupancy polish")
+    if not release_documented("v2.15.20-alpha — Canonical Story Plane Wall Gap Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.20 canonical story-plane wall gap fix")
+    if not release_documented("v2.15.21-alpha — Canonical Horizontal Edge Wall Facing Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.21 canonical horizontal-edge wall facing fix")
+    if not release_documented("v2.15.23-alpha — Multi-Cell Native Wall Facing Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.23 multi-cell native Wall-facing root fix")
+    if not release_documented("v2.15.22-alpha — Hosted Insert Structural Transparency + Wall Facing Continuity Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.22 hosted-insert structural transparency and wall-facing continuity fix")
     splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
     if splash not in rt215[:500]: issues.append("README GitHub splash must remain at the top of the document")
 

@@ -46,4 +46,6 @@ class AKUMASRPGFRAMEWORK_API UARPGAccountIndexSave : public USaveGame
     GENERATED_BODY()
 public:
     UPROPERTY(SaveGame) TArray<FARPGLocalAccountRecord> Accounts;
+    /** Stable local identity used by the no-login/Guest profile so character/build ownership survives restarts. */
+    UPROPERTY(SaveGame) FGuid GuestCharacterId;
 };

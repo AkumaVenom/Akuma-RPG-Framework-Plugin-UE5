@@ -51,6 +51,84 @@ namespace
             }
         }
     }
+
+    /**
+     * Pre-v2.15.12 Guest profiles did not persist their CharacterId in the local account index.
+     * Runtime buildings correctly persisted OwnerCharacterId, but the next session generated a new
+     * player CharacterId. Because build snapping deliberately requires modification access to an
+     * existing runtime structure, those loaded buildings then reported Restricted.
+     *
+     * Recover only the unambiguous local case: one player-controlled locally-owned character and
+     * one unique no-account owner identity in the saved world. We intentionally do not guess in a
+     * multi-player/multi-owner world. Once recovered, RegisterCharacterId persists the Guest identity
+     * so subsequent character/world loads use the normal stable path.
+     */
+    FString ARPGMakeGuestCharacterSlotName(const FGuid& CharacterId)
+    {
+        return CharacterId.IsValid()
+            ? FString::Printf(TEXT("ARPG_Guest_Char_%s"), *CharacterId.ToString(EGuidFormats::Digits))
+            : FString();
+    }
+
+    void ARPGRecoverLegacyGuestWorldOwnerIdentity(UWorld* World, UARPGWorldSaveGame* Save)
+    {
+        if (!World || !Save || !World->GetGameInstance()) return;
+        UARPGAccountSubsystem* Accounts = World->GetGameInstance()->GetSubsystem<UARPGAccountSubsystem>();
+        if (!Accounts || Accounts->IsLoggedIn()) return;
+
+        AARPGCharacter* SoleLocalPlayer = nullptr;
+        int32 PlayerCharacterCount = 0;
+        for (TActorIterator<AARPGCharacter> It(World); It; ++It)
+        {
+            if (!It->IsPlayerControlled()) continue;
+            ++PlayerCharacterCount;
+            if (It->IsLocallyControlled()) SoleLocalPlayer = *It;
+        }
+        if (PlayerCharacterCount != 1 || !SoleLocalPlayer) return;
+
+        TSet<FGuid> LegacyGuestOwnerIds;
+        for (const FARPGPlacedBuildingSave& Record : Save->World.Buildings)
+            if (!Record.OwnerAccountId.IsValid() && Record.OwnerCharacterId.IsValid()) LegacyGuestOwnerIds.Add(Record.OwnerCharacterId);
+        for (const FARPGContainerSave& Record : Save->World.Containers)
+            if (!Record.OwnerAccountId.IsValid() && Record.OwnerCharacterId.IsValid()) LegacyGuestOwnerIds.Add(Record.OwnerCharacterId);
+
+        if (LegacyGuestOwnerIds.Num() != 1) return;
+        const FGuid LegacyOwnerId = LegacyGuestOwnerIds.Array()[0];
+        FGuid StableGuestId = Accounts->GetLastCharacterId();
+
+        if (!StableGuestId.IsValid())
+        {
+            // First v2.15.12 load of a legacy Guest world: preserve the old identity so its existing
+            // ARPG_Guest_Char_<id> character save can be found on the following persistence pass.
+            StableGuestId = LegacyOwnerId;
+            if (!Accounts->RegisterCharacterId(StableGuestId)) return;
+        }
+        else if (StableGuestId != LegacyOwnerId)
+        {
+            // A stable Guest identity may already have been registered before a manually triggered
+            // legacy world load. Prefer the legacy id only when it has an actual character save and
+            // the indexed id does not; otherwise migrate this one unambiguous world's owner records
+            // to the current stable Guest profile. This avoids order-dependent Restricted results.
+            const FString LegacySlot = ARPGMakeGuestCharacterSlotName(LegacyOwnerId);
+            const FString StableSlot = ARPGMakeGuestCharacterSlotName(StableGuestId);
+            const bool bLegacyCharacterSaveExists = !LegacySlot.IsEmpty() && UGameplayStatics::DoesSaveGameExist(LegacySlot, 0);
+            const bool bStableCharacterSaveExists = !StableSlot.IsEmpty() && UGameplayStatics::DoesSaveGameExist(StableSlot, 0);
+            if (bLegacyCharacterSaveExists && !bStableCharacterSaveExists)
+            {
+                StableGuestId = LegacyOwnerId;
+                if (!Accounts->RegisterCharacterId(StableGuestId)) return;
+            }
+            else
+            {
+                for (FARPGPlacedBuildingSave& Record : Save->World.Buildings)
+                    if (!Record.OwnerAccountId.IsValid() && Record.OwnerCharacterId == LegacyOwnerId) Record.OwnerCharacterId = StableGuestId;
+                for (FARPGContainerSave& Record : Save->World.Containers)
+                    if (!Record.OwnerAccountId.IsValid() && Record.OwnerCharacterId == LegacyOwnerId) Record.OwnerCharacterId = StableGuestId;
+            }
+        }
+
+        SoleLocalPlayer->CharacterId = StableGuestId;
+    }
 }
 
 FString UARPGSaveSubsystem::MakeCharacterSlotName(const FGuid& CharacterId) const
@@ -174,6 +252,7 @@ bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
 {
     UWorld* W=GetWorld(); if(!W||W->GetNetMode()==NM_Client)return false; const FString Slot=SlotOverride.IsEmpty()?MakeWorldSlotName(WorldId):SlotOverride;
     UARPGWorldSaveGame* Save=Cast<UARPGWorldSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot,0));if(!Save)return false;
+    ARPGRecoverLegacyGuestWorldOwnerIdentity(W, Save);
     TMap<FGuid,AARPGBuildPieceActor*> Existing;
     for(TActorIterator<AARPGBuildPieceActor> It(W);It;++It) if(It->bRuntimePlaced&&It->BuildingId.IsValid())Existing.Add(It->BuildingId,*It);
     TSet<FGuid> SavedIds;

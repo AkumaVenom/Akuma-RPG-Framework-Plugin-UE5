@@ -8,9 +8,9 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.15.6-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.15.23-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest:** v2.15 adds the complete player-facing Settlement Building layer. v2.15.2 added pivot-aware placement; v2.15.3 added data-driven mesh orientation; v2.15.4 fixed modular wall seam/corner collision; v2.15.5 fixed support-edge wall facing; v2.15.6 makes upper-story wall stacks inherit the supporting wall's facing deterministically when neighbouring snap candidates share the same slot.
+> **Latest:** v2.15.23 is the current Settlement Building baseline. The v2.15 series now includes pivot-aware/data-driven mesh placement, deterministic Wall/Doorway snapping, replicated functional Doors with data-driven hinge side and moving collision, persistent build ownership across reloads, multi-support upper Floors, build-order-independent multi-storey Wall/Floor seams, logical structural occupancy separate from decorative mesh collision, hosted Door/Window insert transparency, canonical no-gap story planes, and multi-cell-aware Wall-family facing. See [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md) for the release-by-release history.
 
 ## Start here
 
@@ -73,10 +73,10 @@ v2.15 promotes the earlier building backend into a complete player-facing settle
 | Build Catalogue | **Implemented** | Character `Build Catalog`, categories, material costs, buildable counts and ready native menu. |
 | Placement Preview | **Implemented** | Local ghost mesh, valid/invalid materials, live status, rotation, next/previous pieces and placement HUD. |
 | Pivot-Aware Ground Placement | **Implemented** | Real mesh bounds anchor bottom/center/corner-pivot modular pieces correctly to landscape/support surfaces. |
-| Structural Snapping | **Implemented** | Foundations, walls, window walls, doorways, doors, floors, ceilings, roofs, stairs, pillars and custom snap points. |
+| Structural Snapping | **Implemented** | Foundations, wall/window/door families, upper floors/ceilings/roofs, stairs/pillars and custom snaps, with logical structural occupancy, multi-storey build-order symmetry and multi-cell-aware facing. |
 | Authoritative Placement | **Implemented** | Server revalidates catalogue membership, snap access, transform, range, support, collision, resources, factions and territory. |
 | Construction | **Implemented** | Instant or timed builds, synchronized progress, mesh reveal/growth, material progress parameters and construction audio. |
-| Doors | **Implemented** | Replicated open/close, access policy, auto-close and persistent state. |
+| Doors | **Implemented** | Replicated smooth open/close, ownership/faction access, persistent state, moving slab collision, data-driven left/right hinge side and hosted-insert structural transparency. |
 | Demolition | **Implemented** | Authoritative modification checks and configurable build-cost refund. |
 | Storage | **Implemented** | Persistent containers, ready transfer UI and exact runtime-instance transfer for durable items. |
 | Production / Furnaces | **Implemented** | Input/fuel/output inventories, recipe queues, tagged fuel, transaction-safe processing and ready production UI. |
@@ -299,63 +299,33 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.15.6-alpha
+## Current release — v2.15.23-alpha
 
-The current release focuses on the Settlement Building system introduced in v2.15.
+v2.15.23 is the current polished Settlement Building baseline for the framework.
 
-**v2.15.6**
+**Structural workflow**
 
-- Fixed an upper-story wall-facing race where a neighbouring lateral/corner Wall-family snap candidate could share the same physical slot as the true vertical stack candidate and win based on view-yaw scoring.
-- Same-slot snap ownership is now candidate-aware: a Wall/WindowWall/Doorway directly below owns the vertical stack column when the candidate is above it at local XY zero with inherited facing.
-- Vertical Wall-family stacks therefore preserve the lower piece's actor rotation/front-exterior direction deterministically, including Wall over Wall, Wall over Doorway and Doorway/WindowWall-family combinations.
-- Straight continuation and ±90-degree corner candidates remain fully available when they are not competing for the same vertical stack slot.
-- No reflected Blueprint API or Build Piece Data Asset migration is required; v2.15.5 support-edge facing, v2.15.4 seam collision, v2.15.3 mesh transforms, replication and saves are preserved.
+- Foundations provide the ground-level modular grid.
+- Wall / WindowWall / Doorway pieces snap to Foundation and upper horizontal edges, stack vertically, continue laterally and form 90-degree corners.
+- Door and Window pieces are hosted inserts. They snap into Doorway / WindowWall openings, keep their replicated interaction state, and no longer block later valid Floor/Wall seams around their host.
+- Floor / Ceiling / Roof pieces can be inserted before or after surrounding Wall-family pieces. Multi-storey construction is intentionally build-order independent where the same logical structural slot is being authored.
+- Build-vs-build placement uses authored logical `PlacementBounds`/semantic structural slots rather than decorative mesh collision, while world/non-building blockers still use the normal collision path.
 
-**v2.15.5**
+**Wall-family facing and vertical spacing**
 
-- Fixed a root yaw-sign error that made walls on the +X/-X edges of foundations/floors/ceilings/roofs show the opposite face while +Y/-Y edges were correct.
-- Standard wall convention is now explicit: actor-local X is wall run and actor-local +Y is the logical front/exterior side after `Mesh Relative Transform`. Every horizontal support edge rotates that +Y side toward its outward normal.
-- Hardened snap selection when a support edge and an already-built wall corner advertise the same physical slot: the horizontal support owns the unambiguous exterior orientation, while wall-only corner construction still retains both ±90° turn facings.
-- No Build Piece Data Asset migration is required. Existing v2.15.3 `Mesh Relative Transform`, v2.15.4 seam/corner collision rules, saves, replication and 300 cm modular snapping are preserved.
+- First-storey Wall-family pieces use the owning Foundation edge's native standard Wall socket.
+- Upper-storey Wall-family pieces use the canonical horizontal story plane so slab thickness does not create gaps or accumulate vertical drift.
+- Perimeter facing is resolved from occupied Foundation/Floor cells, but the final yaw comes from the owning support's own native Wall socket rather than a hard-coded mesh-front assumption.
+- A direct Wall-family piece below preserves vertical facing continuity when the same stack column exists.
+- Shared interior edges intentionally have no universal exterior side; the framework preserves the established/selected native facing instead of inventing one.
 
-**v2.15.4**
+**Door baseline**
 
-- Fixed adjacent/perpendicular modular walls being reported as **Blocked by another object** when their authored posts/trim intentionally overlap at a valid structural seam.
-- Added native 90-degree wall-family L-corner snap candidates using each target/incoming piece's configured Snap Size, with both facing orientations at every geometric corner so walls can turn corners from foundations or directly from other walls.
-- Placement collision remains strict: only another completed build actor that advertises the exact incoming transform as a native/custom snap neighbour may be tolerated; arbitrary clipping and non-building blockers are still rejected.
-- Protected-build access is also checked for every tolerated seam neighbour, preserving multiplayer/faction modification rules.
-- Preserves v2.15.3 Mesh Relative Transform, v2.15.2 pivot-aware placement, existing saves/data assets, and the rest of the settlement framework.
+- Native Doors replicate open/closed state, animate smoothly, persist state, enforce ownership/faction access and carry a moving collision slab.
+- `Door Hinge Side` is data-driven (`Left` / `Right`) and is resolved from transformed visible Door bounds.
+- The existing Character input route remains `Interact Built Structure`; no client-side direct Door state mutation is required.
 
-**v2.15.3**
-
-- Added exposed `Mesh Relative Transform` to every Build Piece Data Asset.
-- Build/Preview meshes can be rotated, offset or scaled inside the native framework actor without reimporting source art.
-- Ghost preview and final replicated build actors apply the same mesh-relative transform.
-- Pivot/bounds-aware placement and structural height snapping now evaluate the transformed Build Mesh bounds.
-- Existing definitions remain backward compatible because the new transform defaults to Identity.
-
-**v2.15.2**
-
-- Pivot-aware ground placement using real Build Mesh bounds.
-- Bottom-, center- and corner-pivot modular meshes can sit flush on traced surfaces without fake `PlacementOffset Z` compensation.
-- Placement overlap/support validation uses the same real mesh anchor.
-- Standard structural vertical snapping uses target/incoming mesh bounds to avoid pivot-dependent height errors.
-
-**v2.15.1**
-
-- UE5.8.1 settlement compile-compatibility fixes.
-
-**v2.15.0**
-
-- Complete Build Catalogue + placement workflow.
-- Structural snapping and custom snap points.
-- Timed construction presentation.
-- Functional replicated doors.
-- Persistent Storage with ready transfer UI.
-- Fuel-driven Production/Furnace stations with ready UI.
-- Authoritative demolition/refunds and world persistence.
-
-For the complete history from the earliest releases through the current version, see **[`Docs/CHANGELOG.md`](Docs/CHANGELOG.md)**.
+No reflected Blueprint API or save-schema migration is required for the v2.15.23 facing hardening. Existing pieces already saved with an older transform keep that saved transform; place fresh pieces when validating new snap/facing behavior.
 
 ## Project boundaries
 
@@ -423,3 +393,4 @@ Akuma's RPG Framework is distributed under the **MIT License**. See [`LICENSE`](
 ---
 
 **Akuma's RPG Framework is in active alpha development.** Build and test each update against your own UE 5.8 project before treating it as a shipping baseline.
+

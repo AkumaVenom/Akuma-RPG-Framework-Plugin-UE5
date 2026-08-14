@@ -106,6 +106,23 @@ Demolish -> Demolish Built Structure
 
 Keep **Allow Unlisted Build Requests** disabled and **Require Snap Target Modification Access** enabled for the normal multiplayer-safe defaults. `Demolish Built Structure` only succeeds for a modifiable runtime build and uses the Build Piece Definition's configured refund.
 
+
+A good structural smoke-test order for v2.15.23 is:
+
+```text
+Foundation
+  -> Wall / Doorway
+  -> Door
+  -> upper Floor
+  -> upper Wall / Doorway
+  -> next Floor
+```
+
+For a `300 × 300 × 18` upper-floor mesh, use `Placement Bounds = 150,150,9`, keep `Placement Offset = 0,0,0`, and copy `Snap Size` / `Standard Wall Height` from the existing modular kit. Upper Walls use the slab bottom/story plane, so do not add a manual Z lift for Floor thickness.
+
+Doors and Windows are hosted inserts. A Door already placed in a Doorway must not prevent a later valid upper Floor seam around that host. On connected Foundation/Floor footprints, perimeter Wall-family facing is resolved from occupied cells and the owning support's native Wall socket; shared interior edges preserve the established/selected native facing.
+
+
 For a furnace, tag Wood with `Item.Fuel.Wood`, create a station-only recipe such as Metal Ore x2 -> Metal Ingot x1 with Required Station Tag `Station.Furnace`, enable fuel consumption, add that recipe to an `ARPGCraftingStationDefinition`, then assign the Station Definition to a `Production` Build Piece. The built station's ready UI handles Player/Input+Fuel/Recipes/Output transfer and queue progress. See `Docs/BUILDING_CRAFTING.md`.
 
 ## 3. Use the supplied GameMode/Controller/GameState

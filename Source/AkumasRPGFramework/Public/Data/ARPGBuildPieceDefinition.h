@@ -30,6 +30,16 @@ enum class EARPGBuildPieceKind : uint8
     Custom
 };
 
+/** Physical hinge edge for native Door pieces, expressed in the framework's logical wall axes. */
+UENUM(BlueprintType)
+enum class EARPGBuildDoorHingeSide : uint8
+{
+    /** Left edge when looking at the Door from the wall's logical +Y/front side. Maps to local +X. */
+    Left UMETA(DisplayName="Left"),
+    /** Right edge when looking at the Door from the wall's logical +Y/front side. Maps to local -X. */
+    Right UMETA(DisplayName="Right")
+};
+
 USTRUCT(BlueprintType)
 struct AKUMASRPGFRAMEWORK_API FARPGBuildSnapPoint
 {
@@ -70,6 +80,14 @@ public:
     /** Existing tag-based classification remains available for project-specific Wood/Stone/Metal tiers. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Identity") FGameplayTag PieceType;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Identity") FGameplayTag MaterialTier;
+
+    /**
+     * Native Door hinge edge. Left/Right are evaluated after Mesh Relative Transform, so imported meshes
+     * can be re-oriented without changing the gameplay hinge convention. Left is logical +X and Right
+     * is logical -X when viewed from the wall's logical +Y/front side.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Door", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Door", EditConditionHides))
+    EARPGBuildDoorHingeSide DoorHingeSide = EARPGBuildDoorHingeSide::Left;
 
     /** Resource requirements are read directly from the player's replicated Inventory. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Cost") TArray<FARPGItemAmount> BuildCost;

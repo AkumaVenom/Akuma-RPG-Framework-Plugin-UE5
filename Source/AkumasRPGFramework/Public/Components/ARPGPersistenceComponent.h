@@ -23,6 +23,7 @@ public:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 protected:
     FTimerHandle AutoSaveTimer;
+    bool bDeferredGuestIdentityRecoveryOnce = false;
     void AttemptAutoLoad();
     void HandleAutoSave();
 };

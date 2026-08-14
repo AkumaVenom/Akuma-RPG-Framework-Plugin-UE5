@@ -24,7 +24,26 @@ void UARPGPersistenceComponent::AttemptAutoLoad()
             if (UARPGAccountSubsystem* Accounts = GI->GetSubsystem<UARPGAccountSubsystem>())
             {
                 const FGuid Last = Accounts->GetLastCharacterId();
-                if (Last.IsValid() && Accounts->IsLoggedIn()) Character->CharacterId = Last;
+                if (Last.IsValid())
+                {
+                    // Logged-in accounts and the local Guest profile both use their stable indexed identity.
+                    Character->CharacterId = Last;
+                }
+                else if (!Accounts->IsLoggedIn())
+                {
+                    // Legacy Guest saves (pre-v2.15.12) have no GuestCharacterId index. Give the GameMode
+                    // world-loader one frame to recover the sole local Guest owner from the world save. This
+                    // removes BeginPlay ordering as a source of ownership mismatch. If no legacy world exists,
+                    // the second attempt simply registers the freshly generated character as the new Guest.
+                    if (!bDeferredGuestIdentityRecoveryOnce && GetWorld())
+                    {
+                        bDeferredGuestIdentityRecoveryOnce = true;
+                        GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad);
+                        return;
+                    }
+                    Character->EnsureCharacterId();
+                    Accounts->RegisterCharacterId(Character->CharacterId);
+                }
             }
         }
     }

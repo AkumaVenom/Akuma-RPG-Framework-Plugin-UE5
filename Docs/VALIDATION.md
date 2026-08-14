@@ -1,3 +1,94 @@
+# Source Validation — Akuma's RPG Framework v2.15.23-alpha
+
+Package: **Akuma's RPG Framework — v2.15.23-alpha**  
+Target: **Unreal Engine 5.8 / 5.8.1**
+
+## Important limitation
+
+This package is source/model validated in the generation environment. It is **not** claimed to have completed UnrealHeaderTool/MSVC/PIE here. A real UE 5.8/5.8.1 Development Editor build plus standalone/listen-server PIE remains the acceptance step.
+
+## v2.15.23 multi-cell native Wall-facing validation
+
+- Regression models 1×2 and 2×2 Foundation/Floor footprints and verifies outer-perimeter `Wall` / `WindowWall` / `Doorway` slots receive one unambiguous occupied-cell claim.
+- Verifies the final facade yaw comes from the claiming horizontal support's **native standard Wall socket**, not from camera yaw or a hard-coded assumption about the imported mesh's front axis.
+- Verifies a shared interior edge receives opposite occupancy claims and is treated as intentionally ambiguous; direct vertical-stack continuity is preferred, otherwise the selected/native yaw is retained.
+- Verifies first-storey Foundation-top and upper-storey slab-bottom/story-plane ownership remain distinct, preserving the v2.15.20 no-gap rule.
+
+Recommended PIE acceptance: place two adjacent Foundations, stand inside the footprint, build fresh perimeter Walls/Doorways on every outside edge, then repeat one storey above. Confirm outside facades remain consistent. A shared middle partition may preserve the chosen/native facing because both sides are occupied.
+
+## v2.15.22 hosted-insert structural-transparency validation
+
+- Verifies `Door` / `Window` actors are resolved back to their exact compatible Doorway/WindowWall host through the host's native insert transform.
+- Verifies `Doorway -> Door -> upper Floor` and `Doorway -> upper Floor -> Door` are both accepted when the structural seam is valid.
+- Verifies a hosted insert cannot independently return `Blocked by another object` for a later valid Wall/Floor/Ceiling/Roof seam around its host.
+- Verifies duplicate inserts, unrelated hosts, ownership/access failures and genuine logical occupancy conflicts remain blocked.
+- Verifies a directly stacked lower Wall-family piece can preserve upper-storey visible yaw while the horizontal slab still supplies canonical story-plane Z.
+
+## v2.15.20–v2.15.21 story-plane/facing validation
+
+- Regression models a 300×300×18 Floor and verifies both `Wall stack -> insert Floor` and `Floor -> upper Wall` place the upper Wall on the same canonical slab-bottom/story plane.
+- Verifies Floor thickness does not accumulate into storey height and does not create an 18 cm facade gap.
+- Verifies upper Wall-family orientation is normalized after slot selection without changing the corrected story-plane transform.
+- Verifies first-storey Walls still use the Foundation's visible top rather than the upper-slab rule.
+
+## v2.15.19 insert-host and upper-story ownership validation
+
+- Verifies Door/Window inserts accept legitimate structural neighbours of their designated opening host without disabling duplicate/conflict blocking.
+- Verifies competing horizontal/vertical Wall-family candidates do not alter the logical structural slot or permission checks.
+
+## v2.15.18 semantic structural-slot collision validation
+
+- Verifies build-vs-build placement collision compares authored `PlacementBounds` for both incoming and existing structures through oriented-box SAT instead of treating rendered Static Mesh collision as structural occupancy.
+- Verifies decorative post/brace/lip collision can overlap the broad physics query without blocking when the two logical placement volumes do not penetrate.
+- Verifies true duplicate/logical-volume penetration remains blocked unless a declared snap or strict inter-story seam explicitly owns that relationship.
+- Verifies Wall/WindowWall/Doorway edge occupancy compares the wall run axis modulo 180 degrees: front/back reversal is accepted on the same edge, while a perpendicular wall axis or center-crossing wall remains rejected.
+- Verifies v2.15.16 native-snap-first -> strict-seam-fallback ordering remains intact and non-building world blockers are unchanged.
+- Static/model validation is not an Unreal Engine compile; UE5.8/5.8.1 PIE remains the runtime acceptance test.
+
+## v2.15.16 symmetric inter-story seam fallback validation
+
+- Verifies `ARPGIsValidSnappedBuildNeighbor()` no longer returns `false` merely because `Neighbor->GetSnapTransformsFor()` produced zero candidates.
+- Verifies native snap matching runs first, followed by the strict `ARPGIsValidUpperHorizontalWallSeamNeighbor()` and `ARPGIsValidWallUnderUpperHorizontalSeamNeighbor()` fallbacks.
+- Regression-models the reported build orders where a 300×300×18 Floor is inserted after pre-stacked upper Walls and where a Wall is inserted between existing lower/upper horizontal slabs.
+- Negative cases remain blocked through the existing exact edge/facing/story-plane checks; no global building-overlap tolerance is introduced.
+
+## v2.15.15 wall-between-upper-slabs seam validation
+
+- Regression models a Wall/WindowWall/Doorway snapped to the top of a lower horizontal support while an upper Floor/Ceiling/Roof already exists one storey above.
+- The upper slab is accepted only when the incoming wall is on one of its exact structural edges, has the canonical edge-facing yaw, and the wall visible top meets the slab visible bottom.
+- A wall through the slab center, wrong-facing wall, wall extending through the slab, and unrelated-height slab remain rejected.
+- Existing modification-access enforcement, v2.15.14 horizontal-after-prestacked-wall seams, and full settlement/source/package validation remain required.
+
+## v2.15.14 inter-story Floor/Wall seam validation
+
+- Regression covers a 300×300×18 upper Floor inserted after the next-storey walls are already vertically stacked.
+- Exact +Y/+X tile-edge upper walls at the shared story plane are accepted, including perpendicular cardinal facing.
+- Lower supporting walls and walls placed on top of an existing slab remain accepted.
+- A wall through the tile center, a wrong-facing edge wall, and an unrelated-height wall remain blocked.
+- Full settlement model and source validation are run together with package manifest verification.
+
+## v2.15.13 multi-support upper-floor validation
+
+- Verifies Floor/Ceiling/Roof snap capture uses the incoming candidate's transformed visible envelope instead of requiring aim within `SnapCaptureDistance` of the tile origin.
+- Regression models a 300 cm floor: aiming at its supporting edge is 150 cm from center (outside the 140 cm legacy origin capture) but zero distance from the candidate bounds and must capture.
+- Verifies additional completed build neighbours are still accepted only when they advertise the exact incoming physical slot.
+- Verifies horizontal seam rotation equivalence: 300×300 footprints accept 90/180-degree supporting-wall yaw differences; 300×600 rectangular footprints reject 90 degrees but accept 180 degrees.
+- Confirms the existing modification-access check remains applied to every tolerated support/seam neighbour.
+
+## v2.15.12 persistent build ownership reload validation
+
+Static/model validation now additionally checks that:
+
+- the local account index persists a stable `GuestCharacterId`;
+- Guest/no-login `RegisterCharacterId` and `GetLastCharacterId` use that identity instead of discarding it;
+- Character persistence restores a valid Guest identity without requiring an account login;
+- the first legacy Guest auto-load attempt can defer one frame so GameMode world loading can recover pre-v2.15.12 ownership regardless of BeginPlay/timer ordering;
+- legacy world recovery runs only for exactly one player-controlled locally owned character and one unique no-account owner identity;
+- ambiguous multiplayer/multi-owner worlds are not silently reassigned;
+- the existing authoritative `SnapTarget->CanActorModify` security check remains present rather than being bypassed to hide the symptom.
+
+Recommended acceptance test: in standalone PIE as Guest, build a Foundation + Wall/Doorway/Door, save/exit, reload, then snap another Wall to the loaded Foundation/Wall and confirm the placement HUD remains valid instead of reporting `Building is restricted here`. Also confirm a genuinely foreign/faction-protected structure is still rejected. Static/model checks are not a UE 5.8.1 compile or runtime result.
+
 ## v2.15.0 settlement building / storage / production validation
 
 Repository validation now additionally checks that:
@@ -56,7 +147,7 @@ Repository checks do not replace a real UE 5.8.1 Development Editor build/packag
 
 The user-provided UE 5.8.1 Windows packaging log identified the external DirectionalLight `GetComponent()` call as a non-editor compile failure and two deprecated Inventory soft-pointer assignments as C4996 warnings. v2.5.4 replaces those paths and adds static regression checks. These checks are not a substitute for UnrealBuildTool/UHT/MSVC packaging; a fresh local Windows package remains required.
 
-# Source Validation — Akuma's RPG Framework v2.2.1-alpha
+## Historical source-validation baseline — v2.2.1-alpha
 
 Package: **Akuma's RPG Framework — 2.2.1-alpha Quick Access / Active Item Slots**  
 Target: **Unreal Engine 5.8 / 5.8.1**
