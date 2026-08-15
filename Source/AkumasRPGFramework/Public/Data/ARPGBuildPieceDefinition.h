@@ -110,7 +110,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="1.0")) float SnapSearchRadius = 500.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="0.0")) float SnapCaptureDistance = 140.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement", meta=(ClampMin="1.0", ClampMax="180.0", Units="deg")) float RotationStepDegrees = 90.f;
-    /** Native standard sockets cover foundations, walls, doorways, floors/ceilings and roofs. Add custom points for unusual kits. */
+    /** Native standard sockets cover foundations, walls, doorways, floors/ceilings, roofs and flat-support Stairs. Add custom points for unusual kits. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") bool bGenerateStandardSnapPoints = true;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Placement") TArray<FARPGBuildSnapPoint> CustomSnapPoints;
 

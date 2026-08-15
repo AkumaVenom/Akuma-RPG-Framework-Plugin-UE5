@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21523 or descriptor.get("VersionName") != "2.15.23-alpha":
-        issues.append("package descriptor must identify v2.15.23-alpha")
+    if descriptor.get("Version") != 21540 or descriptor.get("VersionName") != "2.15.40-alpha":
+        issues.append("package descriptor must identify v2.15.40-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1878,7 +1878,7 @@ if all(p.exists() for p in paths_2150):
         issues.append("v2.15.1 UE5.8.1 compile fix missing: native Storage/Production UI helper must accept TObjectPtr<UVerticalBox>&")
     if "UARPGStoragePanelWidget*P=" in bwc or "UARPGCraftingStationPanelWidget*P=" in bwc:
         issues.append("v2.15.1 UE5.8.1 compile fix missing: transfer handler local shadowing must not return")
-    for required in ("ARPGGetBuildPieceBottomAnchorLocal", "Hit.ImpactPoint - DesiredRotation.RotateVector(BottomAnchorLocal)", "PlacementBoundsCenter", "BottomAnchor + FVector::UpVector * ProbeLift"):
+    for required in ("ARPGGetBuildPieceBottomAnchorLocal", "Hit.ImpactPoint - DesiredRotation.RotateVector(BottomAnchorLocal)", "ARPGBuildPlacementOccupancyOBBs", "BottomAnchor + FVector::UpVector * ProbeLift"):
         if required not in bc: issues.append(f"v2.15.2 pivot-aware ground placement missing: {required}")
     if "Hit.ImpactNormal * FMath::Max(0.f, SelectedBuildPiece->PlacementBounds.Z)" in bc:
         issues.append("v2.15.2 ground placement must not blindly lift every mesh by PlacementBounds.Z")
@@ -1912,8 +1912,63 @@ if all(p.exists() for p in paths_2150):
         if required not in bc: issues.append(f"v2.15.9 deterministic full-view insert targeting missing: {required}")
     for forbidden in ("BlockingHitDistance", "VisibleDistanceLimit"):
         if forbidden in bc: issues.append(f"v2.15.9 insert targeting must not be truncated by generic placement-hit state: {forbidden}")
-    for required in ("ARPGIsUpperHorizontalStructuralKind", "ARPGDistanceSquaredToDefinitionBoundsAtTransform", "HorizontalFootprintDistSq", "bHorizontalFootprintCapture", "ARPGRotationsPreservePlacementFootprint", "Piece->PlacementBounds.X - Piece->PlacementBounds.Y", "same physical slot can be advertised"):
+    for required in ("ARPGIsUpperHorizontalStructuralKind", "ARPGDistanceSquaredToDefinitionBoundsAtTransform", "CandidateEnvelopeDistSq", "bHorizontalFootprintCapture", "ARPGRotationsPreservePlacementFootprint", "Piece->PlacementBounds.X - Piece->PlacementBounds.Y", "same physical slot can be advertised"):
         if required not in bc: issues.append(f"v2.15.13 upper-horizontal multi-support placement polish missing: {required}")
+    for required in ("ARPGIsStairSupportSnapPair", "ARPGIsStairChainSnapPair", "ARPGIsAnyStairSnapPair", "bStairSupportSnapPair", "bStairChainSnapPair", "bAnyStairSnapPair", "StairTargetAimDistSq", "CandidateEnvelopeDistSq", "CandidateAffinitySq", "ARPGIsCompatibleStairHostStructuralNeighbor", "ARPGTransformMatchesStairHostCandidate", "bLowEndOwnsHostEdge", "StairCellCenter", "bOnSideEdge", "bParallelToStairRun"):
+        if required not in bc: issues.append(f"v2.15.32 Stair landing/chain snap topology missing: {required}")
+    for required in ("bNeighborFlatLanding", "HostStoryPlane", "NeighborStoryPlane", "bImmediateGridNeighbor", "actual Stair flight cell", "17 cm art/rail overhang"):
+        if required not in bc: issues.append(f"v2.15.38 Stair tiled-deck overhang seam classification missing: {required}")
+    stair_host_neighbor_start = bc.find("static bool ARPGIsCompatibleStairHostStructuralNeighbor(")
+    stair_host_neighbor_end = bc.find("/**\n * Reverse Stair-side seam", stair_host_neighbor_start) if stair_host_neighbor_start >= 0 else -1
+    stair_host_neighbor_fn = bc[stair_host_neighbor_start:stair_host_neighbor_end] if stair_host_neighbor_start >= 0 and stair_host_neighbor_end > stair_host_neighbor_start else ""
+    if "if (ARPGIsHorizontalStructuralKind(NeighborKind))" in stair_host_neighbor_fn and "return false;" in stair_host_neighbor_fn[stair_host_neighbor_fn.find("if (ARPGIsHorizontalStructuralKind(NeighborKind))"):stair_host_neighbor_fn.find("if (!ARPGIsWallLikeKind", stair_host_neighbor_fn.find("if (ARPGIsHorizontalStructuralKind(NeighborKind))"))]:
+        issues.append("v2.15.38 Stair host-neighbour classifier must not blanket-reject every horizontal neighbour; immediate same-story deck seams need structural-cell classification")
+    for required in ("IncomingStairHalfRun", "StairHighStructuralXYLocal", "StairLowStructuralXYLocal", "TargetStoryPlaneZ", "StairHighArrivalAlignedZ", "StairLowDepartureAlignedZ", "FStairEdgeSocket", "HighArrivalTranslation", "LowDepartureTranslation", "Structural Stair endpoints belong to the authored SnapSize grid", "TargetKind == EARPGBuildPieceKind::Stair && IncomingKind == EARPGBuildPieceKind::Stair", "ChainStep", "CenterDeltaX", "ContinueUpZ", "ContinueDownZ", "FVector(CenterDeltaX + ChainStep, 0.f, ContinueUpZ)", "FVector(CenterDeltaX - ChainStep, 0.f, ContinueDownZ)", "local +X = uphill"):
+        if required not in bac: issues.append(f"v2.15.37 canonical Stair XY/Z structural-grid socket contract missing: {required}")
+    for required in ("IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Ceiling", "LandingCenterOffset", "HighLandingTranslation", "LowLandingTranslation", "completed Stair exposes flat landing CELLS", "TargetCenter.X + LandingCenterOffset", "TargetCenter.X - LandingCenterOffset", "TargetMax.Z - IncomingMin.Z", "TargetMax.Z - WallHeight - IncomingMin.Z"):
+        if required not in bac: issues.append(f"v2.15.37 Stair-owned Floor/Ceiling canonical XY/Z landing-cell contract missing: {required}")
+    stair_floor_start = bac.find("if (TargetKind == EARPGBuildPieceKind::Stair &&\n            (IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Ceiling))")
+    stair_floor_end = bac.find("if (ARPGIsWallLike(TargetKind))", stair_floor_start) if stair_floor_start >= 0 else -1
+    stair_floor_block = bac[stair_floor_start:stair_floor_end] if stair_floor_start >= 0 and stair_floor_end > stair_floor_start else ""
+    for forbidden in ("TargetMax.X - IncomingMin.X", "TargetMin.X - IncomingMax.X"):
+        if forbidden in stair_floor_block:
+            issues.append(f"v2.15.37 Stair->Floor landing must not derive XY cell centres from raw visual Stair endpoints: {forbidden}")
+    for required in ("ARPGIsValidExistingStairWallSideSeamNeighbor", "bOnSidePlane", "WallHalfRun", "LongitudinalOverlap", "WallAnchorInStair", "IncomingFinal.GetLocation()", "Reverse Stair-side seam", "ARPGYawAxesEquivalent(ExistingStair->GetActorRotation().Yaw, IncomingFinal.Rotator().Yaw)"):
+        if required not in bc: issues.append(f"v2.15.35 Stair-first Wall-family structural-anchor side-seam contract missing: {required}")
+    stair_wall_start = bc.find("static bool ARPGIsValidExistingStairWallSideSeamNeighbor(")
+    stair_wall_end = bc.find("/**", stair_wall_start + 8) if stair_wall_start >= 0 else -1
+    stair_wall_fn = bc[stair_wall_start:stair_wall_end] if stair_wall_start >= 0 and stair_wall_end > stair_wall_start else ""
+    if "WallBoundsCenterLocal" in stair_wall_fn or "WallCenterWorld" in stair_wall_fn:
+        issues.append("v2.15.35 Stair reverse Wall seam must use the structural actor snap origin, not transformed Wall bounds centre")
+    for required in ("ARPGIsValidStairWorldSupportContact", "supported by continuous WorldStatic geometry", "SurfaceAboveSliceBottom", "bFoundSupportingSurface", "SideOffsets", "SurfaceAboveSliceBottom > SurfaceTolerance"):
+        if required not in bc: issues.append(f"v2.15.30 Stair per-slice WorldStatic support classification missing: {required}")
+    support_start = bc.find("static bool ARPGIsValidStairWorldSupportContact(")
+    support_end = bc.find("/**\n * Collision validation cares about the wall", support_start) if support_start >= 0 else -1
+    support_fn = bc[support_start:support_end] if support_start >= 0 and support_end > support_start else ""
+    if "for (int32 SliceIndex = 1; SliceIndex < StairVolumes.Num(); ++SliceIndex)" in support_fn:
+        issues.append("v2.15.30 Stair support classifier must not reject continuous terrain solely because the same actor touches slice 1+")
+    if "ARPGIsValidStairLowFootWorldSupport" in bc:
+        issues.append("v2.15.30 must not retain the v2.15.29 low-foot-only Stair WorldStatic helper")
+    for required in ('#include "LandscapeProxy.h"', "ARPGIsLandscapeTerrainActor", "Actor->IsA<ALandscapeProxy>()", "ARPGIsLandscapeTerrainActor(Other)", "ARPGTransformMatchesStairHostCandidate(SnapTarget, Piece, Final)"):
+        if required not in bc: issues.append(f"v2.15.31 Stair Landscape terrain classification missing: {required}")
+    build_rules = (plugin_root / "Source" / "AkumasRPGFramework" / "AkumasRPGFramework.Build.cs").read_text(errors="replace")
+    if '"Landscape"' not in build_rules:
+        issues.append("v2.15.31 must add Landscape as a private module dependency")
+    eval_start = bc.find("EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal")
+    eval_fn = bc[eval_start:] if eval_start >= 0 else ""
+    landscape_pos = eval_fn.find("ARPGIsLandscapeTerrainActor(Other)")
+    sampled_pos = eval_fn.find("ARPGIsValidStairWorldSupportContact(")
+    if landscape_pos < 0 or sampled_pos < 0 or landscape_pos >= sampled_pos:
+        issues.append("v2.15.31 Landscape Stair terrain classification must run before generic sampled WorldStatic support/blocking")
+    for required in ("ARPGGatherPlacementOverlaps", "ARPGBuildPlacementOccupancyOBBs", "StairProfileSliceCount", "Standard pieces use one authored OBB. Stairs use eight low-to-high slices", "ARPGGatherPlacementOverlaps(World, Piece, Final, PlacementCollisionChannel, Params, Overlaps)"):
+        if required not in bc: issues.append(f"v2.15.26+ Stair profile collision root fix missing: {required}")
+    meaningful_start = bc.find("static bool ARPGPlacementVolumesOverlapMeaningfully(")
+    meaningful_end = bc.find("/**", meaningful_start)
+    meaningful_fn = bc[meaningful_start:meaningful_end] if meaningful_start >= 0 and meaningful_end > meaningful_start else ""
+    for required in ("ARPGBuildPlacementOccupancyOBBs(IncomingPiece, IncomingFinal, IncomingVolumes)", "ARPGBuildPlacementOccupancyOBBs(Neighbor->Definition, Neighbor->GetActorTransform(), NeighborVolumes)"):
+        if required not in meaningful_fn: issues.append(f"v2.15.27 Stair query/final occupancy consistency missing: {required}")
+    if "ARPGMakePlacementOBB(IncomingPiece, IncomingFinal)" in meaningful_fn:
+        issues.append("v2.15.27 final build-vs-build Stair validation must not reconstruct the incoming Stair as one full PlacementBounds OBB")
     for required in ("ARPGIsValidUpperHorizontalWallSeamNeighbor", "bPreStackedUpperWallAtStorySeam", "bSupportingWallBelow", "bWallBuiltOnSlabTop", "ARPGWallOccupiesHorizontalStructuralEdge", "Floor-first and Wall-stack-first construction produce the same valid result"):
         if required not in bc: issues.append(f"v2.15.14 inter-story Floor/Wall seam validation missing: {required}")
     for required in ("ARPGIsValidWallUnderUpperHorizontalSeamNeighbor", "WallTopZ - HorizontalBottomZ", "Inverse story-bay seam", "upper slab is a legitimate"):
@@ -2018,6 +2073,42 @@ if readme_2150.exists():
     if not release_documented("v2.15.20-alpha — Canonical Story Plane Wall Gap Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.20 canonical story-plane wall gap fix")
     if not release_documented("v2.15.21-alpha — Canonical Horizontal Edge Wall Facing Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.21 canonical horizontal-edge wall facing fix")
     if not release_documented("v2.15.23-alpha — Multi-Cell Native Wall Facing Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.23 multi-cell native Wall-facing root fix")
+    if not release_documented("v2.15.24-alpha — Wood Stair Structural Snap & Host Seam Polish"): issues.append("README or Docs/CHANGELOG.md must document v2.15.24 Wood Stair snap/host seam polish")
+    if not release_documented("v2.15.25-alpha — Stair Edge-Landing Snap Transform Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.25 Stair edge-landing snap transform root fix")
+    if not release_documented("v2.15.26-alpha — Stair Profile Collision Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.26 Stair profile collision root fix")
+    if not release_documented("v2.15.27-alpha — Stair Query/Final Occupancy Consistency Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.27 Stair query/final occupancy consistency root fix")
+    if not release_documented("v2.15.29-alpha — Stair Edge-Landing Foot Support Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.29 Stair edge-landing foot-support root fix")
+    if not release_documented("v2.15.30-alpha — Stair Continuous World Support Classification Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.30 Stair continuous WorldStatic support classification root fix")
+    if not release_documented("v2.15.31-alpha — Stair Landscape Terrain Classification Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.31 Stair Landscape terrain classification root fix")
+    if not release_documented("v2.15.32-alpha — Stair Landing Chain & Multi-Storey Alignment Polish"): issues.append("README or Docs/CHANGELOG.md must document v2.15.32 Stair landing-chain and multi-storey alignment polish")
+    if not release_documented("v2.15.33-alpha — Stair Landing Floor & Wall Side-Seam Integration Polish"): issues.append("README or Docs/CHANGELOG.md must document v2.15.33 Stair landing Floor + Wall side-seam integration polish")
+    if not release_documented("v2.15.34-alpha — Upper-Stair Wall & Doorway Side-Corridor Seam Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.34 upper-Stair Wall/Doorway side-corridor seam fix")
+    if not release_documented("v2.15.35-alpha — Stair Wall Structural-Anchor Side-Seam Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.35 Stair Wall structural-anchor side-seam root fix")
+    if not release_documented("v2.15.36-alpha — Stair Canonical Story-Grid Landing & Wall Gap Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.36 Stair canonical story-grid landing and wall-gap root fix")
+    combat_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGCombatComponent.cpp").read_text(errors="replace")
+    targeting_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGTargetingComponent.cpp").read_text(errors="replace")
+    save_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Subsystems/ARPGSaveSubsystem.cpp").read_text(errors="replace")
+    for required in ["TargetAI->IsTargetConsideredHostile(GetOwner())"]:
+        if required not in combat_cpp: issues.append(f"v2.15.39 reciprocal combat hostility missing: {required}")
+        if required not in targeting_cpp: issues.append(f"v2.15.39 reciprocal targeting hostility missing: {required}")
+    for required in ["bBothHaveFactionIdentity", "if (!D.PrimaryFactionId.IsNone())", "DefaultPlayerFactionId"]:
+        if required not in targeting_cpp and required not in save_cpp: issues.append(f"v2.15.39 faction integrity guard missing: {required}")
+    if "SetPrimaryFactionId(D.PrimaryFactionId); Character->Faction->ReplaceReputation" in save_cpp:
+        issues.append("v2.15.39 must not blindly clear runtime/default faction from an empty saved PrimaryFactionId")
+
+    if not release_documented("v2.15.38-alpha — Stair Tiled-Deck Overhang Seam Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.38 Stair tiled-deck overhang seam root fix")
+    if not release_documented("v2.15.39-alpha — Combat Targeting & Faction Integrity Recovery Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.39 combat/targeting faction integrity fix")
+    if not release_documented("v2.15.40-alpha — Player-Only Character Persistence Scope / Relog Combat Recovery Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.40 player-only persistence relog fix")
+
+    persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
+    ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")
+    for required in ("ARPGIsAccountCharacterPersistenceOwner", "!Character->IsA<AARPGAICharacter>()", "if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return;"):
+        if required not in persistence_cpp: issues.append(f"v2.15.40 player-only persistence guard missing: {required}")
+    for required in ("Persistence->bAutoLoadOnBeginPlay = false;", "Persistence->bAutoSave = false;", "Persistence->bSaveOnEndPlay = false;"):
+        if required not in ai_character_cpp_v21540: issues.append(f"v2.15.40 AI persistence default guard missing: {required}")
+    if save_cpp.count("Character->IsA<AARPGAICharacter>()") < 2:
+        issues.append("v2.15.40 SaveCharacter and LoadCharacter must both reject AARPGAICharacter account-slot access")
+    if not release_documented("v2.15.37-alpha — Stair Canonical 300 cm XY Landing Grid Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.37 Stair canonical 300 cm XY landing-grid root fix")
     if not release_documented("v2.15.22-alpha — Hosted Insert Structural Transparency + Wall Facing Continuity Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.22 hosted-insert structural transparency and wall-facing continuity fix")
     splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
     if splash not in rt215[:500]: issues.append("README GitHub splash must remain at the top of the document")

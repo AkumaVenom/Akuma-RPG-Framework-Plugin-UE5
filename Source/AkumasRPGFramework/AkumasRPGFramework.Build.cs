@@ -25,5 +25,10 @@ public class AkumasRPGFramework : ModuleRules
             "Niagara",
             "PhysicsCore"
         });
+
+        PrivateDependencyModuleNames.AddRange(new string[]
+        {
+            "Landscape"
+        });
     }
 }

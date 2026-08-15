@@ -4,6 +4,7 @@
 #include "Components/ARPGAISplineComponent.h"
 #include "Components/ARPGAISocialComponent.h"
 #include "Components/ARPGCombatComponent.h"
+#include "Components/ARPGPersistenceComponent.h"
 #include "Components/ARPGWandererComponent.h"
 #include "Components/ARPGSpawnEntranceComponent.h"
 
@@ -19,6 +20,15 @@ AARPGAICharacter::AARPGAICharacter()
     AIWanderer->bStayNearHome = true;
     AISocial->bEnableSocialInteractions = false; // Explicit opt-in preserves every existing NPC archetype.
     if (AICombat) AICombat->bEnabled = true;
+    if (Persistence)
+    {
+        // NPC state is owned by its spawner/world systems, not the player's account character slot.
+        // Keep these defaults off even though the base playable character enables persistence. Runtime
+        // guards in UARPGPersistenceComponent/UARPGSaveSubsystem provide a second safety layer.
+        Persistence->bAutoLoadOnBeginPlay = false;
+        Persistence->bAutoSave = false;
+        Persistence->bSaveOnEndPlay = false;
+    }
     if (Combat)
     {
         // NPC corpses use physical ragdoll automatically. A configured death montage is only

@@ -1,3 +1,151 @@
+## v2.15.40-alpha — Player-Only Character Persistence Scope / Relog Combat Recovery Fix
+
+- Fixed the proven relog root cause behind **enemies becoming untargetable and combat hits being discarded after loading back into the game**. `AARPGAICharacter` inherits `AARPGCharacter`, and therefore inherited the same `UARPGPersistenceComponent` used by the playable character. The component's auto-load path unconditionally read `UARPGAccountSubsystem::GetLastCharacterId()` for any ARPG Character owner, allowing spawned/reloaded AI to adopt the active player's CharacterId and call `LoadCharacter()` on the player's account save slot.
+- Because `LoadCharacter()` restores faction, stats, inventory, location, progression and other player state, an enemy that consumed that save could lose its authored enemy faction and become player-aligned/unresolved. Lock-on and `CanDamageActor()` then correctly rejected it from the corrupted runtime state, producing the paired symptom of **no target acquisition + no registered damage**.
+- Added a hard player-only persistence boundary in `UARPGPersistenceComponent`: AI owners no longer schedule account auto-load/auto-save timers and `SaveNow()` / `LoadNow()` reject AI owners even if called directly through the inherited component.
+- Added a second hard boundary in `UARPGSaveSubsystem::SaveCharacter()` / `LoadCharacter()` so an `AARPGAICharacter` cannot read or write an account character slot even if another system invokes the save subsystem directly.
+- `AARPGAICharacter` now disables inherited `bAutoLoadOnBeginPlay`, `bAutoSave`, and `bSaveOnEndPlay` defaults. NPC persistence remains the responsibility of spawner/world systems rather than the player's account-character save path.
+- Added regression guards proving account persistence remains enabled for player characters and is rejected for AI characters, including protection against `LastCharacterId` propagation into enemies on relog.
+- Preserves v2.15.39 reciprocal hostility/faction restoration hardening as defense-in-depth and leaves the v2.15.38 Stair/building code untouched. No reflected Blueprint API changes or Data Asset migration.
+
+## v2.15.39-alpha — Combat Targeting & Faction Integrity Recovery Fix
+
+- Fixed a shared combat/targeting failure where a character load containing an empty `PrimaryFactionId` could clear an already valid Blueprint-authored or `DefaultPlayerFactionId` runtime faction. Because both lock-on and hit permission depend on faction hostility, the same empty identity could make enemies impossible to target and cause `CanDamageActor()` to discard hits.
+- Character loading now applies a saved faction only when the save actually contains one. Empty/legacy faction ids preserve the already-authored runtime faction, or recover the configured `DefaultPlayerFactionId` when no runtime identity exists. Reputation restoration remains unchanged.
+- Fixed player-vs-AI hostility asymmetry: `CanDamageActor()` now recognizes hostility owned by the target AI as well as the attacker's AI. An NPC that explicitly considers the player hostile through faction rules, proactive fallback aggression, or retaliation is therefore a legitimate combat target from the player's side too.
+- Lock-on hostile filtering now distinguishes **Faction component exists** from **valid faction identity exists**. Missing/empty identities use the combat permission fallback instead of being treated as a resolved neutral relationship, and hostile target-AI intent is recognized.
+- Combat, targeting and character source were byte-identical between the pre-Stair baseline and v2.15.38; this release intentionally leaves the v2.15.38 building/Stair code unchanged and hardens the shared faction/hostility contract that can disable both systems together.
+- No reflected Blueprint API or build-piece Data Asset migration. Existing valid faction setups keep their authored behavior; friendly fire and neutral-damage profile settings remain authoritative unless the target AI itself explicitly considers the attacker hostile.
+
+## v2.15.38-alpha — Stair Tiled-Deck Overhang Seam Root Fix
+
+- Fixed the regression where a correctly snapped LOW-departure Wood Stair on a multi-tile Foundation/Floor deck could immediately report **Blocked by another object** after v2.15.37 moved Stair actor centres onto the canonical 300 cm structural grid.
+- Root cause: the Stair host itself was already ignored correctly, but `ARPGIsCompatibleStairHostStructuralNeighbor()` still returned `false` for **every** horizontal neighbour. The current 334 cm Stair intentionally overhangs its 300 cm structural flight by 17 cm at each end, so an immediately adjacent same-story Foundation/Floor/Ceiling cell can be returned by the Stair profile overlap even though it does not occupy the Stair travel cell.
+- Stair horizontal-neighbour validation now classifies the **structural flight cell** first. LOW-departure flights own the active host cell; HIGH-arrival flights own the neighbouring outside cell. A second horizontal module centred in that actual flight cell remains blocked.
+- Immediate same-story grid neighbours one 300 cm cell away are accepted only when the broad overlap is the intentional art/rail overhang seam. Different-story tiles, diagonal/non-grid tiles and true flight-cell occupancy are not legalized.
+- Preserves v2.15.37 canonical 300 cm Stair XY/Z snapping, v2.15.36 story planes, v2.15.31 Landscape terrain handling, Stair side Wall/Doorway seams, Stair-to-Floor/Ceiling landings, Doors, persistence and reflected APIs unchanged.
+
+## v2.15.37-alpha — Stair Canonical 300 cm XY Landing Grid Root Fix
+
+- Fixed the severe horizontal Stair/Floor/Wall drift visible in multi-storey Stair towers even after v2.15.36 corrected the Z story plane.
+- Root cause: Stair XY topology was still derived from the current Wood Stair's raw `334 cm` visual run. LOW/HIGH horizontal-host sockets aligned raw `±167 cm` mesh ends to `±150 cm` grid edges, shifting a LOW-departure Stair actor by 17 cm. Stair-owned Floor landing math then added another raw 317 cm endpoint-to-tile-edge offset, placing the next 300 cm Floor centre at 334 cm instead of 300 cm — a **34 cm XY error per storey**. Direct Stair-to-Stair chaining also advanced by 334 cm.
+- Horizontal Foundation/Floor/Ceiling → Stair sockets now use structural Stair anchors at `bounds centre ± SnapSize/2` (`±150 cm` for the current kit). The unchanged 334 cm Stair art overhangs those structural anchors by 17 cm at each end rather than moving the build grid.
+- Stair-to-Stair continuation now advances by the average structural SnapSize (`300 cm` for the current kit) and one `StandardWallHeight`, never raw mesh endpoint delta.
+- Stair → Floor/Ceiling landing centres now use structural half-grid sums (`150 + 150 = 300 cm`) around the Stair bounds centre. The tile bottom/story plane still uses the v2.15.36 canonical Z contract.
+- Preserves the v2.15.31 Landscape fix, segmented Stair collision, paired HIGH/LOW topology, Stair-side Wall/Doorway seams, Doors, Wall/Floor symmetry, persistence and reflected APIs. Existing pieces placed under old transforms are not silently moved; test with fresh Stair/Floor/Wall actors.
+
+## v2.15.36-alpha — Stair Canonical Story-Grid Landing & Wall Gap Root Fix
+
+- Fixed the severe visible gap/misalignment between Wall columns built through normal Foundation/Wall/Floor stacking and Wall columns built from Stair-created upper landings.
+- Root cause: v2.15.33-v2.15.35 aligned a Stair-owned Floor's **visible top** directly to the Stair's raw visual endpoint. With the current 278 cm Stair and 18 cm Floor this could put the Floor bottom/story plane at 260 cm instead of the kit's canonical 300 cm wall story, so individually valid Walls were separated by up to 40 cm.
+- Horizontal Stair sockets now use one canonical story plane: Foundation **top**, or Floor/Ceiling **bottom**. HIGH-arrival flights land their visual HIGH endpoint on that plane; LOW-departure flights place their visual HIGH endpoint one `StandardWallHeight` above it. The Stair mesh rise no longer defines storey height.
+- Direct Stair-to-Stair continuation advances by `StandardWallHeight` (300 cm in the current kit) instead of raw 278 cm endpoint delta, preventing 22 cm drift per chained flight.
+- Stair-owned Floor/Ceiling landing sockets now align the incoming tile **bottom/story plane** to the Stair structural landing plane. Historical limitation: v2.15.36 still used the raw 334 cm Stair endpoints for XY and therefore left a 34 cm horizontal drift in chained landing cells; v2.15.37 supersedes that XY contract with structural 300 cm anchors.
+- The current dimensions intentionally resolve as `300 - 278 = 22 cm` residual landing riser; with an 18 cm Floor the lower visual seam is only `4 cm`. No Stair scaling, Placement Offset or custom sockets are required.
+- Existing placed Stair/Floor actors retain their saved transforms; rebuild pieces created under the old raw-rise landing contract to test the corrected lattice. No reflected Blueprint API or save-schema migration was introduced.
+
+## v2.15.35-alpha — Stair Wall Structural-Anchor Side-Seam Root Fix
+
+- Fixed the remaining `Wall` / `WindowWall` / `Doorway` blocker beneath or beside an already-built upper Stair.
+- Root cause: v2.15.34 changed the reverse Stair-side classifier from the Wall actor snap origin to the transformed Wall logical-bounds centre. Wall-family snapping elsewhere in the framework is authored around the actor origin; meshes with `Mesh Relative Transform` or offset pivots can therefore have a visual/logical centre that is not on the +/-150 cm structural edge even though the snapped actor origin is correct.
+- `ARPGIsValidExistingStairWallSideSeamNeighbor()` now uses `IncomingFinal.GetLocation()` as the Wall structural anchor and transforms that point into Stair space. This matches Foundation/Floor wall sockets, vertical stacks and standard structural occupancy.
+- Longitudinal overlap now uses the incoming piece's `SnapSize / 2` structural span rather than decorative Wall bounds, preserving the useful v2.15.34 shared-landing/offset tolerance without letting mesh art redefine topology.
+- Keeps centreline and perpendicular end-wall conflicts blocked and preserves Stair chaining, Stair-to-Floor/Ceiling landings, Landscape terrain handling, Doors, multi-storey Wall/Floor seams and reflected APIs unchanged.
+
+## v2.15.34-alpha — Upper-Stair Wall & Doorway Side-Corridor Seam Fix
+
+- Fixed the remaining Stair-first reverse seam where a valid `Wall`, `WindowWall` or `Doorway` could still report **Blocked by another object** beneath/alongside an already-built upper Stair.
+- Root cause: v2.15.33 required the incoming Wall-family actor centre to match one of two exact `-17 cm / +17 cm` logical cell-centre offsets derived from the `334 cm` Stair overhang. Shared landings and Stair-chain ownership can legitimately centre the same grid-side wall between those offsets, so the Stair vetoed an otherwise correct Floor/Foundation snap.
+- Replaced exact-centre ownership with semantic side-corridor classification: parallel run axis, logical bounds centre on the Stair's `+/- HalfGrid` side plane, and genuine longitudinal overlap with the flight.
+- Full-story Walls/Doorways below an upper flight and at shared landings are now accepted in either build order. Perpendicular end walls across the travel path, centreline walls and unrelated parallel structures remain blocked.
+- Preserves v2.15.33 Stair-to-Floor/Ceiling landing sockets, v2.15.32 Stair chaining, v2.15.31 Landscape handling, segmented Stair occupancy, Doors, Walls/Floors, persistence and all reflected APIs unchanged.
+
+## v2.15.33-alpha — Stair Landing Floor & Wall Side-Seam Integration Polish
+
+- Completed the reverse Stair structural graph so an already-built Stair is now a native support for `Floor` / `Ceiling` landing tiles at both HIGH and LOW endpoints. The incoming tile extends away from the flight and aligns its visible top to the Stair endpoint walk plane, leaving the travel cell open instead of laying a full tile across the Stair.
+- Landing transforms use transformed visible bounds rather than a hard-coded 300 cm assumption. For the current `334 × 300 × 278` Wood Stair, the tile's near edge lands exactly on the Stair endpoint while its centre remains one half 300 cm tile beyond it, eliminating the 17 cm art-overhang drift.
+- Added reverse Stair-first Wall-family seam validation. An existing Stair may intentionally overlap a `Wall`, `WindowWall` or `Doorway` on either exact **parallel side edge** of the logical Stair cell, even when the Wall snapped from the underlying Foundation/Floor instead of the Stair.
+- The reverse side classifier derives both possible logical 300 cm cell centres from the Stair LOW/HIGH endpoints (`StairMin.X + HalfGrid` and `StairMax.X - HalfGrid`). This keeps both HIGH-arrival and LOW-departure flight topologies build-order symmetric on the current 334 cm art run.
+- Perpendicular end walls across LOW/HIGH travel openings, wrong-axis walls, duplicate flights and unrelated occupancy remain blocked. No global Stair collision bypass was added.
+- Retained v2.15.31 Landscape terrain classification and v2.15.32 paired landing/Stair-chain alignment unchanged.
+- Private source/docs update only: no reflected Blueprint API, Data Asset migration or save-schema change. Existing placed structures retain their transforms.
+
+## v2.15.32-alpha — Stair Landing Chain & Multi-Storey Alignment Polish
+
+- Added paired Stair landing sockets to every standard Foundation/Floor/Ceiling edge. The existing HIGH-end arrival/down-flight socket is preserved, and a new LOW-end departure/up-flight socket uses the **same edge center and yaw** so consecutive flights share one deterministic structural centerline.
+- Added native Stair-to-Stair endpoint chaining. `LOW(incoming) -> HIGH(target)` continues a flight upward and `HIGH(incoming) -> LOW(target)` continues downward with zero relative yaw, allowing Stair chains to be extended directly from either endpoint.
+- Made horizontal-host and Stair-host continuation mathematically identical at a shared landing. If a lower Stair already arrives at a Foundation/Floor edge, the host's LOW-departure candidate and the lower Stair's HIGH-end continuation candidate resolve to the same transform; build order cannot introduce XY/yaw drift between storeys.
+- Extended Stair capture to compatible Stair targets and added candidate-envelope affinity for the paired up/down horizontal sockets. This lets aiming inside/on the landing favor the rising departure flight while aiming outside/down favors the descending arrival flight without increasing global snap capture distance.
+- Updated Stair side-wall topology to detect whether the LOW or HIGH endpoint owns the horizontal host edge. HIGH-arrival flights use the neighbouring outside stairwell cell; LOW-departure flights use the host cell itself. Exact side seams remain valid while end walls, duplicate flights and genuine travel-path conflicts remain blocked.
+- Preserved v2.15.31 Landscape terrain classification, v2.15.26 segmented Stair occupancy, v2.15.27 shared broad/final occupancy, authority snap re-resolution, save compatibility and existing Stair Data Asset settings. No reflected Blueprint API or save-schema migration.
+
+## v2.15.31-alpha — Stair Landscape Terrain Classification Root Fix
+
+- Fixed the isolated-Foundation Wood Stair remaining **Blocked by another object** when the only non-build collision around the correct edge-landing socket is the Unreal Landscape. The placement channel is `WorldStatic`, the active Foundation/Floor/Ceiling snap target is already ignored, and Landscape collision components can conservatively report OBB overlap independently of the local height-field surface. Treating those component overlaps as ordinary discrete obstacles made a verified Stair socket stay red on normal terrain.
+- Added an explicit `ALandscapeProxy` terrain classification for **verified snapped Stairs only**. Once the Stair transform exactly matches a native Foundation/Floor/Ceiling candidate, Landscape contact cannot independently veto placement. This intentionally allows terrain embedding/blending for Stair approaches and avoids trying to infer precise terrain obstruction from Landscape component broad-phase overlap.
+- The exception is deliberately narrow: static-mesh rocks, cliffs, props, buildings and every other non-Landscape `WorldStatic` actor still pass through the strict sampled Stair support/obstruction test and normal blocker path. Build-piece structural occupancy, side-wall/end-wall rules, duplicate structures, ownership checks and authority re-acquisition are unchanged.
+- Added the engine `Landscape` module as a private dependency only; no reflected Blueprint API, Data Asset migration or save-schema change. The proven v2.15.25/v2.15.29 edge-landing transform is unchanged.
+
+## v2.15.30-alpha — Stair Continuous World Support Classification Root Fix
+
+- Fixed the persistent case where a correctly snapped edge-landing Wood Stair still reported **Blocked by another object** on terrain. The v2.15.29 support helper rejected a continuous WorldStatic/Landscape actor as soon as that same actor touched any Stair profile slice above slice 0, conflating terrain underneath the descending flight with an obstruction.
+- Replaced the blanket slice-index rejection with per-slice support-surface validation. For each Stair profile slice touched by a non-build WorldStatic actor, the framework samples the blocking surface vertically at the slice centre and both lateral positions. The contact is accepted only when the surface stays at or below that slice underside within the authored placement-clearance tolerance.
+- World geometry that rises materially into a Stair slice, overlaps only from the side/overhead, or cannot be proven as support beneath the touched slice remains **Blocked**. This preserves rock/cliff/world obstruction checks without moving the Stair or globally ignoring terrain.
+- Preserved the v2.15.25 edge-landing socket transform, v2.15.26 segmented Stair occupancy, v2.15.27 shared broad/final occupancy contract, Foundation/Floor/Ceiling host set, four cardinal sockets, side-wall structural seams, authority re-acquisition and existing editor data. No reflected Blueprint API or save-schema change.
+
+## v2.15.29-alpha — Stair Edge-Landing Foot Support Root Fix
+
+- Restored the intended Wood Stair **edge-landing** topology confirmed by the user's accepted snap-position screenshot: the Stair HIGH end/landing terminates on a Foundation/Floor/Ceiling edge and the flight extends outward/down into the neighbouring stairwell space. The temporary v2.15.28 low-end/inward socket was removed as the **only/replacement** standard socket because it displaced the proven ground-access topology. v2.15.32 later adds a LOW-end departure back as a second paired multi-storey socket while preserving this HIGH-arrival socket unchanged.
+- Identified the exact persistent blocker path in `EvaluatePlacementInternal()`: after the verified snap target was ignored correctly, any overlapping non-build actor skipped all structural seam logic and fell directly to the generic `Blocked` return. On the isolated Foundation reproduction, the remaining overlap is the terrain/WorldStatic surface touching the Stair LOW foot.
+- Added `ARPGIsValidStairLowFootWorldSupport()`, a strict non-build support seam that runs before the generic blocker. It accepts only the LOWEST Stair profile slice touching the supporting world actor, requires a short vertical trace through the low-foot plane to hit that same actor within one profile-slice height, and requires an upward walkable normal.
+- A world actor that reaches any higher Stair profile slice remains blocked, so rocks/cliffs/walls intersecting the travel path are not legalized. Build-piece occupancy, horizontal stairwell blockers, end walls and ownership/access checks are unchanged.
+- Retained the v2.15.26 segmented Stair profile and v2.15.27 shared broad/final occupancy geometry so Stair collision remains slope-shaped and consistent.
+- Added model regressions for the current `334 × 300 × 278` Wood Stair proving the high landing lands at the host edge, the low end extends outward/down, only first-slice world support is tolerated, and the final placement path calls the low-foot support classifier before generic blocking.
+- Private runtime/source fix only: no reflected Blueprint API, Data Asset migration or save-schema change. Existing placed Stairs retain their saved transforms; place a fresh Stair for PIE acceptance.
+
+## v2.15.28-alpha — Stair Low-End Edge-Start Socket Root Fix
+
+> Historical note: v2.15.29 supersedes this socket interpretation. PIE confirmed that the desired Stair topology is the v2.15.25 edge-landing/high-end socket; the persistent blocker was a separate non-build WorldStatic low-foot support-classification gap.
+
+- Fixed the actual Stair placement regression introduced in v2.15.25. The original Stair contract aligned the incoming Stair **bottom** to the supporting Foundation/Floor/Ceiling top, but v2.15.25-v2.15.27 changed the edge socket to align the Stair **high/top end** to that same support. A full-story Stair therefore extended downward from the host and could penetrate Landscape/world-static terrain, correctly causing the generic placement validator to return `Blocked by another object`.
+- Retained deterministic four-edge Stair snapping while restoring the correct vertical contract: the Stair **low end** is anchored to the selected host perimeter edge, the Stair bottom is aligned to the host top surface, and local `+X` rises inward/upward across the host cell.
+- Updated Stair side-wall seam classification to use the verified host cell rather than the obsolete fabricated outward/down stairwell cell from v2.15.25-v2.15.27. End-wall and genuine profile obstruction rules remain strict.
+- Preserved the v2.15.26 segmented Stair occupancy profile and v2.15.27 shared broad/final occupancy contract. Those systems now validate the corrected upward Stair transform instead of trying to compensate for a downward socket.
+- Added a regression for the current `334 × 300 × 278` Wood Stair proving that, even on a low Foundation top, the low end remains exactly on the host top and the high end is `+278` above it rather than being pushed below terrain.
+- Private runtime/source fix only: no reflected Blueprint API, Data Asset migration or save-schema change. Existing placed Stairs retain saved transforms; place a fresh Stair to test the corrected socket.
+
+## v2.15.27-alpha — Stair Query/Final Occupancy Consistency Root Fix
+
+- Fixed the exact source inconsistency that made v2.15.26 appear unchanged in PIE. `ARPGGatherPlacementOverlaps()` correctly queried a Stair as eight low-to-high profile slices, but `ARPGPlacementVolumesOverlapMeaningfully()` later rebuilt the incoming Stair as one full `PlacementBounds` OBB whenever a neighbouring build actor was encountered. The final blocker decision could therefore return the same false `Blocked by another object` result even though the broad Stair query had been fixed.
+- Added one shared `ARPGBuildPlacementOccupancyOBBs()` geometry contract. Standard pieces produce one authored OBB; Stairs produce the segmented diagonal profile. Both broad overlap gathering and final build-vs-build occupancy validation now consume those same primitives.
+- Final neighbour validation is now profile-to-profile/profile-to-OBB when either side is a Stair, so decorative collision from an adjacent Foundation/Floor can be discovered by physics without the empty Stair AABB being treated as meaningful structural penetration afterward. Genuine geometry occupying the Stair profile remains blocked.
+- Added a regression that explicitly inspects the final blocker function and fails if it recreates the incoming Stair with `ARPGMakePlacementOBB()` instead of the shared occupancy-profile helper.
+- Private runtime/source change only: no reflected Blueprint API, Data Asset migration or save-schema change. Updated README, Building guide, Quick Start, Feature Matrix and Validation notes accordingly.
+
+## v2.15.26-alpha — Stair Profile Collision Root Fix
+
+- Fixed the remaining Wood Stair placement failure where the Stair snapped to the correct Foundation/Floor/Ceiling edge but still returned `Blocked by another object`. The root cause was the generic placement validator treating the Stair's full rectangular `PlacementBounds` envelope as solid occupancy even though a Stair is a sloped traversal shape. Empty triangular space under/above the Stair could therefore overlap terrain, foundation skirts or decorative modular trim and falsely reject an otherwise correct snap.
+- Added a Stair-specific deterministic collision profile composed of eight small oriented box slices following the logical low-to-high run (`local +X = uphill`, `local +Z = up`). The authored Placement Bounds remain the broad envelope, but blocker queries now follow the actual Stair slope instead of filling the entire 334×300×278 box.
+- Clearance is applied to each profile slice, including the low foot and high landing, so flush contact at terrain/landing seams does not become a false blocker. Real geometry intersecting the Stair path is still returned by the profile and continues through the existing structural/ownership/blocker rules.
+- The change is private runtime logic only: no reflected Blueprint API, Data Asset migration or save-schema change. Preview and server authority share the same collision-profile path through `EvaluatePlacementInternal`.
+- Updated Settlement Building docs, Quick Start, Feature Matrix, Validation and regression coverage for the Stair profile contract.
+
+## v2.15.25-alpha — Stair Edge-Landing Snap Transform Root Fix
+
+- Fixed the remaining Wood Stair failure exposed in PIE: v2.15.24 could acquire a Foundation/Floor/Ceiling and turn green, but the native transform still placed the Stair **across the middle/top of the host cell**. The problem was the socket itself, not capture. Standard Stair sockets are now generated on the host's four edges.
+- Added a clear logical Stair convention after `Mesh Relative Transform`: local `+X` is uphill/toward the upper landing, local `Y` is width and local `+Z` is up. The transformed high-end center is aligned to the selected host edge, while the Stair visible top is aligned to the host visible top. The Stair therefore extends outward/down into the neighbouring stairwell cell instead of floating above the host.
+- Kept Foundation/Floor/Ceiling as the flat native Stair host family and kept Roof excluded. Support/candidate-envelope capture now works with the corrected edge-landing candidates, so aiming at the landing edge or down the Stair run can acquire the intended socket without increasing global snap magnetism.
+- Tightened Stair collision semantics for the corrected topology. Same-plane horizontal tiles are no longer auto-whitelisted because a tile in the stairwell cell closes the opening. Only exact Wall/WindowWall/Doorway side seams parallel to the run are accepted; low/high end walls remain blockers.
+- Current Wood Stair editor dimensions remain `334 × 300 × 278` with `Placement Bounds = 167,150,139`, `Snap Size = 300`, zero Placement Offset and standard snap points. If imported art rises toward local `-X`, adapt it once with a 180° `Mesh Relative Transform` yaw rather than authoring fake offsets/custom sockets.
+- Added regression coverage for edge-socket geometry, high-end/top alignment, support/run-envelope capture, side-wall classification, authority candidate matching and preservation of the v2.15.23/v2.15.24 building baseline. No reflected Blueprint API or save-schema migration is required.
+
+## v2.15.24-alpha — Wood Stair Structural Snap & Host Seam Polish
+
+- Fixed standard `Stair` pieces remaining at `Needs structural support / snap point` even while the player aimed naturally at a compatible Foundation/Floor/Ceiling. The native Stair socket already existed, but capture was still dominated by the generated Stair actor origin; on a 300-unit module that invisible centre can sit beyond the default 140 cm capture distance from the support edge. Stair acquisition now measures against the **support bounds**, the transformed incoming Stair candidate envelope, and the exact candidate origin, while leaving the authored socket transform and global capture radius unchanged.
+- Centralized the native Stair support family as `Foundation`, `Floor` and `Ceiling`; generic `Roof -> Stair` remains intentionally excluded because pitched/kit-specific roofs need authored custom sockets rather than the flat standard Stair contract. Authority still re-resolves the same native candidate from the snapped transform, so local preview does not bypass server validation.
+- Added verified Stair-host seam validation for real modular rooms. A Stair hosted by one horizontal cell may coexist with that host's immediate same-plane horizontal neighbours and with Wall/WindowWall/Doorway pieces on the two **side edges parallel to the Stair run**. This handles full-width/overhanging Stair art such as the current 334×300 Wood Stair on a 300 grid without shrinking collision globally. Walls across the Stair's +/-X bottom/top travel opening remain normal blockers, so the update does not create a generic clipping bypass.
+- Added settlement regression coverage for support-aware Stair capture, the current 334×300×278 Wood Stair dimensions, side-wall compatibility, end-wall rejection, and preservation of all v2.15.23 Foundation/Wall/Doorway/Door/Floor/multi-storey behavior. No reflected Blueprint API or save-schema migration is required.
+
 ## v2.15.23-alpha — Multi-Cell Native Wall Facing Root Fix
 
 - Fixed the remaining 180-degree Wall/WindowWall/Doorway inversion when building a real footprint from the inside across two or more adjacent Foundation/Floor cells. The previous post-snap facing pass reconstructed wall art orientation from an assumed actor-local front axis and could still preserve/propagate the wrong side when multiple structural candidates existed.

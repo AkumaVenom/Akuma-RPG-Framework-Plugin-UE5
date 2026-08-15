@@ -628,13 +628,21 @@ bool UARPGCombatComponent::CanDamageActor(AActor* Target) const
 
     const int32 Relationship = Mine->GetBaseRelationshipTo(Theirs);
 
-    // AI retaliation/assist can intentionally create temporary hostility against an otherwise neutral
-    // or unresolved faction target. This keeps a passive creature capable of actually fighting back
-    // even when its class profile normally disallows neutral damage. Explicit friendship is still
-    // protected unless the AI Combat component was configured to retaliate against friendly attackers.
+    // Either side may own the authoritative aggression state. NPC retaliation/proactive hostility is
+    // stored on the NPC AI component, while a player normally has no meaningful AI hostility state.
+    // Before v2.15.39 CanDamageActor only checked the ATTACKER's AI component, so a hostile NPC could
+    // be actively attacking a player while the player's combat component still classified that NPC as
+    // neutral and discarded every hit. Preserve explicit friendship unless the target AI itself has
+    // deliberately classified this actor as hostile (which already respects its friendly-retaliation
+    // settings inside IsTargetConsideredHostile()).
     if (const UARPGAICombatComponent* AICombat = GetOwner()->FindComponentByClass<UARPGAICombatComponent>())
     {
         if (AICombat->bEnabled && AICombat->IsTargetConsideredHostile(Target))
+            return true;
+    }
+    if (const UARPGAICombatComponent* TargetAI = Target->FindComponentByClass<UARPGAICombatComponent>())
+    {
+        if (TargetAI->bEnabled && TargetAI->IsTargetConsideredHostile(GetOwner()))
             return true;
     }
 

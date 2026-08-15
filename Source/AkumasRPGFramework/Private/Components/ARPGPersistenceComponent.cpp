@@ -2,8 +2,24 @@
 #include "Subsystems/ARPGSaveSubsystem.h"
 #include "Subsystems/ARPGAccountSubsystem.h"
 #include "Actors/ARPGCharacter.h"
+#include "Actors/ARPGAICharacter.h"
 #include "Engine/GameInstance.h"
 #include "TimerManager.h"
+
+namespace
+{
+    /**
+     * Account character persistence belongs to the playable character only. AARPGAICharacter inherits
+     * AARPGCharacter (and therefore this component), but an NPC must never consume the account's
+     * LastCharacterId or read/write the player's character save slot. Doing so makes spawned/reloaded
+     * enemies inherit player faction/state, which simultaneously breaks hostile lock-on and damage.
+     */
+    bool ARPGIsAccountCharacterPersistenceOwner(const AActor* Owner)
+    {
+        const AARPGCharacter* Character = Cast<AARPGCharacter>(Owner);
+        return Character && !Character->IsA<AARPGAICharacter>();
+    }
+}
 
 UARPGPersistenceComponent::UARPGPersistenceComponent() { PrimaryComponentTick.bCanEverTick = false; }
 
@@ -11,12 +27,14 @@ void UARPGPersistenceComponent::BeginPlay()
 {
     Super::BeginPlay();
     if (!GetOwner() || (GetOwner()->GetNetMode() == NM_Client && !GetOwner()->HasAuthority())) return;
+    if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return;
     if (bAutoLoadOnBeginPlay && GetWorld()) GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad);
     if (bAutoSave && AutoSaveIntervalSeconds > 0.f && GetWorld()) GetWorld()->GetTimerManager().SetTimer(AutoSaveTimer, this, &UARPGPersistenceComponent::HandleAutoSave, AutoSaveIntervalSeconds, true);
 }
 
 void UARPGPersistenceComponent::AttemptAutoLoad()
 {
+    if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return;
     if (AARPGCharacter* Character = Cast<AARPGCharacter>(GetOwner()))
     {
         if (UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
@@ -54,12 +72,14 @@ void UARPGPersistenceComponent::HandleAutoSave() { SaveNow(); }
 
 bool UARPGPersistenceComponent::SaveNow()
 {
+    if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return false;
     UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr; UARPGSaveSubsystem* Saves = GI ? GI->GetSubsystem<UARPGSaveSubsystem>() : nullptr;
     return Saves && GetOwner() ? Saves->SaveCharacter(GetOwner()) : false;
 }
 
 bool UARPGPersistenceComponent::LoadNow()
 {
+    if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return false;
     UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr; UARPGSaveSubsystem* Saves = GI ? GI->GetSubsystem<UARPGSaveSubsystem>() : nullptr;
     return Saves && GetOwner() ? Saves->LoadCharacter(GetOwner()) : false;
 }

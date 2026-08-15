@@ -26,6 +26,8 @@ The local verifier exists to separate/protect local profiles. It is not a public
 
 After login, the framework can register a character ID to the current account. The persistence component can use the last character ID on the next login/load so the correct character state is restored automatically.
 
+From v2.15.40 this account-character path is **player-character only**. `AARPGAICharacter` shares the RPG component stack for gameplay, but it cannot consume `LastCharacterId` and cannot call the account `SaveCharacter` / `LoadCharacter` path. NPC state is owned by its spawner/world systems. This prevents relogged enemies from aliasing the player save slot and inheriting the player's faction/combat identity.
+
 ## Server authority
 
 Inventory mutation, Quick Access assignment/selection/use, equipment switching, currency transactions, quest acceptance/completion, Slayer assignments, building placement, crafting, vendor transactions, battle-pet battle state and similar gameplay mutations are intended to execute on the server.

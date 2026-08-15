@@ -37,6 +37,12 @@ The selected actor is also sent to `ARPGCombatComponent::CombatTarget`. In multi
 
 This means a typical game should author a negative relationship between the Player faction and enemy factions. Set `Only Hostile Targets` false if your game intentionally permits locking neutral/damageable actors.
 
+## v2.15.40 relog target-integrity fix
+
+Lock-on candidate filtering itself was not the relog root cause. The inherited player `Persistence` component could run on `AARPGAICharacter`, assign the account `LastCharacterId`, and load the player's character save into an enemy. That corrupted the enemy's runtime faction/state before targeting evaluated it. v2.15.40 makes account character persistence player-only, so reloaded/spawned NPCs retain their authored/spawner faction and remain valid hostile candidates after relog.
+
+From v2.15.39, hostile filtering also handles two runtime integrity cases: an empty/unresolved faction identity no longer counts as a resolved neutral relationship merely because both actors own Faction components, and an NPC AI that explicitly considers the player hostile can be reciprocally lockable even when the base faction relation is temporarily neutral/unknown.
+
 ## Target marker
 
 The marker is automatic and local to the owning player's UI. Remote clients do not spawn another player's target marker.

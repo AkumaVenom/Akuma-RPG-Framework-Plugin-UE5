@@ -1,7 +1,9 @@
 #include "Subsystems/ARPGSaveSubsystem.h"
+#include "ARPGDeveloperSettings.h"
 #include "Subsystems/ARPGAccountSubsystem.h"
 #include "Save/ARPGSaveGame.h"
 #include "Actors/ARPGCharacter.h"
+#include "Actors/ARPGAICharacter.h"
 #include "Actors/ARPGDungeonManager.h"
 #include "Building/ARPGBuildPieceActor.h"
 #include "Building/ARPGBuildDoorActor.h"
@@ -149,7 +151,9 @@ FString UARPGSaveSubsystem::MakeWorldSlotName(FString WorldId) const
 bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverride)
 {
     AARPGCharacter* Character = Cast<AARPGCharacter>(CharacterActor);
-    if (!Character || (Character->GetNetMode() == NM_Client && !Character->HasAuthority())) return false;
+    // Account character slots are strictly player-character persistence. AI inherits AARPGCharacter for
+    // shared RPG systems, but saving an NPC here can overwrite/alias the active player's account slot.
+    if (!Character || Character->IsA<AARPGAICharacter>() || (Character->GetNetMode() == NM_Client && !Character->HasAuthority())) return false;
     Character->EnsureCharacterId();
     UARPGSaveGame* Save = Cast<UARPGSaveGame>(UGameplayStatics::CreateSaveGameObject(UARPGSaveGame::StaticClass())); if (!Save) return false;
     if (UARPGAccountSubsystem* Accounts = GetGameInstance() ? GetGameInstance()->GetSubsystem<UARPGAccountSubsystem>() : nullptr)
@@ -178,7 +182,8 @@ bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverr
 
 bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverride)
 {
-    AARPGCharacter* Character = Cast<AARPGCharacter>(CharacterActor); if (!Character) return false;
+    AARPGCharacter* Character = Cast<AARPGCharacter>(CharacterActor);
+    if (!Character || Character->IsA<AARPGAICharacter>()) return false;
     if (!Character->CharacterId.IsValid() && SlotOverride.IsEmpty()) return false;
     if (Character->GetNetMode() == NM_Client && !Character->HasAuthority()) return false;
     const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotName(Character->CharacterId) : SlotOverride;
@@ -212,7 +217,27 @@ bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverr
     if (Character->Skills) Character->Skills->ReplaceSkills(D.Skills);
     if (Character->Crafting) Character->Crafting->RestoreCraftingSaveState(D.PersonalCraftingState);
     if (Character->Slayer) Character->Slayer->RestoreSlayerState(D.SlayerTask, D.SlayerPoints, D.SlayerStreak);
-    if (Character->Faction) { Character->Faction->SetPrimaryFactionId(D.PrimaryFactionId); Character->Faction->ReplaceReputation(D.Reputation); }
+    if (Character->Faction)
+    {
+        // Never let an old/partial character save with an empty faction id erase a valid authored or
+        // developer-default player faction. AARPGCharacter::BeginPlay/PossessedBy establishes that
+        // runtime identity before persistence runs; calling SetPrimaryFactionId(NAME_None) here used
+        // to clear it again. That turns every factioned enemy into a neutral/unresolved relationship,
+        // which simultaneously makes lock-on acquisition fail and CanDamageActor reject combat hits.
+        if (!D.PrimaryFactionId.IsNone())
+        {
+            Character->Faction->SetPrimaryFactionId(D.PrimaryFactionId);
+        }
+        else if (Character->Faction->GetPrimaryFactionId().IsNone())
+        {
+            if (const UARPGDeveloperSettings* Settings = GetDefault<UARPGDeveloperSettings>())
+            {
+                if (!Settings->DefaultPlayerFactionId.IsNone())
+                    Character->Faction->SetPrimaryFactionId(Settings->DefaultPlayerFactionId);
+            }
+        }
+        Character->Faction->ReplaceReputation(D.Reputation);
+    }
     if (Character->Currencies) Character->Currencies->ReplaceBalances(D.Currencies);
     if (Character->BattlePets) Character->BattlePets->ReplacePetState(D.BattlePets, D.BattlePetTeam);
     if (Character->Mounts) Character->Mounts->ReplaceMountState(D.Mounts);

@@ -1,4 +1,4 @@
-# Settlement Building, Storage & Production — v2.15.23
+# Settlement Building, Storage & Production — v2.15.38
 
 v2.15 promotes the framework's original low-level build actors into a complete player-facing settlement workflow. The gameplay state is authoritative; the placement ghost and menus are local presentation.
 
@@ -16,7 +16,7 @@ The standard build-piece kinds are:
 
 Common pieces need **no build-actor Blueprint**. Assign a mesh on an `ARPGBuildPieceDefinition` and leave `Actor Class` empty; the framework chooses the native build actor. `Door`, `Storage` and `Production` automatically choose their specialised native actors.
 
-### Current structural baseline — v2.15.23
+### Current structural baseline — v2.15.38
 
 The standard authored workflow is now:
 
@@ -197,6 +197,52 @@ Build Cost = Wood/Logs ×2   (example balance)
 
 Keep `Snap Size` and `Standard Wall Height` identical to the rest of the modular kit. Do not add a Z offset to compensate for slab thickness; upper Wall-family pieces intentionally use the slab's bottom/story plane so a thin Floor does not create a facade gap.
 
+### Wood Stair example — 334 × 300 × 278 on the 300 grid
+
+For the current Wood Stair mesh, a clean editor starting point is:
+
+```text
+Piece Kind = Stair
+Snap Placement = True
+Requires Snap Target = True
+Requires Support = True
+Allow Ground Placement = False
+Require Mostly Flat Ground = False
+Generate Standard Snap Points = True
+Rotation Step Degrees = 90
+Placement Offset = 0,0,0
+Placement Bounds = 167,150,139
+Snap Size = same 300-unit structural grid
+Standard Wall Height = same value as the Wall/Floor kit
+Build Cost = Wood/Logs ×3   (example balance)
+```
+
+The standard flat Stair landing family is **Foundation / Floor / Ceiling**. Roof is not a generic Stair host because pitched/irregular roof kits need authored custom sockets. Completed **Stair** pieces are also native Stair-chain/landing targets in v2.15.37.
+
+v2.15.38 keeps the proven **edge-landing traversal module** and the v2.15.37 canonical 300 cm XY/Z lattice, while also separating the Stair's structural flight cell from its visual overhang. Both horizontal and vertical placement remain structural rather than art-driven. After `Mesh Relative Transform`, local `+X` is uphill. Foundation/Floor/Ceiling edges still expose both HIGH-arrival and LOW-departure candidates on the same XY centerline, but their Z is derived from the kit's `Standard Wall Height` instead of the Stair mesh rise.
+
+- **HIGH-end arrival** — the Stair HIGH end lands on the host's canonical story plane. For a Foundation that plane is its visible top; for an upper Floor/Ceiling it is the slab **bottom/story plane**. The flight extends outward/down.
+- **LOW-end departure** — the Stair rises inward/up and its visual HIGH endpoint is placed exactly one `Standard Wall Height` above the host story plane. For the current `278 cm` Stair on a `300 cm` story, the visual LOW endpoint therefore sits `22 cm` above the structural lower landing.
+
+For XY topology, the Stair's **structural** LOW/HIGH anchors are `±150 cm` around the transformed Stair bounds centre (`Snap Size / 2`), not the raw `±167 cm` visual mesh ends. The mesh therefore overhangs the 300 cm flight cell by `17 cm` at both ends. This is intentional art overlap and must never move structural actors off-grid.
+
+That `22 cm` residual is intentional modular stair-riser space, not storey drift. With the current `18 cm` Floor, the Stair LOW art sits only about `4 cm` above the lower Floor walking surface (`22 - 18 = 4`). The Stair mesh therefore does **not** need to be scaled to 300 cm and no manual Placement Offset is required.
+
+On a tiled deck, the active Foundation/Floor/Ceiling host is still the structural owner of the Stair socket. The current 334 cm Stair extends 17 cm beyond each end of its 300 cm flight cell, so its segmented occupancy can touch an immediately adjacent same-story deck tile. v2.15.38 treats that neighbour as a compatible modular seam **only when its cell is one grid step away from the Stair flight cell**. A horizontal tile centred in the actual flight cell remains blocked because it would close the stairwell/travel volume. This keeps large contiguous Foundation/Floor platforms buildable without weakening true Stair obstruction rules.
+
+Completed Stairs also keep direct up/down chaining, but the chain now advances exactly **one structural cell** in both axes: `300 cm` horizontally and one `Standard Wall Height` vertically. The raw 334 cm art run is never used as a chain step, so multi-flight towers cannot accumulate 34 cm horizontal drift per storey.
+
+A completed Stair exposes native **Floor/Ceiling** sockets at both structural endpoints. v2.15.37 makes those endpoints grid-owned rather than art-owned: the 334 cm visual Stair is treated as a 300 cm structural flight centred inside its cell, leaving 17 cm of intentional art overhang at each end. A Stair-owned Floor/Ceiling centre is therefore exactly one 300 cm cell beyond the Stair actor centre, while the incoming tile's **bottom/story plane** aligns to the canonical landing Z. This keeps Stair-built Floors aligned with ordinary Foundation/Floor cells in both XY and Z.
+
+Stair-first enclosure remains side-corridor based. Existing Stairs do not veto a `Wall`, `WindowWall` or `Doorway` beside or beneath an upper flight when that Wall-family piece is snapped to the correct Foundation/Floor edge. The reverse seam uses the **Wall actor snap origin** as the structural edge anchor and the piece `SnapSize` as its structural longitudinal span, so mesh-relative/pivot offsets cannot redefine topology.
+
+v2.15.31's Landscape fix remains active. Unreal **Landscape** is terrain for a Stair that already matches a verified native landing/chain socket, while discrete non-Landscape WorldStatic actors (rocks, cliffs, static-mesh props, etc.) still use strict per-slice support/obstruction validation.
+
+Stair capture remains support-aware and candidate-envelope-aware. For the paired horizontal sockets, aiming inside/on the host cell favors the LOW-departure/up-flight candidate, while aiming outside/down favors the HIGH-arrival/down-flight candidate. Stair-to-Stair targeting also uses the target Stair bounds and candidate envelope. Do **not** enlarge the global capture radius just to make Stairs work.
+
+The v2.15.26 segmented diagonal Stair occupancy profile and v2.15.27 shared broad/final occupancy contract remain active. Standard pieces still use one logical OBB; Stairs use low-to-high profile slices so empty space around the slope is not treated as solid occupancy.
+
+Collision remains structural rather than permissive. The active snap target is ignored, exact native endpoint neighbours are accepted, and Wall-family side seams are derived from the endpoint that owns the horizontal landing edge. End walls, duplicate Stairs, horizontal tiles genuinely closing the travel path, rocks/cliffs penetrating the Stair profile, and other real obstructions remain blockers.
 
 Repeat the same structural definitions for Stone/Metal while changing Build Mesh, costs, health, construction duration and material tier.
 
@@ -233,10 +279,11 @@ The native snap graph covers the ordinary modular relationships automatically:
 - WindowWall → Window insert
 - Doorway → Door insert
 - Roof → neighbouring Roof
-- horizontal modules → Stair orientations
+- Foundation / Floor / Ceiling → four cardinal **paired Stair landing anchors**: HIGH-arrival/down-flight plus LOW-departure/up-flight on each edge (Roof excluded from the flat standard contract)
+- Stair → Stair → endpoint continuation in both directions: LOW(incoming) → HIGH(target) and HIGH(incoming) → LOW(target)
 - Pillar → wall-family connections
 
-The local preview searches nearby completed build actors and chooses the closest compatible snap transform inside `Snap Capture Distance`.
+The local preview searches nearby completed build actors and chooses the closest compatible snap transform inside `Snap Capture Distance`. Upper horizontal tiles capture against their candidate envelope; Stairs additionally capture against compatible Foundation/Floor/Ceiling or Stair target bounds and rank by the candidate envelope, so paired landing/chain sockets can be selected without targeting an invisible pivot.
 
 **The server performs the snap and placement validation again.** A locally green ghost is prediction/presentation, not authority.
 

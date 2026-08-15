@@ -51,7 +51,7 @@ require(build_cpp, 'PrimaryComponentTick.bStartWithTickEnabled = false', 'SetCom
 # Ground placement is mesh-pivot aware: bottom-center of the real Build Mesh is anchored to the surface,
 # while collision/support validation uses the corresponding visible bounds center/bottom rather than actor origin.
 require(build_cpp, 'ARPGGetBuildPieceBottomAnchorLocal', 'ARPGGetBuildPieceBoundsCenterLocal',
-        'Hit.ImpactPoint - DesiredRotation.RotateVector(BottomAnchorLocal)', 'PlacementBoundsCenter',
+        'Hit.ImpactPoint - DesiredRotation.RotateVector(BottomAnchorLocal)', 'ARPGBuildPlacementOccupancyOBBs',
         'BottomAnchor + FVector::UpVector * ProbeLift', 'Grid-snap the visible footprint anchor')
 # v2.15.3 mesh-orientation adaptation: transformed bounds are used by placement and snapping,
 # while preview/final visuals receive the same Data Asset relative transform.
@@ -189,7 +189,7 @@ assert 'const_cast<AARPGBuildPieceActor*>' not in build_cpp
 # same physical tile with cardinal yaw differences; rotation equivalence is accepted only when the
 # placement footprint is physically unchanged (square for 90 degrees, any rectangle for 180).
 require(build_cpp, 'ARPGIsUpperHorizontalStructuralKind', 'ARPGDistanceSquaredToDefinitionBoundsAtTransform',
-        'HorizontalFootprintDistSq', 'bHorizontalFootprintCapture',
+        'CandidateEnvelopeDistSq', 'bHorizontalFootprintCapture',
         'ARPGRotationsPreservePlacementFootprint',
         'Piece->PlacementBounds.X - Piece->PlacementBounds.Y',
         'same physical slot can be advertised')
@@ -217,6 +217,315 @@ assert rotations_preserve_footprint(150.0,150.0,90.0)
 assert rotations_preserve_footprint(150.0,150.0,180.0)
 assert not rotations_preserve_footprint(150.0,300.0,90.0)
 assert rotations_preserve_footprint(150.0,300.0,180.0)
+
+# v2.15.24-v2.15.33 Stair regression: Foundation/Floor/Ceiling provide paired landing sockets,
+# while Stair itself provides endpoint-chain sockets. A horizontal edge now supports both the proven
+# HIGH-arrival/down-flight topology and a LOW-departure/up-flight topology on the exact same centerline.
+# This lets a lower Stair arrive at a Foundation/Floor edge and the next Stair depart that edge without
+# lateral/yaw drift. Stair HIGH/LOW endpoints can also chain directly when no horizontal landing owns
+# the junction. v2.15.31 Landscape classification remains part of the validated placement path.
+require(build_cpp, 'ARPGIsStairSupportSnapPair', 'ARPGIsStairChainSnapPair', 'ARPGIsAnyStairSnapPair',
+        'bStairSupportSnapPair', 'bStairChainSnapPair', 'bAnyStairSnapPair', 'StairTargetAimDistSq',
+        'CandidateAffinitySq', 'ARPGIsCompatibleStairHostStructuralNeighbor',
+        'ARPGTransformMatchesStairHostCandidate', 'bLowEndOwnsHostEdge', 'StairCellCenter',
+        'bOnSideEdge', 'bParallelToStairRun', 'ARPGGatherPlacementOverlaps',
+        'ARPGBuildPlacementOccupancyOBBs', 'StairProfileSliceCount', 'ARPGIsLandscapeTerrainActor',
+        'ALandscapeProxy', 'ARPGIsValidStairWorldSupportContact', 'SurfaceAboveSliceBottom',
+        'bFoundSupportingSurface', 'SideOffsets')
+require(actor_cpp, 'IncomingKind == EARPGBuildPieceKind::Stair && TargetKind != EARPGBuildPieceKind::Roof',
+        'IncomingStairHalfRun', 'StairHighStructuralXYLocal', 'StairLowStructuralXYLocal', 'TargetStoryPlaneZ',
+        'StairHighArrivalAlignedZ', 'StairLowDepartureAlignedZ', 'HighArrivalTranslation', 'LowDepartureTranslation',
+        'Stairs are visual traversal art inside the structural story grid',
+        'TargetKind == EARPGBuildPieceKind::Stair && IncomingKind == EARPGBuildPieceKind::Stair',
+        'ChainStep', 'CenterDeltaX', 'ContinueUpZ', 'ContinueDownZ', 'FVector(CenterDeltaX + ChainStep, 0.f, ContinueUpZ)', 'FVector(CenterDeltaX - ChainStep, 0.f, ContinueDownZ)',
+        'IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Ceiling',
+        'LandingCenterOffset', 'HighLandingTranslation', 'LowLandingTranslation', 'completed Stair exposes flat landing CELLS',
+        'local +X = uphill')
+require(build_cpp, 'ARPGIsValidExistingStairWallSideSeamNeighbor', 'bOnSidePlane',
+        'WallHalfRun', 'LongitudinalOverlap', 'WallAnchorInStair',
+        'IncomingFinal.GetLocation()', 'Reverse Stair-side seam', 'ARPGYawAxesEquivalent(ExistingStair->GetActorRotation().Yaw, IncomingFinal.Rotator().Yaw)')
+
+# v2.15.27 occupancy regression remains required: the final build-vs-build blocker check must consume
+# the SAME Stair profile primitives as the broad overlap query.
+meaningful_start=build_cpp.index('static bool ARPGPlacementVolumesOverlapMeaningfully(')
+meaningful_end=build_cpp.index('/**', meaningful_start)
+meaningful_body=build_cpp[meaningful_start:meaningful_end]
+assert 'ARPGBuildPlacementOccupancyOBBs(IncomingPiece, IncomingFinal, IncomingVolumes)' in meaningful_body
+assert 'ARPGBuildPlacementOccupancyOBBs(Neighbor->Definition, Neighbor->GetActorTransform(), NeighborVolumes)' in meaningful_body
+assert 'ARPGMakePlacementOBB(IncomingPiece, IncomingFinal)' not in meaningful_body
+
+gather_start=build_cpp.index('static void ARPGGatherPlacementOverlaps(')
+gather_end=build_cpp.index('static bool ARPGWallOccupiesHorizontalStructuralEdge(', gather_start)
+gather_body=build_cpp[gather_start:gather_end]
+assert 'ARPGBuildPlacementOccupancyOBBs(Piece, Final, OccupancyVolumes)' in gather_body
+
+# v2.15.37 canonical Stair XY+Z lattice regression. The visual Stair is 334 cm long x 300 cm wide x
+# 278 cm high, but the STRUCTURAL flight cell is exactly 300 cm long x 300 cm wide x 300 cm story.
+# The extra 34 cm of Stair art is split symmetrically as a 17 cm visual overhang at each end; it must
+# never move Stair actor centres, chained flights or Floor landing cells off the 300 cm building grid.
+import math
+
+def rotate_z(v, yaw_deg):
+    x,y,z=v
+    r=math.radians(yaw_deg)
+    c,sn=math.cos(r),math.sin(r)
+    return (x*c-y*sn, x*sn+y*c, z)
+
+def add(a,b): return tuple(x+y for x,y in zip(a,b))
+
+def sub(a,b): return tuple(x-y for x,y in zip(a,b))
+
+stair_min=(-167.0,-150.0,0.0)
+stair_max=(167.0,150.0,278.0)
+stair_center=tuple((a+b)*0.5 for a,b in zip(stair_min,stair_max))
+low_visual=(stair_min[0],stair_center[1],stair_min[2])
+high_visual=(stair_max[0],stair_center[1],stair_max[2])
+wall_height=300.0
+stair_grid=300.0
+half_grid=stair_grid*0.5
+floor_grid=300.0
+floor_thickness=18.0
+visual_half_run=(stair_max[0]-stair_min[0])*0.5
+art_overhang=visual_half_run-half_grid
+assert art_overhang == 17.0
+residual=wall_height-(stair_max[2]-stair_min[2])
+assert residual == 22.0
+assert residual-floor_thickness == 4.0
+
+# Structural Stair anchors are +/-150 around the transformed bounds centre, NOT +/-167 visual ends.
+low_structural=(stair_center[0]-half_grid, stair_center[1], 0.0)
+high_structural=(stair_center[0]+half_grid, stair_center[1], 0.0)
+assert low_structural[0] == -150.0 and high_structural[0] == 150.0
+
+host_edge=(0.0,150.0,0.0)
+host_story_plane=0.0
+yaw=-90.0
+
+# HIGH-arrival/down-flight: structural HIGH anchor owns the Foundation edge. The Stair ACTOR centre
+# lands exactly one 300 cm cell outside the host. Visual art overlaps 17 cm past both structural edges.
+rh=rotate_z(high_structural,yaw)
+high_arrival_translation=(host_edge[0]-rh[0], host_edge[1]-rh[1], host_story_plane-stair_max[2])
+assert abs(high_arrival_translation[1]-300.0) < 1e-5
+low_world=add(rotate_z(low_visual,yaw),high_arrival_translation)
+high_world=add(rotate_z(high_visual,yaw),high_arrival_translation)
+high_structural_world=add(rotate_z(high_structural,yaw),high_arrival_translation)
+assert abs(high_structural_world[1]-150.0) < 1e-5
+assert abs(high_world[1]-133.0) < 1e-5  # 17 cm visual overlap into landing
+assert abs(low_world[1]-467.0) < 1e-5   # 17 cm visual overhang beyond far cell edge
+assert abs(high_world[2]-host_story_plane) < 1e-5
+
+# LOW-departure/up-flight: structural LOW anchor owns the same host edge, placing the Stair actor at
+# the host cell centre (not -17 cm). Its visual ends overhang the +/-150 structural edges by 17 cm.
+rl=rotate_z(low_structural,yaw)
+low_departure_translation=(host_edge[0]-rl[0], host_edge[1]-rl[1], host_story_plane+wall_height-stair_max[2])
+assert abs(low_departure_translation[1]-0.0) < 1e-5
+upper_low_world=add(rotate_z(low_visual,yaw),low_departure_translation)
+upper_high_world=add(rotate_z(high_visual,yaw),low_departure_translation)
+low_structural_world=add(rotate_z(low_structural,yaw),low_departure_translation)
+high_structural_world=add(rotate_z(high_structural,yaw),low_departure_translation)
+assert abs(low_structural_world[1]-150.0) < 1e-5
+assert abs(high_structural_world[1]-(-150.0)) < 1e-5
+assert abs(upper_low_world[1]-167.0) < 1e-5
+assert abs(upper_high_world[1]-(-167.0)) < 1e-5
+assert abs(upper_low_world[2]-22.0) < 1e-5
+assert abs(upper_high_world[2]-300.0) < 1e-5
+
+# Direct Stair->Stair continuation advances exactly one structural 300 cm cell and one 300 cm story.
+# Regression explicitly forbids the old raw 334 cm endpoint delta that accumulated 34 cm XY drift.
+chain_step=(stair_grid+stair_grid)*0.5
+assert chain_step == 300.0
+chain_up_local=(chain_step,0.0,wall_height)
+chain_down_local=(-chain_step,0.0,-wall_height)
+assert chain_up_local == (300.0,0.0,300.0)
+assert chain_down_local == (-300.0,0.0,-300.0)
+assert chain_up_local[0] != 334.0
+
+# All four horizontal support edges put Stair structural anchors on exact +/-150 grid edges.
+for edge,yaw_i in [((0.0,150.0,0.0),-90.0),((0.0,-150.0,0.0),90.0),((150.0,0.0,0.0),180.0),((-150.0,0.0,0.0),0.0)]:
+    rhi=rotate_z(high_structural,yaw_i)
+    high_t=(edge[0]-rhi[0],edge[1]-rhi[1],host_story_plane-stair_max[2])
+    rlo=rotate_z(low_structural,yaw_i)
+    low_t=(edge[0]-rlo[0],edge[1]-rlo[1],host_story_plane+wall_height-stair_max[2])
+    high_anchor=add(rotate_z(high_structural,yaw_i),high_t)
+    low_anchor=add(rotate_z(low_structural,yaw_i),low_t)
+    assert abs(high_anchor[0]-edge[0]) < 1e-5 and abs(high_anchor[1]-edge[1]) < 1e-5
+    assert abs(low_anchor[0]-edge[0]) < 1e-5 and abs(low_anchor[1]-edge[1]) < 1e-5
+
+# Stair -> Floor/Ceiling landing centres use structural half-grids. A 300 cm Floor is therefore
+# centred exactly +/-300 cm from the Stair actor, regardless of the Stair art being 334 cm long.
+floor_min=(-150.0,-150.0,0.0)
+floor_max=(150.0,150.0,18.0)
+landing_center_offset=half_grid+floor_grid*0.5
+assert landing_center_offset == 300.0
+high_floor_t=(stair_center[0]+landing_center_offset, stair_center[1], stair_max[2]-floor_min[2])
+low_floor_t=(stair_center[0]-landing_center_offset, stair_center[1], stair_max[2]-wall_height-floor_min[2])
+assert high_floor_t[0] == 300.0
+assert low_floor_t[0] == -300.0
+
+# For the up-flight placed from the +Y host edge, target actor Y is exactly 0. The upper Floor centre
+# must therefore be exactly one grid cell beyond the far edge at Y=-300, NOT -334 or -317.
+up_stair_actor_world=(0.0,0.0,residual)
+high_floor_world_offset=rotate_z((high_floor_t[0],high_floor_t[1],0.0),yaw)
+upper_floor_center_world=(up_stair_actor_world[0]+high_floor_world_offset[0],
+                          up_stair_actor_world[1]+high_floor_world_offset[1],
+                          up_stair_actor_world[2]+high_floor_t[2])
+assert abs(upper_floor_center_world[1]-(-300.0)) < 1e-5
+assert abs(upper_floor_center_world[2]-300.0) < 1e-5  # Floor bottom/story plane
+
+# Old v2.15.36 topology: actor -17 plus raw landing 317 = -334 cm world centre. Keep this explicit so
+# future regressions cannot reintroduce visual-endpoint drift under the claim that 334 'cancels'.
+old_actor_y=-17.0
+old_raw_landing_local_x=167.0-(-150.0)  # 317
+old_world_floor_y=old_actor_y-old_raw_landing_local_x
+assert old_world_floor_y == -334.0
+assert abs(old_world_floor_y-upper_floor_center_world[1]) == 34.0
+
+# v2.15.38 tiled-deck Stair regression. Canonical 300 cm LOW-departure placement centers the Stair
+# in its host cell while the current 334 cm art overhangs each structural end by 17 cm. On a deck made
+# from multiple 300 cm Foundation/Floor cells, that visual overhang may be returned by the broad Stair
+# occupancy query against an immediate same-story neighbour. Such a neighbour is a compatible modular
+# seam unless it actually occupies the Stair's structural flight cell.
+def stair_horizontal_neighbor_compatible(stair_cell_center, neighbor_center, grid=300.0, tol=2.5, same_story=True):
+    if not same_story:
+        return False
+    dx=neighbor_center[0]-stair_cell_center[0]
+    dy=neighbor_center[1]-stair_cell_center[1]
+    if dx*dx+dy*dy <= tol*tol:
+        return False  # horizontal tile closing the actual flight cell
+    ax,ay=abs(dx),abs(dy)
+    return ((abs(ax-grid) <= tol and ay <= tol) or
+            (abs(ay-grid) <= tol and ax <= tol))
+
+# LOW-departure flight occupies the active host cell; the host itself is ignored by EvaluatePlacement.
+# Immediate deck cells touched only by the 17 cm visual overhang are legal.
+flight_cell=(0.0,0.0)
+assert stair_horizontal_neighbor_compatible(flight_cell,(300.0,0.0))
+assert stair_horizontal_neighbor_compatible(flight_cell,(-300.0,0.0))
+assert stair_horizontal_neighbor_compatible(flight_cell,(0.0,300.0))
+assert stair_horizontal_neighbor_compatible(flight_cell,(0.0,-300.0))
+# A duplicate tile in the flight cell, diagonal/non-grid tile, or different-story tile is not legalized.
+assert not stair_horizontal_neighbor_compatible(flight_cell,(0.0,0.0))
+assert not stair_horizontal_neighbor_compatible(flight_cell,(300.0,300.0))
+assert not stair_horizontal_neighbor_compatible(flight_cell,(300.0,0.0),same_story=False)
+
+# HIGH-arrival flight occupies the outside neighbour cell. A tile centered there still blocks, while a
+# tile one cell beyond/alongside may only be touched by the Stair art overhang and is a legal seam.
+outside_flight_cell=(0.0,300.0)
+assert not stair_horizontal_neighbor_compatible(outside_flight_cell,(0.0,300.0))
+assert stair_horizontal_neighbor_compatible(outside_flight_cell,(0.0,600.0))
+assert stair_horizontal_neighbor_compatible(outside_flight_cell,(300.0,300.0))
+
+require(build_cpp, 'bNeighborFlatLanding', 'HostStoryPlane', 'NeighborStoryPlane',
+        'bImmediateGridNeighbor', 'actual Stair flight cell', '17 cm art/rail overhang')
+
+# Stair-first Wall-family reverse seam. v2.15.34 classifies the actual side-plane relationship
+# rather than requiring an exact +/-17 cm actor-centre offset. This is important below an upper flight:
+# a valid grid-owned wall can be centred at X=0 at a shared landing and must still be accepted when it
+# runs parallel to the Stair and overlaps the flight longitudinally. Perpendicular end walls and walls
+# through the Stair centreline remain blockers.
+def existing_stair_wall_side_compatible(anchor_x, anchor_y, wall_yaw, stair_yaw=0.0, tol=2.5, wall_snap_size=300.0):
+    # v2.15.35 uses the Wall-family ACTOR SNAP ORIGIN as the structural edge anchor. This mirrors
+    # Foundation/Floor wall sockets and is deliberately independent of MeshRelativeTransform/pivot.
+    d=abs(((wall_yaw-stair_yaw+180.0)%360.0)-180.0)
+    parallel=d <= 1.0 or abs(d-180.0) <= 1.0
+    on_side_plane=abs(abs(anchor_y-stair_center[1])-150.0) <= tol
+    wall_half_run=max(1.0, wall_snap_size*0.5)
+    wall_min=anchor_x-wall_half_run
+    wall_max=anchor_x+wall_half_run
+    overlap=min(wall_max,stair_max[0])-max(wall_min,stair_min[0])
+    return parallel and on_side_plane and overlap > tol
+
+# A visual/logical bounds-centre offset must NOT change the structural side result. This is the
+# exact v2.15.34 regression: actor snap origin is on +150, while mesh-relative art could put the
+# rendered/logical centre at +176 and falsely fail an origin-independent side-plane test.
+assert existing_stair_wall_side_compatible(0.0,150.0,0.0)
+visual_bounds_center_y=176.0
+assert abs(abs(visual_bounds_center_y-stair_center[1])-150.0) > 2.5
+# Exact legacy +/-17 cm ownership still works.
+assert existing_stair_wall_side_compatible(-17.0,150.0,0.0)
+assert existing_stair_wall_side_compatible(17.0,-150.0,180.0)
+# Shared-landing / upper-flight wall centre between the two ownership offsets is now valid.
+assert existing_stair_wall_side_compatible(0.0,150.0,0.0)
+assert existing_stair_wall_side_compatible(0.0,-150.0,180.0)
+# Doorway/Wall-family geometry can be longitudinally offset while still overlapping the same side flight.
+assert existing_stair_wall_side_compatible(140.0,150.0,0.0)
+# End wall, centreline wall, and unrelated parallel wall remain invalid.
+assert not existing_stair_wall_side_compatible(0.0,150.0,90.0)
+assert not existing_stair_wall_side_compatible(0.0,0.0,0.0)
+assert not existing_stair_wall_side_compatible(500.0,150.0,0.0)
+
+# Segmented Stair collision profile remains shared by broad and final blocker validation.
+stair_profile_slices=8
+stair_clearance=2.0
+def stair_profile_slice(i):
+    t0=i/stair_profile_slices
+    t1=(i+1)/stair_profile_slices
+    x0=stair_min[0]+(stair_max[0]-stair_min[0])*t0
+    x1=stair_min[0]+(stair_max[0]-stair_min[0])*t1
+    z0=stair_min[2]+(stair_max[2]-stair_min[2])*t0
+    z1=stair_min[2]+(stair_max[2]-stair_min[2])*t1
+    return (x0+stair_clearance, x1-stair_clearance, z0+stair_clearance, z1-stair_clearance)
+first=stair_profile_slice(0)
+second=stair_profile_slice(1)
+high=stair_profile_slice(6)
+assert first[2] > stair_min[2]
+assert second[2] > first[3]
+assert high[2] > 200.0
+assert high[3] < stair_max[2]
+
+# v2.15.30 support semantics: a continuous terrain actor may touch more than one lower slice when its
+# surface remains below each slice underside. It becomes a blocker as soon as the surface protrudes
+# materially into any touched profile slice. This directly guards against reintroducing v2.15.29's
+# blanket slice-index rejection.
+surface_tolerance=max(2.0, stair_clearance+1.0)
+def support_surface_is_valid(slice_bottom_z, surface_z):
+    return (surface_z - slice_bottom_z) <= surface_tolerance
+
+assert support_surface_is_valid(first[2], first[2]-1.0)
+assert support_surface_is_valid(second[2], second[2]-1.0)  # same terrain actor under slice 1 is legal
+assert not support_surface_is_valid(second[2], second[2]+10.0)
+
+support_start=build_cpp.index('static bool ARPGIsValidStairWorldSupportContact(')
+support_end=build_cpp.index('/**\n * Collision validation cares about the wall', support_start)
+support_body=build_cpp[support_start:support_end]
+assert 'for (const FARPGPlacementOBB& Volume : StairVolumes)' in support_body
+assert 'SurfaceAboveSliceBottom > SurfaceTolerance' in support_body
+assert 'if (!bFoundSupportingSurface)' in support_body
+assert 'for (int32 SliceIndex = 1; SliceIndex < StairVolumes.Num(); ++SliceIndex)' not in support_body
+assert 'ARPGIsValidStairLowFootWorldSupport' not in build_cpp
+assert 'ARPGIsValidStairWorldSupportContact(' in build_cpp[build_cpp.index('EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal'):]
+
+# v2.15.31 Landscape contract: a verified native Stair socket must classify ALandscapeProxy before
+# the generic/sampled WorldStatic blocker path. This is intentionally Landscape-only; static meshes
+# continue through ARPGIsValidStairWorldSupportContact and then the normal blocker return.
+eval_start=build_cpp.index('EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal')
+eval_body=build_cpp[eval_start:]
+landscape_pos=eval_body.index('ARPGIsLandscapeTerrainActor(Other)')
+sampled_world_pos=eval_body.index('ARPGIsValidStairWorldSupportContact(')
+generic_block_pos=eval_body.index('return EARPGPlacementResult::Blocked;', sampled_world_pos)
+assert landscape_pos < sampled_world_pos < generic_block_pos
+assert 'ARPGTransformMatchesStairHostCandidate(SnapTarget, Piece, Final)' in eval_body[landscape_pos:sampled_world_pos]
+assert '#include "LandscapeProxy.h"' in build_cpp
+build_cs=(root/'Source/AkumasRPGFramework/AkumasRPGFramework.Build.cs').read_text(encoding='utf-8')
+assert '"Landscape"' in build_cs
+
+# Capture can occur from the host edge, either paired Stair envelope, or another Stair endpoint.
+stair_capture_distance=140.0
+landing_point=(0.0,150.0,host_story_plane)
+assert distance_sq_to_local_box(landing_point,(-150.0,-150.0,-9.0),(150.0,150.0,9.0)) == 0.0
+run_midpoint=(0.0,317.0,139.0)
+assert run_midpoint[1] > 150.0
+
+# Side-wall classification is relative to the outward stairwell cell and remains strict.
+def stair_side_wall_compatible(local_x, local_y, wall_axis_yaw, stair_yaw=-90.0, half_grid=150.0, tolerance=2.5):
+    on_side=abs(abs(local_y)-half_grid) <= tolerance and abs(local_x) <= tolerance
+    d=abs(((wall_axis_yaw-stair_yaw+180.0)%360.0)-180.0)
+    parallel=d <= 1.0 or abs(d-180.0) <= 1.0
+    return on_side and parallel
+assert stair_side_wall_compatible(0.0,150.0,-90.0)
+assert stair_side_wall_compatible(0.0,-150.0,90.0)
+assert not stair_side_wall_compatible(150.0,0.0,0.0)
+assert not stair_side_wall_compatible(0.0,150.0,0.0)
 
 # v2.15.14 inter-story seam regression: build order must be commutative. If upper walls were stacked
 # before the 300x300x18 Floor is inserted, their bases share the Floor bottom/story plane and the

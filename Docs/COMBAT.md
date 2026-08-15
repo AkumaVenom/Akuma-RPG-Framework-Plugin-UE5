@@ -25,6 +25,15 @@ Block button released  -> Block Released
 
 The component handles attack state, montage selection, combo progression, resource costs, trace/projectile resolution, damage, defence and replication.
 
+
+## v2.15.40 relog combat-state integrity
+
+Account character persistence is now explicitly player-only. `AARPGAICharacter` inherits the same RPG component stack as the player, including `Persistence`, but NPCs must never resolve the account's `LastCharacterId` or load/save the player's character slot. Before v2.15.40, that inherited path could make an enemy load the player's faction/state after relog; targeting and damage permission then rejected the enemy because its runtime identity had already been corrupted. The persistence component, AI defaults, and save subsystem now all enforce the player-only boundary.
+
+## v2.15.39 combat permission integrity
+
+Player damage permission and lock-on targeting share the same hostility contract. Character persistence no longer clears a valid runtime/default player faction when an old or partial save has an empty `PrimaryFactionId`. `CanDamageActor()` also recognizes hostility owned by the target AI, so a hostile/retaliating NPC cannot be allowed to attack the player while the player's hits are simultaneously rejected as neutral. Friendly-fire and neutral-damage profile settings remain unchanged for actors that are not explicitly hostile.
+
 ## Automatic combo behavior
 
 When `Detailed Combo Steps` is empty, the framework uses the ordered montage array from the Class Definition. Repeated `Basic Attack` calls advance the combo. Inputs made during the queue window are buffered into the next attack, and a later press can continue the combo until `Combo Reset Time` expires.

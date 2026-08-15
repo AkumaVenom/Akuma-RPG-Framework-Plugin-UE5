@@ -1,11 +1,141 @@
-# Source Validation — Akuma's RPG Framework v2.15.23-alpha
+# Source Validation — Akuma's RPG Framework v2.15.40-alpha
 
-Package: **Akuma's RPG Framework — v2.15.23-alpha**  
+Package: **Akuma's RPG Framework — v2.15.40-alpha**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
 
 This package is source/model validated in the generation environment. It is **not** claimed to have completed UnrealHeaderTool/MSVC/PIE here. A real UE 5.8/5.8.1 Development Editor build plus standalone/listen-server PIE remains the acceptance step.
+
+
+
+## v2.15.40 relog persistence/combat validation
+
+The melee/combat regression now statically verifies the relog root fix at all three persistence boundaries:
+
+- `UARPGPersistenceComponent` must explicitly reject `AARPGAICharacter` as an account-character persistence owner before auto-load, manual load, or save.
+- `AARPGAICharacter` must disable inherited account auto-load, auto-save, and save-on-EndPlay defaults.
+- `UARPGSaveSubsystem::SaveCharacter()` and `LoadCharacter()` must reject AI characters even if invoked outside the persistence component.
+- The model asserts player-character persistence remains allowed while AI account-character persistence remains rejected.
+
+This specifically protects the relog sequence where `GetLastCharacterId()` is already valid before NPC BeginPlay and would otherwise alias enemies onto the player's save slot.
+
+## v2.15.39 combat/targeting faction-integrity validation
+
+- Verifies character load does not call `SetPrimaryFactionId(NAME_None)` over an already valid runtime/default faction when the saved faction id is empty.
+- Verifies a non-empty saved faction still restores normally and reputation restoration is preserved.
+- Verifies `CanDamageActor()` checks reciprocal target-AI hostility, closing the player-vs-hostile-AI neutral/unknown asymmetry.
+- Verifies lock-on distinguishes valid faction identities from merely-present Faction components and recognizes hostile target-AI intent.
+- Regression model covers empty-save/default-faction recovery and neutral base relationship with explicit hostile target AI.
+
+## v2.15.38 Stair tiled-deck overhang seam validation
+
+- Verifies a LOW-departure Stair remains centred on its active 300 cm host cell while its 334 cm art overhangs each structural endpoint by 17 cm.
+- Verifies immediate same-story Foundation/Floor/Ceiling neighbours one grid cell from the Stair flight cell are compatible when returned only by the Stair profile/art overhang.
+- Verifies a horizontal module centred in the actual Stair structural flight cell remains blocked, including the HIGH-arrival outside/down travel cell.
+- Verifies diagonal/non-grid and different-story horizontal neighbours are not legalized by the overhang rule.
+- Source validation requires `bNeighborFlatLanding`, `HostStoryPlane`, `NeighborStoryPlane`, `bImmediateGridNeighbor` and the explicit `actual Stair flight cell` guard in `ARPGIsCompatibleStairHostStructuralNeighbor()`.
+
+## v2.15.37 Stair canonical 300 cm XY + Z lattice validation
+
+- Verifies `Standard Wall Height = 300`, Stair visual run `334`, Stair visual rise `278`, Floor tile `300`, and Floor thickness `18` are separate art/structure concerns.
+- Horizontal-host Stair sockets use structural LOW/HIGH anchors at `±150 cm` (`Snap Size / 2`) around the Stair bounds centre, not raw visual `±167 cm` endpoints.
+- Regression proves a HIGH-arrival Stair actor centre is exactly one 300 cm cell outside the host and a LOW-departure Stair actor centre is exactly on the host cell, with the 334 cm art overhanging each structural end by 17 cm.
+- Stair-to-Stair continuation advances exactly `300 cm` horizontally and `300 cm` vertically for the current kit; raw `334 cm` endpoint delta is explicitly rejected by regression.
+- Stair-owned Floor/Ceiling landing centres are exactly `±300 cm` from the Stair actor centre while their bottom/story plane remains on the canonical landing Z.
+- Reproduces the old v2.15.36 drift numerically: `-17 cm` Stair actor shift plus `317 cm` raw endpoint-to-Floor-edge translation placed the next Floor centre at `-334 cm` instead of `-300 cm`, a 34 cm error per storey.
+- Preserves Landscape terrain classification, segmented Stair occupancy, Stair-side Wall/Doorway seams and 300 cm canonical story Z.
+
+Recommended PIE acceptance: build a fresh LOW-departure/up-flight Stair from a 300 cm Foundation/Floor cell, snap a fresh Floor to its HIGH landing, then extend several Stair/Floor storeys. Floor cell seams and Wall columns must stay on one straight 300 cm lattice with no 34 cm stair-step drift.
+
+## v2.15.35 Stair Wall structural-anchor side-seam validation
+
+- Fixes the v2.15.34 regression where the reverse Stair-side classifier tested the transformed Wall logical-bounds centre instead of the Wall actor's structural snap origin. Mesh-relative/pivot offsets could therefore move a correctly snapped +/-150 cm Wall off the perceived Stair side plane.
+- Requires `ARPGIsValidExistingStairWallSideSeamNeighbor()` to use `IncomingFinal.GetLocation()` transformed into Stair space as `WallAnchorInStair`.
+- Uses the incoming Wall-family `SnapSize / 2` as its structural longitudinal half-span instead of decorative mesh/bounds width.
+- Regression proves a Wall actor origin at local Y=+150 remains a valid Stair side seam even when a simulated visual/logical bounds centre is offset to Y=176, which would fail the old v2.15.34 centre-based test.
+- Shared-landing X=0, legacy +/-17 cm endpoint ownership, longitudinally offset valid side segments and 180-degree facing reversal remain accepted. Centreline, perpendicular end-wall and unrelated parallel-wall cases remain rejected.
+
+Recommended PIE acceptance: reproduce the user's upper-flight case with a fresh Wall and Doorway snapped to the Floor edge beneath either side of the already-built upper Stair. Both should remain **VALID PLACEMENT**. Rotate the same piece 90 degrees across the Stair travel direction and it must remain blocked.
+
+## v2.15.34 Upper-Stair Wall-family side-corridor validation
+
+- Replaces the brittle v2.15.33 reverse Stair-side requirement that a Wall-family actor origin equal one of two exact +/-17 cm overhang-compensation coordinates.
+- Validates the actual side relationship instead: Wall/WindowWall/Doorway axis parallel to Stair travel, logical bounds centre on either +/-150 cm side plane, and positive longitudinal overlap with the Stair flight.
+- Regression explicitly accepts shared-landing/upper-flight side walls centred at local X=0 as well as the legacy +/-17 cm positions and a longitudinally offset Doorway/Wall-family segment that still overlaps the flight.
+- Negative regressions keep perpendicular end walls, centreline walls and unrelated parallel walls outside the Stair run blocked.
+- Existing Stair landing sockets, Stair-to-Stair chains, Stair-to-Floor/Ceiling landings, Landscape terrain classification and segmented occupancy remain unchanged.
+
+Recommended PIE acceptance: build a lower Stair and an upper Stair from the same landing, then place fresh Wall and Doorway pieces on both side edges beneath the upper flight. They should remain **VALID PLACEMENT** when parallel to the Stair. Rotate either piece 90 degrees across the Stair travel path and it must remain blocked.
+
+## v2.15.33 Stair landing + side-seam integration validation
+
+- Completed Stair actors expose pivot-aware `Floor` / `Ceiling` sockets at both HIGH and LOW endpoints. The landing tile extends away from the flight and its visible top is coplanar with the Stair endpoint.
+- The `334 × 300 × 278` Wood Stair test proves the high landing near edge exactly equals `StairMax.X` and the low landing near edge exactly equals `StairMin.X`; the 17 cm run overhang does not drift the 300 cm Floor grid.
+- Stair-first `Wall` / `WindowWall` / `Doorway` placement accepts only parallel side edges of either logical 300 cm Stair cell (`-17 cm` / `+17 cm` centres for the current asset). Perpendicular end-wall and wrong-axis cases remain negative tests.
+- `ARPGIsValidSnappedBuildNeighbor()` consumes the reverse Stair-side seam, keeping active-target choice/build order irrelevant while retaining normal modification-access checks.
+
+## v2.15.32 Stair landing-chain + multi-storey alignment validation
+
+- Verifies every Foundation/Floor/Ceiling edge advertises **two** Stair transforms with one shared edge center/yaw: the retained HIGH-arrival/down-flight candidate and the new LOW-departure/up-flight candidate.
+- Regression models the current `334 × 300 × 278` Stair on the +Y edge of a 300-unit host. The HIGH-arrival candidate places the Stair high end at `Y=150` and low end at approximately `Y=484`; the LOW-departure candidate places the low end at the same `Y=150` landing and the high end at approximately `Y=-184`.
+- Verifies a completed Stair advertises both endpoint-chain transforms: `LOW(incoming) -> HIGH(target)` for upward continuation and `HIGH(incoming) -> LOW(target)` for downward continuation, with zero relative yaw.
+- Proves the horizontal host's LOW-departure transform is numerically identical to the lower Stair's HIGH-end continuation transform when that lower Stair already lands on the same edge. This is the core no-drift guarantee for multi-storey stair chains.
+- Verifies capture recognizes both horizontal landing hosts and Stair chain targets. Candidate-envelope affinity participates in ranking so paired up/down sockets are not selected by overlap iteration order alone.
+- Verifies side-wall structural classification detects which Stair endpoint owns the horizontal host edge: HIGH-arrival uses the neighbouring outside stairwell cell, while LOW-departure uses the host cell. End-wall and genuine horizontal travel-path conflicts remain blocked.
+- Verifies v2.15.31 Landscape terrain classification, v2.15.26 segmented occupancy and v2.15.27 broad/final occupancy consistency remain active. No reflected Blueprint API or save-schema migration is introduced.
+
+Recommended PIE acceptance: build a lower Stair that arrives at a Foundation edge. Without changing the Foundation, place a second Stair from that same edge and confirm its LOW end snaps to the exact lower-Stair HIGH landing/centerline and rises upward. Then aim directly at the top of the lower Stair and verify Stair-to-Stair continuation resolves to the same transform. Repeat the inverse at the lower endpoint and on an upper Floor/Ceiling landing. Rotating/selecting another edge should move the entire chain to that edge without lateral drift.
+
+## v2.15.31 Stair edge-landing + Landscape terrain classification validation
+
+- Verifies standard Foundation/Floor/Ceiling Stair sockets still anchor `StairHighEndLocal` to the selected host perimeter edge and align the Stair top/landing plane with the host top surface; v2.15.31 does **not** move the accepted Stair transform.
+- Regression models the current `334 × 300 × 278` Wood Stair on a 300-unit host: the HIGH end lands at the host edge/top while the LOW end extends outward by 334 units and descends by exactly 278 units.
+- Verifies `ALandscapeProxy`/`ARPGIsLandscapeTerrainActor()` is classified before generic non-build blocking, and only after `ARPGTransformMatchesStairHostCandidate()` proves the incoming Stair still occupies a native Foundation/Floor/Ceiling socket.
+- Verifies the `Landscape` engine module is a **private** dependency and the bypass is Landscape-specific. Static-mesh rocks, cliffs, props and other non-Landscape WorldStatic actors continue through `ARPGIsValidStairWorldSupportContact()` and the normal blocker path.
+- Verifies the v2.15.26 segmented Stair profile and v2.15.27 shared broad/final occupancy contract remain active, together with side-wall/end-wall structural rules and authority re-acquisition.
+
+Recommended PIE acceptance: use the exact isolated Foundation repro on Landscape. A fresh Stair should keep its HIGH landing on the Foundation edge, extend outward/down, and remain **VALID PLACEMENT** even where the lower flight embeds into Landscape. Move a discrete Static Mesh rock or Wall into the middle/upper Stair path and placement must still turn blocked.
+
+## v2.15.27 Stair query/final-occupancy consistency validation
+
+- Verifies `ARPGGatherPlacementOverlaps()` and `ARPGPlacementVolumesOverlapMeaningfully()` both consume `ARPGBuildPlacementOccupancyOBBs()` rather than maintaining separate Stair geometry rules.
+- Verifies a Stair is never reconstructed as one full PlacementBounds OBB during final build-vs-build validation; the same eight diagonal slices used to discover overlaps are used to decide whether a neighbouring build actor meaningfully occupies the Stair path.
+- Regression specifically covers the v2.15.26 failure where the snapped Stair query found an adjacent Foundation/Floor through decorative collision, then the final neighbour pass used the old full Stair box and returned `Blocked by another object` anyway.
+- Verifies standard non-Stair build pieces still use one authored logical OBB and that authority shares the same `EvaluatePlacementInternal` path. No reflected API or save migration is introduced.
+
+Historical v2.15.27 acceptance note: occupancy consistency remains regression-covered. v2.15.30 retains the edge-landing transform and corrects the WorldStatic support classifier so one continuous terrain actor may support multiple lower Stair slices without becoming an automatic blocker.
+
+## v2.15.26 Stair profile collision root validation
+
+- Verifies snapped Stair placement no longer uses one full enclosing `PlacementBounds` box as the collision query. Standard Stairs are decomposed into eight small oriented slices following local `+X` uphill and local `+Z` rise.
+- Verifies the low-foot and high-landing ends are clearance-shrunk, so flush terrain/host seam contact is not reported as a blocker merely because it touches the old box boundary.
+- Verifies empty space underneath the high half of the Stair is not queried as solid occupancy. v2.15.30 keeps this profile logic and classifies WorldStatic support per touched slice, accepting only surfaces at/below the slice underside.
+- Verifies the existing Stair host, side-wall and travel-opening rules remain active; the profile query changes collision shape, not structural permissions. Preview and authority both use the same `EvaluatePlacementInternal` path.
+
+Historical v2.15.27 acceptance note: this test targeted occupancy consistency only. Current PIE acceptance is defined by the v2.15.30 edge-landing + per-slice WorldStatic support section above.
+
+## v2.15.25 Stair edge-landing snap-transform validation
+
+- Verifies standard Stair sockets are generated on the **four edges** of Foundation/Floor/Ceiling hosts rather than at the host center.
+- Verifies the logical Stair convention is local `+X = uphill/toward landing` after `Mesh Relative Transform`. The transformed Stair high-end center is aligned to the selected host edge, and the Stair visible top is aligned to the host visible top.
+- For the current `334 × 300 × 278` example on a 300 grid, verifies the +Y host-edge candidate places the high end exactly at `Y=150` while the low end extends outward to approximately `Y=484`; the old centered/bottom-on-host transform is not the native socket.
+- Verifies Stair capture still considers both the compatible support bounds and the corrected edge-landing candidate envelope, so aiming down the run can acquire the Stair even when the host is farther than the normal capture distance.
+- Verifies a same-plane horizontal tile in the Stair travel cell is **not** blanket-whitelisted. Only exact side Wall-family seams parallel to the Stair run are accepted; end walls remain blockers.
+- Verifies authority re-resolves the same edge-landing candidate and no reflected Blueprint API/save-schema migration is introduced.
+
+Historical v2.15.25 acceptance note: the edge-landing transform remains the intended topology. v2.15.30 fixes the overly strict v2.15.29 assumption that the same terrain actor could support only the first slice.
+
+## v2.15.24 Wood Stair structural-snap validation
+
+- Verifies the standard Stair host family is exactly `Foundation`, `Floor` and `Ceiling`; `Roof` remains outside the flat generic Stair contract.
+- Verifies Stair capture uses the compatible support's transformed visible bounds plus the incoming candidate envelope and exact candidate origin. For the current 334×300 Stair on a 300 grid, aiming at the 150 cm host edge therefore succeeds without increasing the default 140 cm global capture distance.
+- Verifies authority can still re-resolve the exact native Stair candidate from the snapped transform; the support-aware local capture is presentation/acquisition polish, not an authority bypass.
+- Historical v2.15.24 check: Stair-host seam handling was introduced here; v2.15.25 supersedes the centered-host transform and tightens horizontal-cell blocking.
+- Verifies Walls across the Stair's +/-X travel opening and perpendicular side-wall axes are **not** auto-accepted and remain subject to normal blocking validation.
+- Verifies the current editor example `334 × 300 × 278 -> Placement Bounds 167,150,139` without changing the established 300-unit Snap Size / Standard Wall Height contract.
+
+Recommended PIE acceptance: start with an isolated Foundation, select Wood Stair and aim at the Foundation top/edge from several camera angles. Confirm the ghost locks to the Foundation and rotates through four cardinal directions. Repeat on an upper Floor, then add side Walls and adjacent Floor tiles; the Stair should remain valid. A Wall directly across the Stair's lower or upper travel opening should still make that conflicting placement invalid.
 
 ## v2.15.23 multi-cell native Wall-facing validation
 

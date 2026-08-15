@@ -1,4 +1,12 @@
-## Settlement Building, Storage & Production (v2.15.23)
+## Combat, Targeting & Relog Persistence Integrity (v2.15.40)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Faction persistence safety | Implemented | Empty/legacy saved faction ids no longer erase a valid authored/default player faction during load. |
+| Reciprocal hostile AI combat | Implemented | Player damage permission and lock-on can recognize hostility owned by the target AI, preventing hostile NPCs from being untargetable/undamageable when the base relation is neutral or temporarily unresolved. |
+| Player-only character persistence | Implemented | v2.15.40 prevents `AARPGAICharacter` from consuming `LastCharacterId` or reading/writing the player account character slot. NPCs keep authored/spawner state across relog instead of inheriting player faction/state. |
+
+## Settlement Building, Storage & Production (v2.15.38; preserved in v2.15.40)
 
 | Feature | Status | Notes |
 |---|---|---|
@@ -10,6 +18,7 @@
 | Logical structural occupancy | Implemented | Build-vs-build blocking uses authored `PlacementBounds`/semantic grid slots rather than decorative mesh collision. Valid wall continuations, L-corners, vertical stacks and Wall/Floor seams are accepted; duplicate/interior-crossing logical occupancy remains blocked. |
 | Multi-cell Wall-family facing | Implemented | v2.15.23 resolves perimeter ownership from occupied horizontal cells and uses the owning support's **native Wall socket yaw** for authored facing. Shared interior edges preserve vertical/selected native facing instead of inventing an exterior. |
 | Hosted Door/Window inserts | Implemented | Doors/Windows are hosted by Doorway/WindowWall sockets and are structurally transparent to later valid host seams. Build order is commutative around the host, while duplicate inserts and unrelated conflicts remain blocked. |
+| Stair structural snapping | Implemented | v2.15.38 keeps the proven edge/chain/Landscape/side-wall topology on the same **300 cm XY + Z structural lattice** as Foundations/Floors/Walls. The current `334 × 300 × 278` Stair is a 300 cm structural flight with **17 cm visual overhang at each end** and a 22 cm vertical residual inside the 300 cm story. Horizontal-host Stair anchors use structural `±150 cm` endpoints, Stair-to-Stair chaining advances exactly `300 cm`, Stair-owned Floor/Ceiling landing centres are exactly one `300 cm` cell away, and immediate same-story deck neighbours touched only by art overhang are treated as compatible seams while a tile occupying the actual Stair flight cell remains blocked. |
 | Authoritative placement | Implemented | Server re-resolves transform/snap and validates catalog membership, snap-target modification access, resources, range, collision, support/slope, faction and territory before spawn. |
 | Timed construction | Implemented | Instant or synchronized timed builds, upward reveal, material progress parameters, audio, construction collision policy, persistence. |
 | Functional doors | Implemented | Replicated animated open/close, access policy, optional auto-close and world-save state. v2.15.10 fixes completed-build Tick ownership and adds a native moving slab collider; v2.15.11 makes the physical hinge side data-driven (`Left` / `Right`) from transformed visible bounds so art kits rotate around the correct jamb without mesh-pivot hacks. |

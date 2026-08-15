@@ -107,13 +107,14 @@ Demolish -> Demolish Built Structure
 Keep **Allow Unlisted Build Requests** disabled and **Require Snap Target Modification Access** enabled for the normal multiplayer-safe defaults. `Demolish Built Structure` only succeeds for a modifiable runtime build and uses the Build Piece Definition's configured refund.
 
 
-A good structural smoke-test order for v2.15.23 is:
+A good structural smoke-test order for v2.15.38 is:
 
 ```text
 Foundation
   -> Wall / Doorway
   -> Door
   -> upper Floor
+  -> Wood Stair
   -> upper Wall / Doorway
   -> next Floor
 ```
@@ -121,6 +122,8 @@ Foundation
 For a `300 × 300 × 18` upper-floor mesh, use `Placement Bounds = 150,150,9`, keep `Placement Offset = 0,0,0`, and copy `Snap Size` / `Standard Wall Height` from the existing modular kit. Upper Walls use the slab bottom/story plane, so do not add a manual Z lift for Floor thickness.
 
 Doors and Windows are hosted inserts. A Door already placed in a Doorway must not prevent a later valid upper Floor seam around that host. On connected Foundation/Floor footprints, perimeter Wall-family facing is resolved from occupied cells and the owning support's native Wall socket; shared interior edges preserve the established/selected native facing.
+
+For the current `334 × 300 × 278` Wood Stair on the 300-unit grid, use `Piece Kind = Stair`, `Placement Bounds = 167,150,139`, `Requires Snap Target = true`, `Allow Ground Placement = false`, and copy the same `Snap Size` / `Standard Wall Height` as the structural kit. v2.15.38 keeps paired HIGH-arrival / LOW-departure sockets, direct Stair chaining, Landscape terrain handling, Stair-to-Floor landings and Stair-side Wall/Doorway seams on the canonical 300 cm building lattice. It also allows immediate same-story deck neighbours touched only by the Stair's 17 cm visual overhang while still blocking any horizontal tile that actually occupies the Stair flight cell. The 334 cm art overhang is split symmetrically as 17 cm at each end of a 300 cm structural flight; chained Stairs move 300 cm per flight and Stair-owned Floor/Ceiling landing centres sit exactly one 300 cm cell away. Stair-owned tiles still align their **bottom/story plane** to the structural landing. Do not scale the Stair or add Placement Offset to compensate.
 
 
 For a furnace, tag Wood with `Item.Fuel.Wood`, create a station-only recipe such as Metal Ore x2 -> Metal Ingot x1 with Required Station Tag `Station.Furnace`, enable fuel consumption, add that recipe to an `ARPGCraftingStationDefinition`, then assign the Station Definition to a `Production` Build Piece. The built station's ready UI handles Player/Input+Fuel/Recipes/Output transfer and queue progress. See `Docs/BUILDING_CRAFTING.md`.

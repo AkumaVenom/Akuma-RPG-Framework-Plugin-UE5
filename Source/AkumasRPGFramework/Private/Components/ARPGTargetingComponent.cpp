@@ -6,6 +6,7 @@
 #include "Abilities/ARPGGameplayAbility.h"
 #include "Actors/ARPGCharacter.h"
 #include "Components/ARPGCombatComponent.h"
+#include "Components/ARPGAICombatComponent.h"
 #include "Components/ARPGFactionComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraComponent.h"
@@ -123,14 +124,29 @@ bool UARPGTargetingComponent::IsValidLockOnTarget(AActor* Candidate) const
     {
         const UARPGFactionComponent* MyFaction = GetOwner()->FindComponentByClass<UARPGFactionComponent>();
         const UARPGFactionComponent* TheirFaction = Candidate->FindComponentByClass<UARPGFactionComponent>();
-        if (MyFaction && TheirFaction)
+        const bool bBothHaveFactionIdentity =
+            MyFaction && TheirFaction && MyFaction->HasFactionIdentity() && TheirFaction->HasFactionIdentity();
+
+        bool bHostile = bBothHaveFactionIdentity && MyFaction->IsHostileTo(TheirFaction);
+
+        // Hostility can also be owned by the target AI (retaliation, explicit fallback aggression, etc.).
+        // This closes the player-vs-AI asymmetry where an NPC can actively consider the player hostile
+        // while local lock-on rejects that same NPC because the base faction relation is neutral/unknown.
+        if (!bHostile)
         {
-            if (!MyFaction->IsHostileTo(TheirFaction)) return false;
+            if (const UARPGAICombatComponent* TargetAI = Candidate->FindComponentByClass<UARPGAICombatComponent>())
+                bHostile = TargetAI->bEnabled && TargetAI->IsTargetConsideredHostile(GetOwner());
         }
-        else if (const UARPGCombatComponent* MyCombat = GetOwner()->FindComponentByClass<UARPGCombatComponent>())
+
+        // When one/both faction identities are genuinely unresolved, fall back to the combat permission
+        // contract instead of treating the mere presence of two empty Faction components as neutrality.
+        if (!bHostile && !bBothHaveFactionIdentity)
         {
-            if (!MyCombat->CanDamageActor(Candidate)) return false;
+            if (const UARPGCombatComponent* MyCombat = GetOwner()->FindComponentByClass<UARPGCombatComponent>())
+                bHostile = MyCombat->CanDamageActor(Candidate);
         }
+
+        if (!bHostile) return false;
     }
     else if (const UARPGCombatComponent* MyCombat = GetOwner()->FindComponentByClass<UARPGCombatComponent>())
     {

@@ -5,9 +5,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COMBAT = ROOT / "Source/AkumasRPGFramework/Private/Components/ARPGCombatComponent.cpp"
 AI = ROOT / "Source/AkumasRPGFramework/Private/Components/ARPGAICombatComponent.cpp"
+TARGETING = ROOT / "Source/AkumasRPGFramework/Private/Components/ARPGTargetingComponent.cpp"
+SAVE = ROOT / "Source/AkumasRPGFramework/Private/Subsystems/ARPGSaveSubsystem.cpp"
+PERSISTENCE = ROOT / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp"
+AI_CHARACTER = ROOT / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp"
 
 combat = COMBAT.read_text(errors="replace")
 ai = AI.read_text(errors="replace")
+targeting = TARGETING.read_text(errors="replace")
+save = SAVE.read_text(errors="replace")
+persistence = PERSISTENCE.read_text(errors="replace")
+ai_character = AI_CHARACTER.read_text(errors="replace")
 
 required_combat = [
     "const bool bCanPlayLightHitReact",
@@ -44,5 +52,67 @@ def effective_stagger_rate(critical_chance, critical_stagger_chance):
 
 assert abs(effective_stagger_rate(0.05, 0.35) - 0.0175) < 1e-9
 assert effective_stagger_rate(1.0, 1.0) == 1.0
+
+
+# v2.15.39 combat/targeting integrity: faction restoration and reciprocal AI hostility must remain symmetric.
+required_integrity = [
+    (combat, "TargetAI->IsTargetConsideredHostile(GetOwner())"),
+    (targeting, "TargetAI->IsTargetConsideredHostile(GetOwner())"),
+    (targeting, "bBothHaveFactionIdentity"),
+    (save, "if (!D.PrimaryFactionId.IsNone())"),
+    (save, "DefaultPlayerFactionId"),
+]
+for source, token in required_integrity:
+    assert token in source, f"missing v2.15.39 combat/targeting integrity path: {token}"
+
+# Legacy/partial saves must not erase an already-authored/default faction with NAME_None.
+def restore_faction(runtime_id, saved_id, default_id):
+    if saved_id:
+        return saved_id
+    if runtime_id:
+        return runtime_id
+    return default_id or None
+
+assert restore_faction("Player", None, "Player") == "Player"
+assert restore_faction(None, None, "Player") == "Player"
+assert restore_faction("Player", "Bandits", "Player") == "Bandits"
+
+# If an AI explicitly considers the attacker hostile, player combat/lock-on must reciprocate that state.
+def can_damage(relationship, allow_friendly, allow_neutral, target_ai_hostile):
+    if target_ai_hostile:
+        return True
+    if relationship > 0:
+        return allow_friendly
+    if relationship == 0:
+        return allow_neutral
+    return True
+
+assert can_damage(0, False, False, True)
+assert not can_damage(0, False, False, False)
+assert can_damage(-100, False, False, False)
+
+
+# v2.15.40 relog root fix: account character persistence must never run on AARPGAICharacter.
+# AARPGAICharacter inherits AARPGCharacter and therefore owns Persistence by default; without this
+# scope boundary, every enemy can consume Accounts->GetLastCharacterId() after relog and load the
+# player's character save (including player faction), making enemies untargetable/undamageable.
+required_player_only_persistence = [
+    (persistence, 'ARPGIsAccountCharacterPersistenceOwner'),
+    (persistence, '!Character->IsA<AARPGAICharacter>()'),
+    (persistence, 'if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return;'),
+    (persistence, 'if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return false;'),
+    (save, 'Character->IsA<AARPGAICharacter>()'),
+    (ai_character, 'Persistence->bAutoLoadOnBeginPlay = false;'),
+    (ai_character, 'Persistence->bAutoSave = false;'),
+    (ai_character, 'Persistence->bSaveOnEndPlay = false;'),
+]
+for source, token in required_player_only_persistence:
+    assert token in source, f"missing v2.15.40 player-only persistence guard: {token}"
+
+def account_character_persistence_allowed(character_kind):
+    return character_kind == "player"
+
+assert account_character_persistence_allowed("player")
+assert not account_character_persistence_allowed("ai")
 
 print("melee combat polish model: PASS")

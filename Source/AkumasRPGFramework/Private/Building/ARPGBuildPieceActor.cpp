@@ -361,10 +361,84 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
 
             if (IncomingKind == EARPGBuildPieceKind::Stair && TargetKind != EARPGBuildPieceKind::Roof)
             {
-                AddLocal(FTransform(FRotator(0.f,   0.f, 0.f), FVector(0.f, 0.f, IncomingOnTargetTopZ)));
-                AddLocal(FTransform(FRotator(0.f,  90.f, 0.f), FVector(0.f, 0.f, IncomingOnTargetTopZ)));
-                AddLocal(FTransform(FRotator(0.f, 180.f, 0.f), FVector(0.f, 0.f, IncomingOnTargetTopZ)));
-                AddLocal(FTransform(FRotator(0.f, -90.f, 0.f), FVector(0.f, 0.f, IncomingOnTargetTopZ)));
+                // Horizontal modules expose a paired Stair landing contract on every edge:
+                //
+                //   HIGH-END arrival  -> the Stair descends outward/down from this edge.
+                //   LOW-END departure -> the Stair rises inward/up from this same edge.
+                //
+                // The two sockets deliberately share the same edge center and yaw. This gives a
+                // Foundation/Floor/Ceiling one canonical stair centerline that can connect a lower
+                // flight arriving at the edge to an upper flight leaving that edge without lateral
+                // drift. It also makes the build order independent: either flight may be placed first.
+                //
+                // Logical Stair convention after MeshRelativeTransform:
+                //   local +X = uphill
+                //   local  Y = stair width
+                //   local +Z = up
+                // Imported stairs that rise toward -X can be adapted once in MeshRelativeTransform with
+                // a 180-degree yaw; no custom sockets or PlacementOffset are required.
+                const FVector IncomingCenter = (IncomingMin + IncomingMax) * 0.5f;
+
+                // Structural Stair endpoints belong to the authored SnapSize grid, not the raw art
+                // bounds. The current Wood Stair is 334 cm long on a 300 cm grid, so its visual mesh
+                // intentionally overhangs the structural flight by 17 cm at BOTH ends. Using the raw
+                // +/-167 cm mesh endpoints as snap anchors shifts the first flight by 17 cm and then
+                // advances Stair chains/landings by 334 cm, producing a cumulative 34 cm off-grid drift
+                // against 300 cm Floors/Walls. Keep the art untouched and inset the structural anchors
+                // to +/-150 cm around the transformed bounds centre instead.
+                const float IncomingStairHalfRun = IncomingGrid * 0.5f;
+                const FVector StairHighStructuralXYLocal(IncomingCenter.X + IncomingStairHalfRun, IncomingCenter.Y, 0.f);
+                const FVector StairLowStructuralXYLocal(IncomingCenter.X - IncomingStairHalfRun, IncomingCenter.Y, 0.f);
+
+                // Stairs are visual traversal art inside the structural story grid; their raw mesh rise
+                // must never redefine the building's storey height. The current Wood Stair is 278 cm
+                // high on a 300 cm wall grid, while the upper Floor is 18 cm thick. Treat the horizontal
+                // module's canonical story plane as Foundation TOP or Floor/Ceiling BOTTOM, then place
+                // Stair HIGH endpoints on that 300 cm lattice. This leaves the residual riser inside the
+                // flight/landing instead of shifting every Floor/Wall column by (300 - 278) and slab
+                // thickness. For a 278 cm Stair on a 300 cm grid the visual LOW endpoint sits 22 cm
+                // above the structural lower landing; above an 18 cm Floor that is only a 4 cm art seam.
+                const float TargetStoryPlaneZ =
+                    TargetKind == EARPGBuildPieceKind::Foundation ? TargetMax.Z : TargetMin.Z;
+                const float StairHighArrivalAlignedZ = TargetStoryPlaneZ - IncomingMax.Z;
+                const float StairLowDepartureAlignedZ = TargetStoryPlaneZ + WallHeight - IncomingMax.Z;
+
+                struct FStairEdgeSocket
+                {
+                    FVector EdgeCenter;
+                    float Yaw;
+                };
+
+                // +X/uphill points inward from the selected edge. The HIGH-arrival candidate therefore
+                // occupies the neighbouring outside/down cell, while the LOW-departure candidate rises
+                // across the host cell. Both stay on the exact same structural centerline.
+                const FStairEdgeSocket StairEdges[] =
+                {
+                    { FVector(0.f,  Half, 0.f), -90.f }, // +Y edge, uphill points -Y
+                    { FVector(0.f, -Half, 0.f),  90.f }, // -Y edge, uphill points +Y
+                    { FVector( Half, 0.f, 0.f), 180.f }, // +X edge, uphill points -X
+                    { FVector(-Half, 0.f, 0.f),   0.f }  // -X edge, uphill points +X
+                };
+
+                for (const FStairEdgeSocket& Socket : StairEdges)
+                {
+                    const FRotator StairRotation(0.f, Socket.Yaw, 0.f);
+
+                    // Existing/ground-access topology: HIGH end lands on the edge and the Stair runs
+                    // outward/down. This is the proven v2.15.31 Landscape-compatible socket.
+                    const FVector RotatedHighEnd = StairRotation.RotateVector(StairHighStructuralXYLocal);
+                    FVector HighArrivalTranslation = Socket.EdgeCenter - FVector(RotatedHighEnd.X, RotatedHighEnd.Y, 0.f);
+                    HighArrivalTranslation.Z = StairHighArrivalAlignedZ;
+                    AddLocal(FTransform(StairRotation, HighArrivalTranslation));
+
+                    // Multi-storey topology: LOW end starts on the exact same edge/centerline and the
+                    // Stair rises inward/up. A lower Stair arriving at this Foundation/Floor edge and
+                    // an upper Stair departing it therefore meet without XY or yaw drift.
+                    const FVector RotatedLowEnd = StairRotation.RotateVector(StairLowStructuralXYLocal);
+                    FVector LowDepartureTranslation = Socket.EdgeCenter - FVector(RotatedLowEnd.X, RotatedLowEnd.Y, 0.f);
+                    LowDepartureTranslation.Z = StairLowDepartureAlignedZ;
+                    AddLocal(FTransform(StairRotation, LowDepartureTranslation));
+                }
             }
 
             // On a foundation, the next floor/ceiling/roof lives one wall story above the
@@ -377,6 +451,57 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
                     AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, 0.f, StorySurfaceZ)));
                 }
             }
+        }
+
+        if (TargetKind == EARPGBuildPieceKind::Stair && IncomingKind == EARPGBuildPieceKind::Stair)
+        {
+            // Stair chains advance on the STRUCTURAL grid in XY while preserving pivot-aware Z. Raw
+            // mesh endpoints are art only: the current 334 cm Stair overhangs its 300 cm structural
+            // cell by 17 cm at each end. Align structural +/-SnapSize/2 anchors around each transformed
+            // bounds centre so different Stair pivots can still share one exact grid landing.
+            const FVector TargetCenter = (TargetMin + TargetMax) * 0.5f;
+            const FVector IncomingCenter = (IncomingMin + IncomingMax) * 0.5f;
+            const float TargetGrid = FMath::Max(1.f, Definition->SnapSize);
+            const float ChainStep = 0.5f * (TargetGrid + IncomingGrid);
+            const float CenterDeltaX = TargetCenter.X - IncomingCenter.X;
+
+            const float ContinueUpZ = TargetMax.Z + WallHeight - IncomingMax.Z;
+            const float ContinueDownZ = TargetMax.Z - WallHeight - IncomingMax.Z;
+            AddLocal(FTransform(FRotator::ZeroRotator, FVector(CenterDeltaX + ChainStep, 0.f, ContinueUpZ)));
+            AddLocal(FTransform(FRotator::ZeroRotator, FVector(CenterDeltaX - ChainStep, 0.f, ContinueDownZ)));
+        }
+
+        if (TargetKind == EARPGBuildPieceKind::Stair &&
+            (IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Ceiling))
+        {
+            // A completed Stair exposes flat landing CELLS on the same 300 cm XY lattice and canonical
+            // story Z lattice as Foundation/Floor/Wall construction. Never derive landing-cell centres
+            // from raw Stair mesh endpoints: a 334 cm Stair on a 300 cm grid has 17 cm visual overhang at
+            // each end, and endpoint math shifts a LOW-departure flight by 17 cm then places its landing
+            // another 317 cm away = 334 cm total, walking the entire upper building off-grid.
+            //
+            // Structural contract after MeshRelativeTransform:
+            //   local +X = uphill;
+            //   Stair structural HIGH/LOW anchors are +/- Target SnapSize/2 around its bounds centre;
+            //   Floor/Ceiling actor centre is one incoming half-grid beyond that anchor;
+            //   incoming BOTTOM owns the canonical story landing plane.
+            const FVector TargetCenter = (TargetMin + TargetMax) * 0.5f;
+            const float TargetGrid = FMath::Max(1.f, Definition->SnapSize);
+            const float TargetHalfGrid = TargetGrid * 0.5f;
+            const float IncomingHalfGrid = IncomingGrid * 0.5f;
+            const float LandingCenterOffset = TargetHalfGrid + IncomingHalfGrid;
+
+            const FVector HighLandingTranslation(
+                TargetCenter.X + LandingCenterOffset,
+                TargetCenter.Y,
+                TargetMax.Z - IncomingMin.Z);
+            const FVector LowLandingTranslation(
+                TargetCenter.X - LandingCenterOffset,
+                TargetCenter.Y,
+                TargetMax.Z - WallHeight - IncomingMin.Z);
+
+            AddLocal(FTransform(FRotator::ZeroRotator, HighLandingTranslation));
+            AddLocal(FTransform(FRotator::ZeroRotator, LowLandingTranslation));
         }
 
         if (ARPGIsWallLike(TargetKind))
