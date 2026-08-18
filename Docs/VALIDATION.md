@@ -1,13 +1,39 @@
-# Source Validation — Akuma's RPG Framework v2.15.40-alpha
+# Source Validation — Akuma's RPG Framework v2.15.43-alpha
 
-Package: **Akuma's RPG Framework — v2.15.40-alpha**  
+Package: **Akuma's RPG Framework — v2.15.43-alpha**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
 
-This package is source/model validated in the generation environment. It is **not** claimed to have completed UnrealHeaderTool/MSVC/PIE here. A real UE 5.8/5.8.1 Development Editor build plus standalone/listen-server PIE remains the acceptance step.
+The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. The final v2.15.43 Stair/story contract has also received project-side runtime acceptance with fresh multi-storey Stair/Floor/Wall pieces.
 
+## v2.15.43 confirmed Stair/story acceptance
 
+- Finished story surfaces remain exactly `0, 300, 600, 900...` for the current kit.
+- A LOW-departure `334 × 300 × 278` Stair from finished surface `S=300` must place its rendered LOW plane at `Z=300`, never `Z=322`.
+- That Stair's rendered HIGH plane is `Z=578`; the next `18 cm` Floor slab is `Z=582..600`, and the next finished walking surface / next up-flight LOW is `Z=600`.
+- Repeated flights must therefore start at `300, 600, 900...`; the old cumulative `+22 cm` Stair actor offset is a hard regression failure.
+- Stair-to-Stair structural continuation and Stair-owned landing cells advance exactly `300 cm` in XY/story space for the current kit; raw 334 cm visual run must never become the structural chain step.
+- Floor thickness must extend downward from the finished story surface; the old `+18 cm per storey` slab accumulation is a hard regression failure.
+- Wall structural story progression must use `bottom + StandardWallHeight`, never rendered Wall mesh top.
+- Verified Landscape Stair support, tiled-deck 17 cm art-overhang seams, Stair-owned Floor/Ceiling landings, and parallel Wall/Doorway side seams remain covered by the settlement regression model.
+
+Recommended PIE acceptance: build fresh `Foundation -> Stair -> Floor -> Wall -> Stair -> Floor -> Wall` through several storeys. Floor seams, Wall baselines and Stair LOW anchors must stay on one 300 cm lattice with no progressive vertical or horizontal drift.
+
+## v2.15.42 finished-surface story-plane acceptance
+
+- For a 300 cm story and 18 cm Floor, the first upper Floor must occupy `Z=282..300`; its finished top, upper Wall bottom and lower Wall structural top all equal `Z=300`.
+- `Foundation -> Floor`, `Wall -> Floor`, and `Stair -> Floor` must align the incoming Floor **top**, not bottom, to the story/landing plane.
+- `Floor -> Wall` and `Floor -> Stair` must use the Floor **top/walking surface** as their story reference.
+- Historical v2.15.42 established the finished-top story surface but still left the LOW-departure Stair art `+22 cm` above the current surface. v2.15.43 supersedes that actor-anchor formula; current validation requires the Stair LOW plane to equal the current story surface.
+- Storey walking surfaces must remain `0,300,600,900...` with no +18 cm accumulation.
+
+## v2.15.41 structural story-lattice acceptance
+
+- Wall→Wall vertical stacking and Wall→Floor/Ceiling/Roof must resolve the same next-story plane from Wall bottom + `StandardWallHeight`.
+- A deliberately short/tall Wall mesh must not change 300 cm story progression; ten-storey model coverage verifies `3000 cm` after ten levels.
+- Wall semantic occupancy and inverse Wall/Floor seam validation must use the structural Wall top, not rendered mesh top.
+- v2.15.40 relog combat/persistence regression coverage remains enabled.
 
 ## v2.15.40 relog persistence/combat validation
 
@@ -42,7 +68,7 @@ This specifically protects the relog sequence where `GetLastCharacterId()` is al
 - Horizontal-host Stair sockets use structural LOW/HIGH anchors at `±150 cm` (`Snap Size / 2`) around the Stair bounds centre, not raw visual `±167 cm` endpoints.
 - Regression proves a HIGH-arrival Stair actor centre is exactly one 300 cm cell outside the host and a LOW-departure Stair actor centre is exactly on the host cell, with the 334 cm art overhanging each structural end by 17 cm.
 - Stair-to-Stair continuation advances exactly `300 cm` horizontally and `300 cm` vertically for the current kit; raw `334 cm` endpoint delta is explicitly rejected by regression.
-- Stair-owned Floor/Ceiling landing centres are exactly `±300 cm` from the Stair actor centre while their bottom/story plane remains on the canonical landing Z.
+- Stair-owned Floor/Ceiling landing centres are exactly `±300 cm` from the Stair actor centre while their top/walking surface remains on the canonical landing Z.
 - Reproduces the old v2.15.36 drift numerically: `-17 cm` Stair actor shift plus `317 cm` raw endpoint-to-Floor-edge translation placed the next Floor centre at `-334 cm` instead of `-300 cm`, a 34 cm error per storey.
 - Preserves Landscape terrain classification, segmented Stair occupancy, Stair-side Wall/Doorway seams and 300 cm canonical story Z.
 
@@ -156,7 +182,7 @@ Recommended PIE acceptance: place two adjacent Foundations, stand inside the foo
 
 ## v2.15.20–v2.15.21 story-plane/facing validation
 
-- Regression models a 300×300×18 Floor and verifies both `Wall stack -> insert Floor` and `Floor -> upper Wall` place the upper Wall on the same canonical slab-bottom/story plane.
+- Regression models a 300×300×18 Floor and verifies both `Wall stack -> insert Floor` and `Floor -> upper Wall` place the upper Wall on the same canonical finished-top/story plane.
 - Verifies Floor thickness does not accumulate into storey height and does not create an 18 cm facade gap.
 - Verifies upper Wall-family orientation is normalized after slot selection without changing the corrected story-plane transform.
 - Verifies first-storey Walls still use the Foundation's visible top rather than the upper-slab rule.

@@ -1,3 +1,35 @@
+## v2.15.43-alpha — Stair Low-End Story-Surface Anchor Root Fix
+
+- Fixed the remaining cumulative Stair landing defect after v2.15.42. LOW-departure/up-flight Stairs were still high-aligning their `278 cm` rendered top to the next `300 cm` story surface, which placed the Stair LOW end at `+22 cm` above the current Floor (`300 - 278 = 22`). Every new flight therefore visibly sat on top of its landing even though Floor story planes themselves were canonical.
+- `Floor/Foundation/Ceiling -> Stair` LOW-departure sockets now align the incoming Stair **LOW visible plane** to the current finished walking surface. HIGH-arrival/down-flight sockets remain unchanged.
+- For the current Wood kit, an up-flight from story `Z=300` now spans rendered `Z=300..578`; the next 18 cm Floor slab occupies `Z=582..600`, leaving a 4 cm underside tolerance and the intended final 22 cm rise to the finished upper landing surface instead of turning that 22 cm into an actor offset.
+- `Stair -> Floor/Ceiling` landing Z is now derived from the Stair LOW structural story plane plus `StandardWallHeight`, never from the rendered Stair top. Upper Floor finished surfaces therefore stay exactly on `300/600/900...` while 278 cm Stair art remains inside each 300 cm story.
+- Direct Stair-to-Stair chain transforms keep their canonical 300 cm XY/Z structural step. No Stair scaling, Placement Offset, custom socket, reflected Blueprint API change, or save-schema migration is required.
+- Preserves v2.15.40 player-only relog persistence/combat protection and all v2.15.38+ Landscape, tiled-deck, Wall/Doorway side-seam, and canonical Stair XY behavior. Existing already-placed Stair actors retain their saved transforms and should be rebuilt fresh for acceptance testing.
+- **Runtime acceptance:** fresh multi-storey project testing confirmed the final Stair/Floor/Wall stack remains aligned through repeated storeys with the Stair LOW end on each finished Floor surface. v2.15.43 is therefore the confirmed-good Wood Stair / multi-storey building baseline for subsequent building-piece work.
+- **Documentation refresh:** README, Settlement Building guide, Quick Start, Feature Matrix and Validation now present one authoritative v2.15.43 story/Stair contract. Superseded v2.15.24-v2.15.42 transform experiments remain in this Changelog as history but are no longer presented as current authoring guidance.
+
+## v2.15.42-alpha — Finished-Surface Story Plane & Stair/Floor Recess Root Fix
+
+- Replaced the temporary upper-slab **bottom/story-plane** convention with one canonical finished-surface lattice: `Foundation/Floor/Ceiling/Roof` **TOP** is the structural story plane. With `Standard Wall Height = 300`, finished walking surfaces stay at `0, 300, 600, 900...` regardless of slab thickness.
+- A `300 × 300 × 18` Floor at the first upper story now occupies `Z=282..300`, not `Z=300..318`. The 18 cm slab extends downward into the lower storey instead of adding 18 cm of extra height to every level.
+- `Foundation -> Floor/Ceiling/Roof` and `Wall -> Floor/Ceiling/Roof` now align the incoming tile **top** to the canonical story surface. Direct Wall stacking still advances by `StandardWallHeight`, so Floor-first and Wall-stack-first construction share the same `Z=300/600/900...` wall baselines.
+- `Floor/Ceiling/Roof -> Wall/WindowWall/Doorway` now starts the incoming Wall-family piece on the horizontal **top** surface. The slab therefore overlaps the final 18 cm of the lower wall instead of the first 18 cm of the upper wall.
+- `Stair -> Floor/Ceiling` landing sockets now align the tile **top/walking surface** to the Stair landing instead of aligning the slab bottom. `Floor/Ceiling -> Stair` also uses the host top surface for both HIGH-arrival and LOW-departure story math. The current `334 × 300 × 278` Stair can therefore enter the slab at the upper landing and meet the walkable surface directly.
+- For the current kit, the resulting vertical geometry is intentional: `300 - 278 = 22 cm` residual lower riser; the 18 cm Floor no longer becomes a separate top landing step.
+- Updated Wall/Floor semantic snap-slot ownership, inverse upper-slab seams, Stair tiled-deck same-story classification and regression models to use the same finished-top story plane.
+- Preserves v2.15.40 player-only persistence/relog combat protection and all v2.15.37-v2.15.38 canonical Stair XY/Landscape/tiled-deck topology. No reflected Blueprint API or save-schema migration. Existing placed structures retain their saved transforms and should be rebuilt fresh to test the new story convention.
+
+## v2.15.41-alpha — Canonical Wall Story Lattice Root Fix
+
+- Fixed the remaining architectural source of **new vertical gaps appearing on higher storeys**. Two standard snap paths still derived the next storey from rendered Wall geometry: Wall→Wall vertical stacking used the target Wall mesh top, and Wall→Floor/Ceiling/Roof also aligned to that mesh top. Any art/pivot/trim height difference could therefore become the next structural baseline and accumulate again on every level.
+- Wall-family vertical stacking now resolves the next story from `target structural Wall bottom + StandardWallHeight`. With the current 300 cm kit, storey baselines remain exactly `0 / 300 / 600 / 900 ...` regardless of Wall mesh height or build order.
+- Wall→Floor/Ceiling/Roof uses the same canonical next-story plane as Wall→Wall, so those two ownership paths cannot advertise different Z transforms for the same structural boundary.
+- Added `ARPGGetWallStructuralWorldZRange()` so semantic Wall occupancy uses the authored story bay rather than rendered Wall height. Wall/Wall and Wall/horizontal seam classification therefore agree with native snap generation.
+- Updated inverse upper-slab and inserted-horizontal seam validation to compare against the Wall's structural top (`bottom + StandardWallHeight`) instead of the visible mesh top. This prevents collision validation from reintroducing the same art-height dependency after the snap transform has already been corrected.
+- Added a ten-storey regression using deliberately non-300-cm Wall art to prove the structural baseline remains exactly 300 cm per level and does not accumulate mesh-height error.
+- Preserves the v2.15.40 player-only persistence/relog combat fix and the v2.15.38+ Stair/Landscape/side-seam runtime. No reflected Blueprint API or save-schema migration. Existing placed structures are not silently moved.
+
 ## v2.15.40-alpha — Player-Only Character Persistence Scope / Relog Combat Recovery Fix
 
 - Fixed the proven relog root cause behind **enemies becoming untargetable and combat hits being discarded after loading back into the game**. `AARPGAICharacter` inherits `AARPGCharacter`, and therefore inherited the same `UARPGPersistenceComponent` used by the playable character. The component's auto-load path unconditionally read `UARPGAccountSubsystem::GetLastCharacterId()` for any ARPG Character owner, allowing spawned/reloaded AI to adopt the active player's CharacterId and call `LoadCharacter()` on the player's account save slot.

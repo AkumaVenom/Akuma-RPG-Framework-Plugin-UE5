@@ -8,9 +8,9 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.15.40-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.15.43-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest:** v2.15.40 is the current framework baseline. It preserves the v2.15.39 combat/faction safeguards and fixes the actual relog root cause: `AARPGAICharacter` inherits the player `Persistence` component, so enemies could consume the account's `LastCharacterId` and load the player's character save after relog. Account character persistence is now strictly player-character scoped at the AI defaults, persistence component, and save-subsystem boundaries. NPCs retain their authored/spawner faction and combat state, restoring lock-on and hit registration after relog without changing the v2.15.38 Stair/building runtime. See [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md) for the release-by-release history.
+> **Latest / confirmed building baseline:** v2.15.43 is the current framework baseline. It preserves the v2.15.40 player-only relog/combat persistence boundary and finalizes the Wood Stair multi-storey contract on one canonical 300 cm lattice: finished Foundation/Floor/Ceiling tops own story surfaces, slab thickness extends downward, the `334 × 300 × 278` Stair uses a `300 × 300 × 300` structural flight cell, and a LOW-departure Stair starts on the **current** walking surface instead of inheriting a `+22 cm` lift. Fresh multi-storey runtime testing confirmed the Stair/Floor/Wall stack remains aligned across repeated storeys. See [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md) for the release-by-release history.
 
 ## Start here
 
@@ -299,52 +299,33 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.15.40-alpha
+## Current release — v2.15.43-alpha
 
-v2.15.40 is the current framework baseline. It preserves the current Settlement Building/Stair runtime while fixing player/NPC persistence scope so relogged enemies cannot consume the player account save.
+v2.15.43 removes the last **22 cm Stair-per-storey actor offset** from the standard Wood Stair topology.
 
-**Relog persistence/combat integrity**
+**Canonical Stair/Floor relationship**
 
-- Account `SaveCharacter` / `LoadCharacter` persistence is player-character only. `AARPGAICharacter` cannot consume the account `LastCharacterId` or alias the player's character save slot.
-- AI defaults disable inherited character auto-load, auto-save and save-on-EndPlay. Spawner/world systems remain responsible for NPC state.
-- The v2.15.39 reciprocal hostility/faction safeguards remain as defense-in-depth, but v2.15.40 fixes the earlier source of the corrupted enemy runtime identity itself.
+- Finished Foundation/Floor/Ceiling tops remain the structural story surfaces: `0, 300, 600, 900...` for the current kit.
+- The `334 × 300 × 278` Stair is traversal art inside a `300 × 300 × 300` structural flight cell. Its visual rise does **not** define story height.
+- A LOW-departure/up-flight Stair now aligns its **visible LOW plane to the current walking surface**. On story `Z=300`, the Stair starts at `Z=300` rather than `Z=322`.
+- The same Stair therefore ends visually at `Z=578`. The next `18 cm` Floor occupies `Z=582..600`, leaving only the intended `4 cm` art/underside tolerance and a final `22 cm` stair-to-landing rise to the finished surface.
+- `Stair -> Floor/Ceiling` no longer derives upper landing Z from rendered Stair top. The upper Floor finished surface is always `current Stair LOW story + StandardWallHeight`, so it remains exactly on `300/600/900...`.
+- Direct Stair chains still advance by the structural `300 cm` XY/Z cell step, not by the 334 cm visual run or 278 cm visual rise.
 
+This fixes the failure where every new up-flight sat another 22 cm above its Floor and made a multi-storey stair tower look progressively separated even though the nominal story planes were canonical.
 
-**Structural workflow**
+**Confirmed acceptance baseline**
 
-- Foundations provide the ground-level modular grid.
-- Wall / WindowWall / Doorway pieces snap to Foundation and upper horizontal edges, stack vertically, continue laterally and form 90-degree corners.
-- Door and Window pieces are hosted inserts. They snap into Doorway / WindowWall openings, keep their replicated interaction state, and no longer block later valid Floor/Wall seams around their host.
-- Floor / Ceiling / Roof pieces can be inserted before or after surrounding Wall-family pieces. Multi-storey construction is intentionally build-order independent where the same logical structural slot is being authored.
-- Build-vs-build placement uses authored logical `PlacementBounds`/semantic structural slots rather than decorative mesh collision, while world/non-building blockers still use the normal collision path.
+- Fresh repeated `Stair -> Floor -> Wall -> Stair` storeys remain on one `300 cm` structural lattice instead of accumulating `+22 cm`, `+18 cm`, or `+34 cm` drift.
+- Stair visual dimensions are presentation geometry: the 334 cm run overhangs the 300 cm flight cell by 17 cm per end, while the 278 cm rise remains inside the 300 cm story.
+- Landscape support, tiled-deck overhang seams, Stair-to-Stair chains, Stair-owned Floor/Ceiling landings, and Wall/Doorway side seams remain part of the confirmed Stair baseline.
 
-**Wall-family facing and vertical spacing**
+**Preserved combat/relog integrity**
 
-- First-storey Wall-family pieces use the owning Foundation edge's native standard Wall socket.
-- Upper-storey Wall-family pieces use the canonical horizontal story plane so slab thickness does not create gaps or accumulate vertical drift.
-- Perimeter facing is resolved from occupied Foundation/Floor cells, but the final yaw comes from the owning support's own native Wall socket rather than a hard-coded mesh-front assumption.
-- A direct Wall-family piece below preserves vertical facing continuity when the same stack column exists.
-- Shared interior edges intentionally have no universal exterior side; the framework preserves the established/selected native facing instead of inventing one.
+- Account character persistence remains player-only; `AARPGAICharacter` cannot consume the account `LastCharacterId` or load the player save on relog.
+- Reciprocal combat/targeting hostility safeguards from v2.15.39 remain unchanged.
 
-**Door baseline**
-
-- Native Doors replicate open/closed state, animate smoothly, persist state, enforce ownership/faction access and carry a moving collision slab.
-- `Door Hinge Side` is data-driven (`Left` / `Right`) and is resolved from transformed visible Door bounds.
-- The existing Character input route remains `Interact Built Structure`; no client-side direct Door state mutation is required.
-
-**Stair baseline**
-
-- `Foundation`, `Floor` and `Ceiling` remain the generic flat Stair landing hosts; `Roof` remains excluded from the standard flat contract.
-- v2.15.32 adds a **paired landing anchor** to every compatible horizontal edge. The existing HIGH-end arrival socket is preserved for a flight that lands on the edge and descends outward/down. A new LOW-end departure socket uses the **same edge center and yaw**, allowing the next flight to start on that landing and rise inward/up without lateral drift.
-- Completed `Stair` actors now also advertise endpoint-chain sockets: `LOW(incoming) -> HIGH(target)` continues upward and `HIGH(incoming) -> LOW(target)` continues downward. The incoming flight inherits the target Stair's run axis, so chained flights stay on one structural centerline.
-- When a lower Stair already arrives at a Foundation/Floor edge, the horizontal host's LOW-departure candidate and the lower Stair's HIGH-end chain candidate resolve to the **same physical transform**. This makes the landing build-order independent and prevents upper flights from being offset from the lower flight.
-- Stair capture now ranks paired landing sockets by the candidate envelope as well as target support bounds. Aiming inside/on the deck favors the up-flight departure socket; aiming outside/down favors the down-flight arrival socket, while exact snapped transforms remain authority-reacquirable.
-- v2.15.31 Landscape classification remains intact: a verified snapped Stair may embed/blend into `ALandscapeProxy`, while discrete WorldStatic rocks, cliffs and props continue through strict obstruction validation.
-- Logical Stair convention after `Mesh Relative Transform`: local `+X` is uphill, local `Y` is width and local `+Z` is up. If imported art rises toward `-X`, rotate the mesh-relative transform 180° once instead of adding custom snap offsets.
-- The segmented Stair occupancy profile from v2.15.26 and shared broad/final occupancy contract from v2.15.27 remain active. Side Wall-family seams are derived from whichever Stair endpoint owns the horizontal host edge, so both descending outside flights and ascending inside flights keep correct side-wall topology.
-- The current Wood Stair example remains `334 × 300 × 278` on a 300-unit grid with `Placement Bounds = 167,150,139`, zero Placement Offset and standard generated snap points.
-
-No reflected Blueprint API or save-schema migration is required for v2.15.40. Existing placed structures keep their saved transforms; the relog fix only scopes account character persistence away from AI NPCs.
+No reflected Blueprint API or save-schema migration is required for v2.15.43. Existing already-placed structures keep their saved transforms; test this correction with **fresh Stairs and Stair-owned upper Floors** because the framework deliberately does not relocate saved player structures.
 
 ## Project boundaries
 

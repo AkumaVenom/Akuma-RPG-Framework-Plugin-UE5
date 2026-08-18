@@ -302,7 +302,13 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
     const float AlignTopPlaneZ = TargetMax.Z - IncomingMax.Z;
     const float IncomingOnTargetTopZ = TargetMax.Z - IncomingMin.Z;
     const float AlignBottomPlaneZ = TargetMin.Z - IncomingMin.Z;
-    const float IncomingAboveTargetZ = TargetMax.Z - IncomingMin.Z;
+    // Canonical vertical-story placement must never derive the next storey from rendered mesh
+    // height. Wall art can be shorter/taller than StandardWallHeight, and using TargetMax.Z here
+    // makes that art error accumulate every time the player adds another storey. For Wall-family
+    // targets, the authoritative next-story plane is always: visible/structural wall bottom + the
+    // authored StandardWallHeight. Non-Wall targets can continue using their actual top surface.
+    const float IncomingOnNextWallStoryPlaneZ = TargetMin.Z + FMath::Max(1.f, Definition->StandardWallHeight) - IncomingMin.Z;
+    const float IncomingTopOnNextWallStoryPlaneZ = TargetMin.Z + FMath::Max(1.f, Definition->StandardWallHeight) - IncomingMax.Z;
 
     if (Definition->bGenerateStandardSnapPoints)
     {
@@ -332,14 +338,12 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, -Step, AlignTopPlaneZ)));
             }
 
-            // Wall-family pieces use a canonical story seam, not the visible top of every horizontal
-            // slab. Foundations are the ground support, so first-story walls sit on the Foundation
-            // top. Upper Floor/Ceiling/Roof pieces are *inter-story boundary volumes*: their bottom
-            // plane is the story grid shared by the lower wall top and the next wall bottom. Anchoring
-            // upper walls to the slab top would add the slab thickness (for example 18 cm) to every
-            // storey, producing the visible horizontal gaps and making Floor-first construction differ
-            // from Wall-stack-first construction. Let the slab overlap the first few centimetres of the
-            // upper wall frame instead; that exact seam is already validated as legitimate occupancy.
+            // Wall-family pieces use the finished horizontal walking surface as the canonical story
+            // seam. The horizontal slab extends DOWNWARD from that plane, so its thickness never adds
+            // vertical height to the next storey. Foundations already expose their finished top surface;
+            // Floor/Ceiling/Roof pieces now use that same top-plane convention on every upper storey.
+            // This makes Foundation->Wall, Floor->Wall and Wall-stack->Wall all resolve to one immutable
+            // story lattice while allowing the slab to overlap the upper portion of the wall below.
             //
             // Logical wall convention: actor local X is the wall run and actor local +Y is the
             // authored front/exterior side after MeshRelativeTransform. Each support-edge yaw must
@@ -348,10 +352,7 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
             // with their geometric edge; swapping them turns the two X-edge walls inside-out.
             if (ARPGIsWallLike(IncomingKind))
             {
-                const float IncomingWallStoryBaseZ =
-                    TargetKind == EARPGBuildPieceKind::Foundation
-                        ? IncomingOnTargetTopZ
-                        : AlignBottomPlaneZ;
+                const float IncomingWallStoryBaseZ = IncomingOnTargetTopZ;
 
                 AddLocal(FTransform(FRotator(0.f,   0.f, 0.f), FVector(0.f,  Half, IncomingWallStoryBaseZ)));
                 AddLocal(FTransform(FRotator(0.f, 180.f, 0.f), FVector(0.f, -Half, IncomingWallStoryBaseZ)));
@@ -391,17 +392,22 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
                 const FVector StairLowStructuralXYLocal(IncomingCenter.X - IncomingStairHalfRun, IncomingCenter.Y, 0.f);
 
                 // Stairs are visual traversal art inside the structural story grid; their raw mesh rise
-                // must never redefine the building's storey height. The current Wood Stair is 278 cm
-                // high on a 300 cm wall grid, while the upper Floor is 18 cm thick. Treat the horizontal
-                // module's canonical story plane as Foundation TOP or Floor/Ceiling BOTTOM, then place
-                // Stair HIGH endpoints on that 300 cm lattice. This leaves the residual riser inside the
-                // flight/landing instead of shifting every Floor/Wall column by (300 - 278) and slab
-                // thickness. For a 278 cm Stair on a 300 cm grid the visual LOW endpoint sits 22 cm
-                // above the structural lower landing; above an 18 cm Floor that is only a 4 cm art seam.
-                const float TargetStoryPlaneZ =
-                    TargetKind == EARPGBuildPieceKind::Foundation ? TargetMax.Z : TargetMin.Z;
+                // must never redefine the building's storey height. The canonical story plane is the
+                // FINISHED TOP / walking surface of every flat structural module. Floor thickness extends
+                // downward below that plane instead of being stacked on top of the storey. Therefore a
+                // 278 cm Stair on a 300 cm story has a natural 22 cm residual first-step rise and its HIGH
+                // end meets the next Floor walking surface exactly, with the Stair/stringers penetrating
+                // the 18 cm slab as normal modular art rather than leaving an 18 cm landing gap.
+                const float TargetStoryPlaneZ = TargetMax.Z;
                 const float StairHighArrivalAlignedZ = TargetStoryPlaneZ - IncomingMax.Z;
-                const float StairLowDepartureAlignedZ = TargetStoryPlaneZ + WallHeight - IncomingMax.Z;
+                // LOW-departure/up-flight stairs start on the CURRENT finished walking surface.
+                // Do not align their HIGH art end to the next 300 cm story plane: with a 278 cm Stair
+                // that lifts the whole flight by 22 cm (300-278), so every new flight visibly sits on
+                // top of its Floor and the landing error repeats on every storey. Align the visible LOW
+                // end to the current Floor/Foundation/Ceiling top instead. The 278 cm art then rises to
+                // Z+278 while the next 18 cm Floor slab occupies Z+282..Z+300, leaving only the intended
+                // 4 cm underside tolerance and a final 22 cm step to the finished upper walking surface.
+                const float StairLowDepartureAlignedZ = TargetStoryPlaneZ - IncomingMin.Z;
 
                 struct FStairEdgeSocket
                 {
@@ -441,13 +447,14 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
                 }
             }
 
-            // On a foundation, the next floor/ceiling/roof lives one wall story above the
-            // foundation's finished top surface, with the incoming mesh bottom aligned there.
+            // On a foundation, the next floor/ceiling/roof finished TOP surface lives one wall story
+            // above the foundation's finished top surface. The slab thickness extends downward from
+            // that story plane, so it never adds another thickness increment to upper-storey height.
             if (IncomingKind == EARPGBuildPieceKind::Ceiling || IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Roof)
             {
                 if (TargetKind == EARPGBuildPieceKind::Foundation)
                 {
-                    const float StorySurfaceZ = TargetMax.Z + WallHeight - IncomingMin.Z;
+                    const float StorySurfaceZ = TargetMax.Z + WallHeight - IncomingMax.Z;
                     AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, 0.f, StorySurfaceZ)));
                 }
             }
@@ -484,21 +491,27 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
             //   local +X = uphill;
             //   Stair structural HIGH/LOW anchors are +/- Target SnapSize/2 around its bounds centre;
             //   Floor/Ceiling actor centre is one incoming half-grid beyond that anchor;
-            //   incoming BOTTOM owns the canonical story landing plane.
+            //   incoming TOP / walking surface owns the canonical story landing plane.
             const FVector TargetCenter = (TargetMin + TargetMax) * 0.5f;
             const float TargetGrid = FMath::Max(1.f, Definition->SnapSize);
             const float TargetHalfGrid = TargetGrid * 0.5f;
             const float IncomingHalfGrid = IncomingGrid * 0.5f;
             const float LandingCenterOffset = TargetHalfGrid + IncomingHalfGrid;
 
+            // For the standard multi-storey up-flight contract, a Stair actor's visible LOW plane is
+            // the canonical current story surface. Therefore Floor/Ceiling landing surfaces are derived
+            // from that LOW plane + StandardWallHeight, never from the rendered Stair top. This keeps a
+            // 278 cm Stair inside a 300 cm structural storey without letting the missing 22 cm become an
+            // actor offset or accumulate into later floors.
+            const float StairLowStoryPlaneZ = TargetMin.Z;
             const FVector HighLandingTranslation(
                 TargetCenter.X + LandingCenterOffset,
                 TargetCenter.Y,
-                TargetMax.Z - IncomingMin.Z);
+                StairLowStoryPlaneZ + WallHeight - IncomingMax.Z);
             const FVector LowLandingTranslation(
                 TargetCenter.X - LandingCenterOffset,
                 TargetCenter.Y,
-                TargetMax.Z - WallHeight - IncomingMin.Z);
+                StairLowStoryPlaneZ - IncomingMax.Z);
 
             AddLocal(FTransform(FRotator::ZeroRotator, HighLandingTranslation));
             AddLocal(FTransform(FRotator::ZeroRotator, LowLandingTranslation));
@@ -513,7 +526,10 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
                 // inherits the supporting wall's world facing as well as its structural column.
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(Grid, 0.f, AlignBottomPlaneZ)));
                 AddLocal(FTransform(FRotator::ZeroRotator, FVector(-Grid, 0.f, AlignBottomPlaneZ)));
-                AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, 0.f, IncomingAboveTargetZ)));
+                // Vertical Wall-family stacking is a structural story step, not a mesh-top step.
+                // Align the incoming wall bottom to target wall bottom + StandardWallHeight so the
+                // same 300 cm lattice is preserved on every storey regardless of wall art height.
+                AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, 0.f, IncomingOnNextWallStoryPlaneZ)));
 
                 // Perpendicular corner continuation. A modular wall placed on one foundation edge must be
                 // allowed to meet a wall on the adjacent edge without requiring the art meshes to stop
@@ -538,11 +554,16 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
                 }
             }
 
-            // Horizontal structural pieces attach at the actual wall top instead of assuming a centered pivot.
+            // Horizontal structural pieces attach by their finished TOP/walking surface to the wall's
+            // canonical structural story top instead of stacking slab thickness above the storey.
             if (IncomingKind == EARPGBuildPieceKind::Ceiling || IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Roof)
             {
-                AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f,  Half, IncomingAboveTargetZ)));
-                AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, -Half, IncomingAboveTargetZ)));
+                // Floors/Ceilings/Roofs supported by a Wall-family piece own the same canonical
+                // next-story plane as a vertically stacked wall. Never align them to TargetMax.Z: a
+                // decorative wall mesh that is even a few centimetres off would otherwise shift the
+                // Floor, and that shifted Floor would become the baseline for every storey above it.
+                AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f,  Half, IncomingTopOnNextWallStoryPlaneZ)));
+                AddLocal(FTransform(FRotator::ZeroRotator, FVector(0.f, -Half, IncomingTopOnNextWallStoryPlaneZ)));
             }
 
             if (TargetKind == EARPGBuildPieceKind::Doorway && IncomingKind == EARPGBuildPieceKind::Door)

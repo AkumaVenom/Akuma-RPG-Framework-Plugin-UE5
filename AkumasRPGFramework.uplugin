@@ -1,7 +1,7 @@
 {
   "FileVersion": 3,
-  "Version": 21540,
-  "VersionName": "2.15.40-alpha",
+  "Version": 21543,
+  "VersionName": "2.15.43-alpha",
   "FriendlyName": "Akuma's RPG Framework",
   "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with server-authoritative settlement building, structural snapping, construction visuals, persistent storage and fuel-driven production stations, player crafting, functional instance durability and repair, reskinnable native UI, Inventory + Quick Access drag/drop, generic item use, JRPG stats, NPC UI, replicated spawning/footsteps, gathering, combat, factions, saves and networking.",
   "Category": "Gameplay",

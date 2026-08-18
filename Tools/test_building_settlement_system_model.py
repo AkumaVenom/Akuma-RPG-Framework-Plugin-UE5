@@ -72,7 +72,32 @@ assert grounded_actor_z(0.0, -75.0) == 75.0    # center pivot
 # A 300 cm bottom-pivot wall on a 150 cm bottom-pivot foundation starts exactly at foundation top.
 assert (150.0 - 0.0) == 150.0
 require(actor_cpp, 'ARPGGetBuildDefinitionLocalBounds', 'AlignTopPlaneZ', 'IncomingOnTargetTopZ',
-        'TargetMax.Z + WallHeight - IncomingMin.Z', 'IncomingAboveTargetZ')
+        'TargetMax.Z + WallHeight - IncomingMax.Z', 'IncomingOnNextWallStoryPlaneZ',
+        'IncomingTopOnNextWallStoryPlaneZ',
+        'TargetMin.Z + FMath::Max(1.f, Definition->StandardWallHeight) - IncomingMax.Z')
+# v2.15.42 finished-surface lattice regression: Floor/Ceiling thickness extends DOWN from the story
+# plane. A 300 cm storey with an 18 cm Floor therefore places the Floor bottom at 282 and its walking
+# surface/top at 300; slab thickness never becomes +18 cm of additional building height.
+story_height=300.0
+floor_thickness=18.0
+assert story_height-floor_thickness == 282.0
+assert (story_height-floor_thickness)+floor_thickness == story_height
+# v2.15.41 root lattice regression: Wall->Wall and Wall->Floor must never use rendered Wall top
+# as the next-storey plane. A deliberately non-300-cm wall mesh still advances exactly 300 cm per
+# story, so art height error cannot accumulate higher in the building.
+def canonical_next_story(wall_bottom, story_height=300.0):
+    return wall_bottom + story_height
+wall_art_height=287.5
+wall_bottom=0.0
+for story in range(1, 11):
+    wall_bottom=canonical_next_story(wall_bottom)
+    assert abs(wall_bottom-story*300.0) < 1e-5
+# The removed mesh-top path would already be 125 cm off after ten storeys.
+assert abs(wall_art_height*10.0-3000.0) == 125.0
+assert 'FVector(0.f, 0.f, IncomingAboveTargetZ)' not in actor_cpp
+require(build_cpp, 'ARPGGetWallStructuralWorldZRange',
+        'OutMaxZ = OutMinZ + FMath::Max(1.f, Piece->StandardWallHeight)',
+        'WallStructuralTopZ')
 # Authority re-resolves snap/placement rather than trusting local preview.
 pa=build_cpp[build_cpp.index('bool UARPGBuildingComponent::PlacePieceAuthority'):]
 assert 'ResolvePlacementTransform' in pa and 'EvaluatePlacementInternal' in pa
@@ -239,8 +264,11 @@ require(actor_cpp, 'IncomingKind == EARPGBuildPieceKind::Stair && TargetKind != 
         'TargetKind == EARPGBuildPieceKind::Stair && IncomingKind == EARPGBuildPieceKind::Stair',
         'ChainStep', 'CenterDeltaX', 'ContinueUpZ', 'ContinueDownZ', 'FVector(CenterDeltaX + ChainStep, 0.f, ContinueUpZ)', 'FVector(CenterDeltaX - ChainStep, 0.f, ContinueDownZ)',
         'IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Ceiling',
-        'LandingCenterOffset', 'HighLandingTranslation', 'LowLandingTranslation', 'completed Stair exposes flat landing CELLS',
+        'LandingCenterOffset', 'StairLowStoryPlaneZ', 'HighLandingTranslation', 'LowLandingTranslation', 'completed Stair exposes flat landing CELLS',
         'local +X = uphill')
+# Up-flights must start on the current walking surface; never high-align them to the next story.
+assert 'const float StairLowDepartureAlignedZ = TargetStoryPlaneZ - IncomingMin.Z;' in actor_cpp
+assert 'TargetStoryPlaneZ + WallHeight - IncomingMax.Z' not in actor_cpp
 require(build_cpp, 'ARPGIsValidExistingStairWallSideSeamNeighbor', 'bOnSidePlane',
         'WallHalfRun', 'LongitudinalOverlap', 'WallAnchorInStair',
         'IncomingFinal.GetLocation()', 'Reverse Stair-side seam', 'ARPGYawAxesEquivalent(ExistingStair->GetActorRotation().Yaw, IncomingFinal.Rotator().Yaw)')
@@ -314,10 +342,12 @@ assert abs(high_world[1]-133.0) < 1e-5  # 17 cm visual overlap into landing
 assert abs(low_world[1]-467.0) < 1e-5   # 17 cm visual overhang beyond far cell edge
 assert abs(high_world[2]-host_story_plane) < 1e-5
 
-# LOW-departure/up-flight: structural LOW anchor owns the same host edge, placing the Stair actor at
-# the host cell centre (not -17 cm). Its visual ends overhang the +/-150 structural edges by 17 cm.
+# v2.15.43 LOW-departure/up-flight: structural LOW anchor owns the same host edge and the visible
+# Stair LOW plane sits on the CURRENT finished Floor/Foundation surface. The previous high-aligned
+# formula raised every flight by the 22 cm (300-278) residual, making each Stair sit on top of its
+# landing. The 278 cm art now lives inside the 300 cm storey and stops 4 cm below the next Floor slab.
 rl=rotate_z(low_structural,yaw)
-low_departure_translation=(host_edge[0]-rl[0], host_edge[1]-rl[1], host_story_plane+wall_height-stair_max[2])
+low_departure_translation=(host_edge[0]-rl[0], host_edge[1]-rl[1], host_story_plane-stair_min[2])
 assert abs(low_departure_translation[1]-0.0) < 1e-5
 upper_low_world=add(rotate_z(low_visual,yaw),low_departure_translation)
 upper_high_world=add(rotate_z(high_visual,yaw),low_departure_translation)
@@ -327,8 +357,9 @@ assert abs(low_structural_world[1]-150.0) < 1e-5
 assert abs(high_structural_world[1]-(-150.0)) < 1e-5
 assert abs(upper_low_world[1]-167.0) < 1e-5
 assert abs(upper_high_world[1]-(-167.0)) < 1e-5
-assert abs(upper_low_world[2]-22.0) < 1e-5
-assert abs(upper_high_world[2]-300.0) < 1e-5
+assert abs(upper_low_world[2]-0.0) < 1e-5
+assert abs(upper_high_world[2]-278.0) < 1e-5
+assert abs((host_story_plane+wall_height-floor_thickness)-upper_high_world[2]-4.0) < 1e-5
 
 # Direct Stair->Stair continuation advances exactly one structural 300 cm cell and one 300 cm story.
 # Regression explicitly forbids the old raw 334 cm endpoint delta that accumulated 34 cm XY drift.
@@ -345,7 +376,7 @@ for edge,yaw_i in [((0.0,150.0,0.0),-90.0),((0.0,-150.0,0.0),90.0),((150.0,0.0,0
     rhi=rotate_z(high_structural,yaw_i)
     high_t=(edge[0]-rhi[0],edge[1]-rhi[1],host_story_plane-stair_max[2])
     rlo=rotate_z(low_structural,yaw_i)
-    low_t=(edge[0]-rlo[0],edge[1]-rlo[1],host_story_plane+wall_height-stair_max[2])
+    low_t=(edge[0]-rlo[0],edge[1]-rlo[1],host_story_plane-stair_min[2])
     high_anchor=add(rotate_z(high_structural,yaw_i),high_t)
     low_anchor=add(rotate_z(low_structural,yaw_i),low_t)
     assert abs(high_anchor[0]-edge[0]) < 1e-5 and abs(high_anchor[1]-edge[1]) < 1e-5
@@ -357,20 +388,23 @@ floor_min=(-150.0,-150.0,0.0)
 floor_max=(150.0,150.0,18.0)
 landing_center_offset=half_grid+floor_grid*0.5
 assert landing_center_offset == 300.0
-high_floor_t=(stair_center[0]+landing_center_offset, stair_center[1], stair_max[2]-floor_min[2])
-low_floor_t=(stair_center[0]-landing_center_offset, stair_center[1], stair_max[2]-wall_height-floor_min[2])
+# Landing Z is structural: current Stair LOW story + 300, not rendered Stair top. This keeps the
+# upper Floor at the canonical story even though the Stair art itself ends at 278 cm.
+high_floor_t=(stair_center[0]+landing_center_offset, stair_center[1], stair_min[2]+wall_height-floor_max[2])
+low_floor_t=(stair_center[0]-landing_center_offset, stair_center[1], stair_min[2]-floor_max[2])
 assert high_floor_t[0] == 300.0
 assert low_floor_t[0] == -300.0
 
 # For the up-flight placed from the +Y host edge, target actor Y is exactly 0. The upper Floor centre
 # must therefore be exactly one grid cell beyond the far edge at Y=-300, NOT -334 or -317.
-up_stair_actor_world=(0.0,0.0,residual)
+up_stair_actor_world=(0.0,0.0,0.0)
 high_floor_world_offset=rotate_z((high_floor_t[0],high_floor_t[1],0.0),yaw)
 upper_floor_center_world=(up_stair_actor_world[0]+high_floor_world_offset[0],
                           up_stair_actor_world[1]+high_floor_world_offset[1],
                           up_stair_actor_world[2]+high_floor_t[2])
 assert abs(upper_floor_center_world[1]-(-300.0)) < 1e-5
-assert abs(upper_floor_center_world[2]-300.0) < 1e-5  # Floor bottom/story plane
+assert abs(upper_floor_center_world[2]-282.0) < 1e-5  # Floor bottom; finished top/story plane is Z=300
+assert abs((upper_floor_center_world[2]+18.0)-300.0) < 1e-5
 
 # Old v2.15.36 topology: actor -17 plus raw landing 317 = -334 cm world centre. Keep this explicit so
 # future regressions cannot reintroduce visual-endpoint drift under the claim that 334 'cancels'.
@@ -527,13 +561,13 @@ assert stair_side_wall_compatible(0.0,-150.0,90.0)
 assert not stair_side_wall_compatible(150.0,0.0,0.0)
 assert not stair_side_wall_compatible(0.0,150.0,0.0)
 
-# v2.15.14 inter-story seam regression: build order must be commutative. If upper walls were stacked
-# before the 300x300x18 Floor is inserted, their bases share the Floor bottom/story plane and the
-# slab deliberately occupies its own 18 cm thickness through the wall frame. Only exact edge/facing
-# relationships are accepted; a wall through the middle or at an unrelated height still blocks.
-require(build_cpp, 'ARPGIsValidUpperHorizontalWallSeamNeighbor', 'bPreStackedUpperWallAtStorySeam',
-        'bSupportingWallBelow', 'bWallBuiltOnSlabTop', 'ARPGWallOccupiesHorizontalStructuralEdge',
-        'This makes Floor-first and Wall-stack-first construction produce the same valid result')
+# Inter-story seam regression: build order must be commutative. The 300x300x18 Floor's FINISHED TOP
+# is the Z=300 story plane, while the slab itself extends downward through Z=282..300. A lower wall
+# ends at that top plane and a pre-stacked upper wall starts there. Only exact edge/facing relationships
+# are accepted; a wall through the middle or at an unrelated height still blocks.
+require(build_cpp, 'ARPGIsValidUpperHorizontalWallSeamNeighbor', 'bSupportingWallBelow',
+        'bWallBuiltOnStoryPlane', 'ARPGWallOccupiesHorizontalStructuralEdge',
+        'This makes build order commutative without globally ignoring building collision')
 
 def valid_interstory_seam(origin_xy, wall_yaw, floor_yaw, wall_bottom, wall_top, floor_bottom, floor_top, snap=300.0, tol=2.5):
     half=snap*0.5
@@ -547,27 +581,26 @@ def valid_interstory_seam(origin_xy, wall_yaw, floor_yaw, wall_bottom, wall_top,
             break
     if not edge_ok:
         return False
-    return (abs(wall_top-floor_bottom) <= tol or
-            abs(wall_bottom-floor_top) <= tol or
-            abs(wall_bottom-floor_bottom) <= tol)
+    return (abs(wall_top-floor_top) <= tol or
+            abs(wall_bottom-floor_top) <= tol)
 
-# Floor spans Z=300..318. Lower support ends at 300; a pre-stacked upper wall also starts at 300.
-assert valid_interstory_seam((0.0,150.0),0.0,0.0,0.0,300.0,300.0,318.0)      # lower support
-assert valid_interstory_seam((0.0,150.0),0.0,0.0,300.0,600.0,300.0,318.0)    # pre-stacked upper wall
-assert valid_interstory_seam((150.0,0.0),-90.0,0.0,300.0,600.0,300.0,318.0) # perpendicular upper wall
-assert valid_interstory_seam((0.0,150.0),0.0,0.0,318.0,618.0,300.0,318.0)    # wall built after Floor
-assert not valid_interstory_seam((0.0,0.0),0.0,0.0,300.0,600.0,300.0,318.0) # wall through tile center
-assert not valid_interstory_seam((0.0,150.0),90.0,0.0,300.0,600.0,300.0,318.0) # wrong facing
-assert not valid_interstory_seam((0.0,150.0),0.0,0.0,350.0,650.0,300.0,318.0) # unrelated height
+# Floor spans Z=282..300. Lower support ends at 300; a pre-stacked upper wall also starts at 300.
+assert valid_interstory_seam((0.0,150.0),0.0,0.0,0.0,300.0,282.0,300.0)      # lower support
+assert valid_interstory_seam((0.0,150.0),0.0,0.0,300.0,600.0,282.0,300.0)    # pre-stacked upper wall
+assert valid_interstory_seam((150.0,0.0),-90.0,0.0,300.0,600.0,282.0,300.0) # perpendicular upper wall
+assert valid_interstory_seam((0.0,150.0),0.0,0.0,300.0,600.0,282.0,300.0)    # wall built after Floor
+assert not valid_interstory_seam((0.0,0.0),0.0,0.0,300.0,600.0,282.0,300.0) # wall through tile center
+assert not valid_interstory_seam((0.0,150.0),90.0,0.0,300.0,600.0,282.0,300.0) # wrong facing
+assert not valid_interstory_seam((0.0,150.0),0.0,0.0,350.0,650.0,282.0,300.0) # unrelated height
 
-# v2.15.15 inverse story-bay seam: an incoming Wall-family piece may fill the bay between a lower
-# slab and an already-built upper Floor/Ceiling/Roof. The upper slab is accepted only when the wall
-# sits on its exact edge/facing and the wall visible top meets the slab visible bottom.
+# Inverse story-bay seam: an incoming Wall-family piece may fill the bay between a lower slab and an
+# already-built upper Floor/Ceiling/Roof. The upper slab is accepted only when the wall sits on its exact
+# edge/facing and the wall structural story top meets the slab FINISHED TOP/story plane.
 require(build_cpp, 'ARPGIsValidWallUnderUpperHorizontalSeamNeighbor',
-        'WallTopZ - HorizontalBottomZ', 'Inverse story-bay seam',
+        'WallStructuralTopZ - HorizontalTopZ', 'Inverse inter-story seam',
         'upper slab is a legitimate')
 
-def valid_wall_under_upper_slab(wall_origin_xy, wall_yaw, slab_yaw, wall_top, slab_bottom, snap=300.0, tol=2.5):
+def valid_wall_under_upper_slab(wall_origin_xy, wall_yaw, slab_yaw, wall_top, slab_top, snap=300.0, tol=2.5):
     half=snap*0.5
     edges=[((0.0, half),0.0),((0.0,-half),180.0),((half,0.0),-90.0),((-half,0.0),90.0)]
     def yaw_delta(a,b):
@@ -577,16 +610,16 @@ def valid_wall_under_upper_slab(wall_origin_xy, wall_yaw, slab_yaw, wall_top, sl
         if (wall_origin_xy[0]-ex)**2 + (wall_origin_xy[1]-ey)**2 <= tol*tol and yaw_delta(slab_yaw+rel_yaw, wall_yaw) <= 1.0:
             edge_ok=True
             break
-    return edge_ok and abs(wall_top-slab_bottom) <= tol
+    return edge_ok and abs(wall_top-slab_top) <= tol
 
-# Lower slab top is Z=318; incoming wall fills 318..589; upper slab begins at Z=589.
-assert valid_wall_under_upper_slab((0.0,150.0),0.0,0.0,589.0,589.0)
-assert valid_wall_under_upper_slab((150.0,0.0),-90.0,0.0,589.0,589.0)
+# Incoming wall fills Z=300..600; upper Floor slab spans Z=582..600 and is recessed downward.
+assert valid_wall_under_upper_slab((0.0,150.0),0.0,0.0,600.0,600.0)
+assert valid_wall_under_upper_slab((150.0,0.0),-90.0,0.0,600.0,600.0)
 # Square upper slab may itself be cardinally rotated; local edge mapping still resolves same world facing.
-assert valid_wall_under_upper_slab((150.0,0.0),0.0,90.0,589.0,589.0)
-assert not valid_wall_under_upper_slab((0.0,0.0),0.0,0.0,589.0,589.0)       # wall through tile center
-assert not valid_wall_under_upper_slab((0.0,150.0),90.0,0.0,589.0,589.0)    # wrong facing
-assert not valid_wall_under_upper_slab((0.0,150.0),0.0,0.0,600.0,589.0)     # extends through slab / wrong plane
+assert valid_wall_under_upper_slab((150.0,0.0),0.0,90.0,600.0,600.0)
+assert not valid_wall_under_upper_slab((0.0,0.0),0.0,0.0,600.0,600.0)       # wall through tile center
+assert not valid_wall_under_upper_slab((0.0,150.0),90.0,0.0,600.0,600.0)    # wrong facing
+assert not valid_wall_under_upper_slab((0.0,150.0),0.0,0.0,611.0,600.0)     # wrong story plane
 # 300 cm target + 300 cm incoming wall: the four L-corner centers sit at +/-150 cm on both axes,
 # and each center accepts both +/-90 facing variants for intentional wall-only left/right turns.
 target_half = 300.0 * 0.5
@@ -602,12 +635,11 @@ assert len(corner_candidates) == 8
 # support-edge yaw must rotate that +Y vector toward each edge's outward normal. The previous
 # +X/-X signs were reversed, making exactly two opposite walls show their back face.
 require(actor_cpp,
-        'const float IncomingWallStoryBaseZ',
-        'TargetKind == EARPGBuildPieceKind::Foundation',
-        '? IncomingOnTargetTopZ', ': AlignBottomPlaneZ',
+        'const float IncomingWallStoryBaseZ = IncomingOnTargetTopZ',
         'FRotator(0.f, -90.f, 0.f), FVector(Half, 0.f, IncomingWallStoryBaseZ)',
         'FRotator(0.f,  90.f, 0.f), FVector(-Half, 0.f, IncomingWallStoryBaseZ)',
-        'canonical story seam', 'actor local +Y is the', 'front/exterior side')
+        'finished horizontal walking surface as the canonical story',
+        'actor local +Y is the', 'front/exterior side')
 import math
 def rotate_y(yaw_deg):
     r=math.radians(yaw_deg)
@@ -724,16 +756,25 @@ require(build_cpp, 'ARPGGetSnapCandidateSemanticPriority', 'ARPGIsHorizontalStru
         'SemanticPriority < BestSemanticPriority', 'ARPGWallSnapCandidatesShareStructuralSlot',
         'bHorizontalCandidateStartsOnStoryPlane', 'bWallStackCandidateStartsOnStoryPlane',
         'bCandidateBottomsAgree')
-# v2.15.20 no-gap story-plane regression: a real 18 cm upper Floor occupies Z=300..318, but the
-# canonical next-story wall starts at the Floor *bottom/story plane* (Z=300), exactly matching a
-# direct vertical stack from the lower wall. The slab overlaps the lower 18 cm of the upper wall frame
-# instead of adding 18 cm to the storey height and exposing a horizontal facade gap.
-floor_bottom, floor_top = 300.0, 318.0
+# v2.15.42 finished-surface no-gap regression: a real 18 cm upper Floor occupies Z=282..300. The
+# canonical next-story wall starts at the Floor TOP/walking surface (Z=300), exactly matching a direct
+# vertical stack from the lower wall. The slab overlaps the final 18 cm of the LOWER wall instead of
+# adding 18 cm to storey height or forcing the Stair to stop at the underside of the landing.
+floor_bottom, floor_top = 282.0, 300.0
 vertical_wall_bottom = 300.0
-floor_edge_wall_bottom = floor_bottom
+floor_edge_wall_bottom = floor_top
 assert floor_edge_wall_bottom == vertical_wall_bottom
-assert floor_top-floor_edge_wall_bottom == 18.0
-assert abs(vertical_wall_bottom-floor_bottom) <= 2.5
+assert floor_top-floor_bottom == 18.0
+assert abs(vertical_wall_bottom-floor_top) <= 2.5
+# Every build order must resolve the next story surface from wall bottom + StandardWallHeight, never WallMaxZ.
+# Simulate art that is intentionally 12.5 cm shorter than the 300 cm structural bay.
+short_wall_visual_top=287.5
+canonical_floor_top=0.0+300.0
+canonical_floor_bottom=canonical_floor_top-18.0
+canonical_upper_wall_bottom=0.0+300.0
+assert canonical_floor_top == canonical_upper_wall_bottom == 300.0
+assert canonical_floor_bottom == 282.0
+assert short_wall_visual_top != canonical_floor_top
 # v2.15.6 vertical-stack facing regression: candidate ownership is relationship-aware, not merely
 # target-kind-aware. The wall directly below owns local-XY-zero, above-target, zero-relative-yaw
 # stack candidates; lateral/corner wall candidates remain lower priority at the same world slot.

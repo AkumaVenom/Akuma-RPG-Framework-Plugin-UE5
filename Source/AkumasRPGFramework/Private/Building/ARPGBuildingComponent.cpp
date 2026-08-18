@@ -155,8 +155,9 @@ static bool ARPGSegmentIntersectsLocalBox(
  * deterministic ownership that is independent of overlap iteration order and camera yaw:
  *
  *  1) A horizontal Foundation/Floor/Ceiling/Roof edge owns canonical exterior facing whenever it
- *     exists for that wall column. Upper horizontal pieces now generate that candidate on their
- *     bottom/story plane, so Floor thickness never changes the wall's vertical grid position.
+ *     exists for that wall column. All flat structural pieces generate Wall candidates from their
+ *     finished TOP/walking-surface story plane, while slab thickness extends downward and never adds
+ *     vertical height to the next storey.
  *  2) The wall-family piece directly below is the second owner and preserves vertical-stack facing
  *     when no horizontal support edge owns the slot.
  *  3) Lateral/corner walls are the final owner for wall-only continuation/corners.
@@ -827,6 +828,26 @@ static void ARPGGetDefinitionWorldZRange(
 }
 
 /**
+ * Wall-family structural occupancy belongs to the authored story lattice, not the rendered mesh
+ * height. The visible/art bounds are still used to find the wall bottom/pivot compensation, but the
+ * structural top is always exactly StandardWallHeight above that bottom. This prevents a wall mesh
+ * that is 298/302 cm tall (or has decorative trim) from changing Floor placement, vertical stacking,
+ * or seam classification on every successive storey.
+ */
+static void ARPGGetWallStructuralWorldZRange(
+    const UARPGBuildPieceDefinition* Piece,
+    const FTransform& Transform,
+    float& OutMinZ,
+    float& OutMaxZ)
+{
+    ARPGGetDefinitionWorldZRange(Piece, Transform, OutMinZ, OutMaxZ);
+    if (Piece && ARPGIsWallLikeKind(Piece->PieceKind))
+    {
+        OutMaxZ = OutMinZ + FMath::Max(1.f, Piece->StandardWallHeight);
+    }
+}
+
+/**
  * Wall snap ownership is compared by structural slot, not merely by target actor identity. Standard
  * v2.15.20+ horizontal Wall sockets and direct vertical-stack sockets now share the same canonical
  * story plane, so they normally compare equal by position before this helper is needed. Keep this
@@ -874,9 +895,9 @@ static bool ARPGWallSnapCandidatesShareStructuralSlot(
     ARPGGetDefinitionWorldZRange(IncomingPiece, WallCandidate, WallCandidateMinZ, WallCandidateMaxZ);
 
     const bool bHorizontalCandidateStartsOnStoryPlane =
-        FMath::Abs(HorizontalCandidateMinZ - HorizontalMinZ) <= PositionTolerance;
+        FMath::Abs(HorizontalCandidateMinZ - HorizontalMaxZ) <= PositionTolerance;
     const bool bWallStackCandidateStartsOnStoryPlane =
-        FMath::Abs(WallCandidateMinZ - HorizontalMinZ) <= PositionTolerance;
+        FMath::Abs(WallCandidateMinZ - HorizontalMaxZ) <= PositionTolerance;
     const bool bCandidateBottomsAgree =
         FMath::Abs(HorizontalCandidateMinZ - WallCandidateMinZ) <= PositionTolerance;
 
@@ -905,7 +926,7 @@ static FARPGWallStructuralSegment ARPGMakeWallStructuralSegment(
     Result.Axis = FVector2D(WorldAxis3D.X, WorldAxis3D.Y).GetSafeNormal();
     if (Result.Axis.IsNearlyZero()) Result.Axis = FVector2D(1.f, 0.f);
     Result.HalfLength = FMath::Max(1.f, Piece ? Piece->SnapSize * 0.5f : 1.f);
-    ARPGGetDefinitionWorldZRange(Piece, Transform, Result.MinZ, Result.MaxZ);
+    ARPGGetWallStructuralWorldZRange(Piece, Transform, Result.MinZ, Result.MaxZ);
     return Result;
 }
 
@@ -1013,7 +1034,7 @@ static EARPGStructuralOccupancyRelation ARPGClassifyWallHorizontalStructuralOccu
         return EARPGStructuralOccupancyRelation::NotApplicable;
 
     float WallMinZ, WallMaxZ, HorizontalMinZ, HorizontalMaxZ;
-    ARPGGetDefinitionWorldZRange(WallPiece, WallTransform, WallMinZ, WallMaxZ);
+    ARPGGetWallStructuralWorldZRange(WallPiece, WallTransform, WallMinZ, WallMaxZ);
     ARPGGetDefinitionWorldZRange(HorizontalPiece, HorizontalTransform, HorizontalMinZ, HorizontalMaxZ);
 
     const float VerticalOverlap = FMath::Min(WallMaxZ, HorizontalMaxZ) - FMath::Max(WallMinZ, HorizontalMinZ);
@@ -1253,9 +1274,8 @@ static bool ARPGIsCompatibleStairHostStructuralNeighbor(
         ARPGGetDefinitionWorldZRange(StairHost->Definition, StairHost->GetActorTransform(), HostMinZ, HostMaxZ);
         ARPGGetDefinitionWorldZRange(Neighbor->Definition, Neighbor->GetActorTransform(), NeighborMinZ, NeighborMaxZ);
 
-        const EARPGBuildPieceKind HostKind = StairHost->Definition->PieceKind;
-        const float HostStoryPlane = HostKind == EARPGBuildPieceKind::Foundation ? HostMaxZ : HostMinZ;
-        const float NeighborStoryPlane = NeighborKind == EARPGBuildPieceKind::Foundation ? NeighborMaxZ : NeighborMinZ;
+        const float HostStoryPlane = HostMaxZ;
+        const float NeighborStoryPlane = NeighborMaxZ;
         if (FMath::Abs(NeighborStoryPlane - HostStoryPlane) > PositionTolerance) return false;
 
         FVector ToNeighbor = Neighbor->GetActorLocation() - StairCellCenter;
@@ -1524,16 +1544,15 @@ static bool ARPGWallOccupiesHorizontalStructuralEdge(
 
 /**
  * A Floor/Ceiling/Roof can be inserted at an already-built story boundary after the player has
- * vertically stacked the next row of Wall-family pieces. In that build order, the upper wall's
- * visible bottom and the horizontal slab's visible bottom share the same story plane, so the slab
- * intentionally occupies its own thickness through the wall frame/post. That is a legitimate
+ * vertically stacked the next row of Wall-family pieces. The horizontal slab's finished TOP is the
+ * canonical story plane shared by the lower wall structural top and the upper wall bottom; the slab
+ * extends downward into the lower wall frame/post. That is a legitimate
  * modular inter-story seam, not arbitrary clipping.
  *
  * Accept this overlap only when all three structural facts are true:
  *   - the Wall/WindowWall/Doorway actor origin is on one of the horizontal tile's four grid edges;
  *   - its wall-run axis is tangent to that edge (front/back reversal is structurally equivalent); and
- *   - its visible top/bottom aligns to a legitimate slab seam plane (support below, wall on top, or
- *     pre-stacked upper wall whose bottom shares the slab bottom plane).
+ *   - its structural top/bottom aligns to the slab finished TOP story plane (support below or wall on top).
  *
  * This makes build order commutative without globally ignoring building collision. A wall through
  * the middle of the tile, a perpendicular wall axis, or a wall at an unrelated height remains blocked.
@@ -1563,19 +1582,16 @@ static bool ARPGIsValidUpperHorizontalWallSeamNeighbor(
 
     const FVector HorizontalCenter = (HorizontalMin + HorizontalMax) * 0.5f;
     const FVector WallCenter = (WallMin + WallMax) * 0.5f;
-    const float HorizontalBottomZ = HorizontalFinal.TransformPosition(
-        FVector(HorizontalCenter.X, HorizontalCenter.Y, HorizontalMin.Z)).Z;
     const float HorizontalTopZ = HorizontalFinal.TransformPosition(
         FVector(HorizontalCenter.X, HorizontalCenter.Y, HorizontalMax.Z)).Z;
     const FTransform NeighborTransform = Neighbor->GetActorTransform();
     const float WallBottomZ = NeighborTransform.TransformPosition(FVector(WallCenter.X, WallCenter.Y, WallMin.Z)).Z;
-    const float WallTopZ = NeighborTransform.TransformPosition(FVector(WallCenter.X, WallCenter.Y, WallMax.Z)).Z;
+    const float WallStructuralTopZ = WallBottomZ + FMath::Max(1.f, Neighbor->Definition->StandardWallHeight);
 
-    const bool bSupportingWallBelow = FMath::Abs(WallTopZ - HorizontalBottomZ) <= PositionTolerance;
-    const bool bWallBuiltOnSlabTop = FMath::Abs(WallBottomZ - HorizontalTopZ) <= PositionTolerance;
-    const bool bPreStackedUpperWallAtStorySeam = FMath::Abs(WallBottomZ - HorizontalBottomZ) <= PositionTolerance;
+    const bool bSupportingWallBelow = FMath::Abs(WallStructuralTopZ - HorizontalTopZ) <= PositionTolerance;
+    const bool bWallBuiltOnStoryPlane = FMath::Abs(WallBottomZ - HorizontalTopZ) <= PositionTolerance;
 
-    return bSupportingWallBelow || bWallBuiltOnSlabTop || bPreStackedUpperWallAtStorySeam;
+    return bSupportingWallBelow || bWallBuiltOnStoryPlane;
 }
 
 
@@ -1590,7 +1606,7 @@ static bool ARPGIsValidUpperHorizontalWallSeamNeighbor(
  * Accept the upper horizontal neighbour only when:
  *   - the incoming Wall-family actor lies on one of that slab's exact four structural edges;
  *   - its wall-run axis is tangent to that edge (either front/back facing is valid occupancy); and
- *   - the incoming wall's visible top meets the upper slab's visible bottom plane.
+ *   - the incoming wall's structural story top meets the upper slab's finished TOP/story plane.
  *
  * This is deliberately one-way and exact. A wall crossing the tile center, perpendicular wall axis,
  * wall that extends through the slab, or slab at an unrelated height remains a collision blocker.
@@ -1621,11 +1637,12 @@ static bool ARPGIsValidWallUnderUpperHorizontalSeamNeighbor(
 
     const FVector WallCenter = (WallMin + WallMax) * 0.5f;
     const FVector HorizontalCenter = (HorizontalMin + HorizontalMax) * 0.5f;
-    const float WallTopZ = WallFinal.TransformPosition(FVector(WallCenter.X, WallCenter.Y, WallMax.Z)).Z;
-    const float HorizontalBottomZ = HorizontalTransform.TransformPosition(
-        FVector(HorizontalCenter.X, HorizontalCenter.Y, HorizontalMin.Z)).Z;
+    const float WallBottomZ = WallFinal.TransformPosition(FVector(WallCenter.X, WallCenter.Y, WallMin.Z)).Z;
+    const float WallStructuralTopZ = WallBottomZ + FMath::Max(1.f, WallPiece->StandardWallHeight);
+    const float HorizontalTopZ = HorizontalTransform.TransformPosition(
+        FVector(HorizontalCenter.X, HorizontalCenter.Y, HorizontalMax.Z)).Z;
 
-    return FMath::Abs(WallTopZ - HorizontalBottomZ) <= PositionTolerance;
+    return FMath::Abs(WallStructuralTopZ - HorizontalTopZ) <= PositionTolerance;
 }
 
 /**

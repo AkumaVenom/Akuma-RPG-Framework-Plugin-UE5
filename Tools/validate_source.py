@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21540 or descriptor.get("VersionName") != "2.15.40-alpha":
-        issues.append("package descriptor must identify v2.15.40-alpha")
+    if descriptor.get("Version") != 21543 or descriptor.get("VersionName") != "2.15.43-alpha":
+        issues.append("package descriptor must identify v2.15.43-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1816,20 +1816,35 @@ if all(p.exists() for p in paths_2150):
     inh = interaction_h_2150.read_text(errors="replace"); inc = interaction_cpp_2150.read_text(errors="replace")
     ch215 = character_h_2150.read_text(errors="replace"); cc215 = character_cpp_2150.read_text(errors="replace")
     sth = station_h_2150.read_text(errors="replace"); stc = station_cpp_2150.read_text(errors="replace")
-    # v2.15.20 inter-story no-gap contract: upper horizontal Wall-family sockets anchor to the
-    # slab bottom/story plane, while Foundation walls still anchor to the Foundation top. This keeps
-    # Floor-first and Wall-stack-first construction vertically identical and prevents slab thickness
-    # from accumulating into facade gaps.
+    # v2.15.42 finished-surface story contract: every flat structural module owns its FINISHED TOP
+    # as the canonical story plane. Floor/Ceiling/Roof thickness extends downward from that plane, so
+    # slab thickness never adds height to upper Wall or Stair chains.
     for required in (
-        "const float IncomingWallStoryBaseZ",
-        "TargetKind == EARPGBuildPieceKind::Foundation",
-        "? IncomingOnTargetTopZ",
-        ": AlignBottomPlaneZ",
-        "FVector(0.f,  Half, IncomingWallStoryBaseZ)",
-        "canonical story seam",
+        "const float IncomingWallStoryBaseZ = IncomingOnTargetTopZ",
+        "finished horizontal walking surface as the canonical story",
+        "const float TargetStoryPlaneZ = TargetMax.Z",
+        "TargetMax.Z + WallHeight - IncomingMax.Z",
+        "IncomingTopOnNextWallStoryPlaneZ",
+        "TargetMax.Z - IncomingMax.Z",
+        "TargetMax.Z - WallHeight - IncomingMax.Z",
     ):
         if required not in bac:
-            issues.append(f"v2.15.20 canonical story-plane Wall snap missing: {required}")
+            issues.append(f"v2.15.42 finished-surface story snap contract missing: {required}")
+    # v2.15.43 Stair low-end story-surface contract: LOW-departure/up-flight art starts on the
+    # CURRENT finished surface. The upper Floor remains on low-story + StandardWallHeight instead
+    # of lifting the Stair by the 22 cm difference between 300 cm story height and 278 cm art rise.
+    for required in (
+        "const float StairLowDepartureAlignedZ = TargetStoryPlaneZ - IncomingMin.Z",
+        "const float StairLowStoryPlaneZ = TargetMin.Z",
+        "StairLowStoryPlaneZ + WallHeight - IncomingMax.Z",
+        "StairLowStoryPlaneZ - IncomingMax.Z",
+        "LOW-departure/up-flight stairs start on the CURRENT finished walking surface",
+    ):
+        if required not in bac:
+            issues.append(f"v2.15.43 Stair low-end story-surface contract missing: {required}")
+    if "const float StairLowDepartureAlignedZ = TargetStoryPlaneZ + WallHeight - IncomingMax.Z" in bac:
+        issues.append("v2.15.43 must not lift LOW-departure Stairs by the 300-minus-rendered-rise residual")
+
     # v2.15.23 resolves Wall-family facade direction from occupied horizontal cells while preserving
     # each support's own native wall-socket yaw. This makes 1x2/2x2/larger footprints independent of
     # camera side and removes the unsafe mesh-front-axis re-derivation introduced during upper-story polish.
@@ -1882,7 +1897,7 @@ if all(p.exists() for p in paths_2150):
         if required not in bc: issues.append(f"v2.15.2 pivot-aware ground placement missing: {required}")
     if "Hit.ImpactNormal * FMath::Max(0.f, SelectedBuildPiece->PlacementBounds.Z)" in bc:
         issues.append("v2.15.2 ground placement must not blindly lift every mesh by PlacementBounds.Z")
-    for required in ("ARPGGetBuildDefinitionLocalBounds", "IncomingOnTargetTopZ", "AlignBottomPlaneZ", "TargetMax.Z + WallHeight - IncomingMin.Z"):
+    for required in ("ARPGGetBuildDefinitionLocalBounds", "IncomingOnTargetTopZ", "AlignBottomPlaneZ", "TargetMax.Z + WallHeight - IncomingMax.Z"):
         if required not in bac: issues.append(f"v2.15.2 pivot-aware structural snap math missing: {required}")
     for required in ("MeshRelativeTransform", "FTransform::Identity"):
         if required not in bdh: issues.append(f"v2.15.3 data-driven mesh transform missing: {required}")
@@ -1925,7 +1940,7 @@ if all(p.exists() for p in paths_2150):
         issues.append("v2.15.38 Stair host-neighbour classifier must not blanket-reject every horizontal neighbour; immediate same-story deck seams need structural-cell classification")
     for required in ("IncomingStairHalfRun", "StairHighStructuralXYLocal", "StairLowStructuralXYLocal", "TargetStoryPlaneZ", "StairHighArrivalAlignedZ", "StairLowDepartureAlignedZ", "FStairEdgeSocket", "HighArrivalTranslation", "LowDepartureTranslation", "Structural Stair endpoints belong to the authored SnapSize grid", "TargetKind == EARPGBuildPieceKind::Stair && IncomingKind == EARPGBuildPieceKind::Stair", "ChainStep", "CenterDeltaX", "ContinueUpZ", "ContinueDownZ", "FVector(CenterDeltaX + ChainStep, 0.f, ContinueUpZ)", "FVector(CenterDeltaX - ChainStep, 0.f, ContinueDownZ)", "local +X = uphill"):
         if required not in bac: issues.append(f"v2.15.37 canonical Stair XY/Z structural-grid socket contract missing: {required}")
-    for required in ("IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Ceiling", "LandingCenterOffset", "HighLandingTranslation", "LowLandingTranslation", "completed Stair exposes flat landing CELLS", "TargetCenter.X + LandingCenterOffset", "TargetCenter.X - LandingCenterOffset", "TargetMax.Z - IncomingMin.Z", "TargetMax.Z - WallHeight - IncomingMin.Z"):
+    for required in ("IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Ceiling", "LandingCenterOffset", "HighLandingTranslation", "LowLandingTranslation", "completed Stair exposes flat landing CELLS", "TargetCenter.X + LandingCenterOffset", "TargetCenter.X - LandingCenterOffset", "TargetMax.Z - IncomingMax.Z", "TargetMax.Z - WallHeight - IncomingMax.Z"):
         if required not in bac: issues.append(f"v2.15.37 Stair-owned Floor/Ceiling canonical XY/Z landing-cell contract missing: {required}")
     stair_floor_start = bac.find("if (TargetKind == EARPGBuildPieceKind::Stair &&\n            (IncomingKind == EARPGBuildPieceKind::Floor || IncomingKind == EARPGBuildPieceKind::Ceiling))")
     stair_floor_end = bac.find("if (ARPGIsWallLike(TargetKind))", stair_floor_start) if stair_floor_start >= 0 else -1
@@ -1933,6 +1948,29 @@ if all(p.exists() for p in paths_2150):
     for forbidden in ("TargetMax.X - IncomingMin.X", "TargetMin.X - IncomingMax.X"):
         if forbidden in stair_floor_block:
             issues.append(f"v2.15.37 Stair->Floor landing must not derive XY cell centres from raw visual Stair endpoints: {forbidden}")
+    # v2.15.41 removes the final rendered-Wall-height dependency from vertical story progression.
+    # Native Wall->Wall and Wall->Floor ownership, semantic occupancy, and inverse seam validation
+    # must all use the same StandardWallHeight structural bay.
+    for required in (
+        "IncomingOnNextWallStoryPlaneZ",
+        "TargetMin.Z + FMath::Max(1.f, Definition->StandardWallHeight) - IncomingMin.Z",
+        "IncomingTopOnNextWallStoryPlaneZ",
+        "TargetMin.Z + FMath::Max(1.f, Definition->StandardWallHeight) - IncomingMax.Z",
+        "Vertical Wall-family stacking is a structural story step",
+        "Floors/Ceilings/Roofs supported by a Wall-family piece own the same canonical",
+    ):
+        if required not in bac: issues.append(f"v2.15.41 canonical Wall story snap lattice missing: {required}")
+    for required in (
+        "ARPGGetWallStructuralWorldZRange",
+        "OutMaxZ = OutMinZ + FMath::Max(1.f, Piece->StandardWallHeight)",
+        "WallStructuralTopZ",
+    ):
+        if required not in bc: issues.append(f"v2.15.41 canonical Wall structural occupancy/seam lattice missing: {required}")
+    wall_target_start = bac.find("if (ARPGIsWallLike(TargetKind))")
+    wall_target_end = bac.find("if (TargetKind == EARPGBuildPieceKind::Pillar", wall_target_start) if wall_target_start >= 0 else -1
+    wall_target_block = bac[wall_target_start:wall_target_end] if wall_target_start >= 0 and wall_target_end > wall_target_start else ""
+    if "IncomingAboveTargetZ" in wall_target_block:
+        issues.append("v2.15.41 Wall-family vertical story paths must not derive next-storey Z from rendered TargetMax.Z")
     for required in ("ARPGIsValidExistingStairWallSideSeamNeighbor", "bOnSidePlane", "WallHalfRun", "LongitudinalOverlap", "WallAnchorInStair", "IncomingFinal.GetLocation()", "Reverse Stair-side seam", "ARPGYawAxesEquivalent(ExistingStair->GetActorRotation().Yaw, IncomingFinal.Rotator().Yaw)"):
         if required not in bc: issues.append(f"v2.15.35 Stair-first Wall-family structural-anchor side-seam contract missing: {required}")
     stair_wall_start = bc.find("static bool ARPGIsValidExistingStairWallSideSeamNeighbor(")
@@ -1969,9 +2007,9 @@ if all(p.exists() for p in paths_2150):
         if required not in meaningful_fn: issues.append(f"v2.15.27 Stair query/final occupancy consistency missing: {required}")
     if "ARPGMakePlacementOBB(IncomingPiece, IncomingFinal)" in meaningful_fn:
         issues.append("v2.15.27 final build-vs-build Stair validation must not reconstruct the incoming Stair as one full PlacementBounds OBB")
-    for required in ("ARPGIsValidUpperHorizontalWallSeamNeighbor", "bPreStackedUpperWallAtStorySeam", "bSupportingWallBelow", "bWallBuiltOnSlabTop", "ARPGWallOccupiesHorizontalStructuralEdge", "Floor-first and Wall-stack-first construction produce the same valid result"):
+    for required in ("ARPGIsValidUpperHorizontalWallSeamNeighbor", "bSupportingWallBelow", "bWallBuiltOnStoryPlane", "ARPGWallOccupiesHorizontalStructuralEdge", "This makes build order commutative without globally ignoring building collision"):
         if required not in bc: issues.append(f"v2.15.14 inter-story Floor/Wall seam validation missing: {required}")
-    for required in ("ARPGIsValidWallUnderUpperHorizontalSeamNeighbor", "WallTopZ - HorizontalBottomZ", "Inverse story-bay seam", "upper slab is a legitimate"):
+    for required in ("ARPGIsValidWallUnderUpperHorizontalSeamNeighbor", "WallStructuralTopZ - HorizontalTopZ", "Inverse inter-story seam", "upper slab is a legitimate"):
         if required not in bc: issues.append(f"v2.15.15 wall-between-upper-slabs seam validation missing: {required}")
     neighbor_fn = bc[bc.find("static bool ARPGIsValidSnappedBuildNeighbor"):bc.find("UARPGBuildingComponent::UARPGBuildingComponent")]
     if "if (NeighborCandidates.Num() == 0) return false;" in neighbor_fn:
@@ -2099,6 +2137,9 @@ if readme_2150.exists():
     if not release_documented("v2.15.38-alpha — Stair Tiled-Deck Overhang Seam Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.38 Stair tiled-deck overhang seam root fix")
     if not release_documented("v2.15.39-alpha — Combat Targeting & Faction Integrity Recovery Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.39 combat/targeting faction integrity fix")
     if not release_documented("v2.15.40-alpha — Player-Only Character Persistence Scope / Relog Combat Recovery Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.40 player-only persistence relog fix")
+    if not release_documented("v2.15.41-alpha — Canonical Wall Story Lattice Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.41 canonical Wall story lattice fix")
+    if not release_documented("v2.15.42-alpha — Finished-Surface Story Plane & Stair/Floor Recess Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.42 finished-surface story-plane fix")
+    if not release_documented("v2.15.43-alpha — Stair Low-End Story-Surface Anchor Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.43 Stair low-end story-surface fix")
 
     persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
     ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")

@@ -6,7 +6,7 @@
 | Reciprocal hostile AI combat | Implemented | Player damage permission and lock-on can recognize hostility owned by the target AI, preventing hostile NPCs from being untargetable/undamageable when the base relation is neutral or temporarily unresolved. |
 | Player-only character persistence | Implemented | v2.15.40 prevents `AARPGAICharacter` from consuming `LastCharacterId` or reading/writing the player account character slot. NPCs keep authored/spawner state across relog instead of inheriting player faction/state. |
 
-## Settlement Building, Storage & Production (v2.15.38; preserved in v2.15.40)
+## Settlement Building, Storage & Production (v2.15.43)
 
 | Feature | Status | Notes |
 |---|---|---|
@@ -14,11 +14,12 @@
 | Pivot-aware ground placement | Implemented | v2.15.2 anchors the real Build Mesh bounds to the traced surface so bottom/center/corner pivots place flush; validation/support/vertical snaps use the same mesh-aware anchor. |
 | Data-driven mesh orientation | Implemented | v2.15.3 exposes per-piece `Mesh Relative Transform` so imported art can be rotated/offset/scaled inside the native build actor without reimporting meshes; ghost/final presentation and transformed bounds stay in parity while structural snapping retains stable logical actor axes. |
 | Structural snapping | Implemented | Standard modular snaps for foundations, wall/window/door families, floors/ceilings/roofs, stairs/pillars and custom snap transforms. Preview and authority resolve the same structural graph; full-view semantic acquisition is used for Door/Window openings. |
-| Multi-storey build-order symmetry | Implemented | Upper slabs and Wall-family pieces can be authored in either order when they describe the same story seam. v2.15.20 uses the slab bottom/story plane so physical slab thickness does not create vertical gaps or cumulative storey drift. |
+| Multi-storey build-order symmetry | Implemented | Upper slabs and Wall-family pieces can be authored in either order when they describe the same story seam. v2.15.42 uses the finished slab top/walking surface as the story plane and recesses slab thickness downward, so physical thickness does not create vertical gaps or cumulative storey drift. |
+| Finished-surface story lattice | Implemented | **Confirmed v2.15.43 baseline:** Foundation/Floor/Ceiling/Roof finished tops own `0/300/600/900...` story surfaces; slab thickness extends downward and Wall-family bottoms use the same surface. Mesh height/thickness cannot redefine the next storey. |
 | Logical structural occupancy | Implemented | Build-vs-build blocking uses authored `PlacementBounds`/semantic grid slots rather than decorative mesh collision. Valid wall continuations, L-corners, vertical stacks and Wall/Floor seams are accepted; duplicate/interior-crossing logical occupancy remains blocked. |
 | Multi-cell Wall-family facing | Implemented | v2.15.23 resolves perimeter ownership from occupied horizontal cells and uses the owning support's **native Wall socket yaw** for authored facing. Shared interior edges preserve vertical/selected native facing instead of inventing an exterior. |
 | Hosted Door/Window inserts | Implemented | Doors/Windows are hosted by Doorway/WindowWall sockets and are structurally transparent to later valid host seams. Build order is commutative around the host, while duplicate inserts and unrelated conflicts remain blocked. |
-| Stair structural snapping | Implemented | v2.15.38 keeps the proven edge/chain/Landscape/side-wall topology on the same **300 cm XY + Z structural lattice** as Foundations/Floors/Walls. The current `334 × 300 × 278` Stair is a 300 cm structural flight with **17 cm visual overhang at each end** and a 22 cm vertical residual inside the 300 cm story. Horizontal-host Stair anchors use structural `±150 cm` endpoints, Stair-to-Stair chaining advances exactly `300 cm`, Stair-owned Floor/Ceiling landing centres are exactly one `300 cm` cell away, and immediate same-story deck neighbours touched only by art overhang are treated as compatible seams while a tile occupying the actual Stair flight cell remains blocked. |
+| Stair structural snapping | Implemented | **Confirmed v2.15.43 baseline:** the `334 × 300 × 278` Wood Stair is traversal art inside a `300 × 300 × 300` structural flight. Structural XY anchors are `±150 cm` with 17 cm visual overhang per end; LOW-departure flights start on the current walking surface, rendered HIGH is `+278 cm`, and the next finished landing stays `+300 cm`. Stair chains/landing cells advance exactly 300 cm; verified Landscape support, tiled-deck overhang seams, Stair-owned Floor/Ceiling landings and parallel Wall/Doorway side seams are supported while real travel-cell obstructions remain blocked. |
 | Authoritative placement | Implemented | Server re-resolves transform/snap and validates catalog membership, snap-target modification access, resources, range, collision, support/slope, faction and territory before spawn. |
 | Timed construction | Implemented | Instant or synchronized timed builds, upward reveal, material progress parameters, audio, construction collision policy, persistence. |
 | Functional doors | Implemented | Replicated animated open/close, access policy, optional auto-close and world-save state. v2.15.10 fixes completed-build Tick ownership and adds a native moving slab collider; v2.15.11 makes the physical hinge side data-driven (`Left` / `Right`) from transformed visible bounds so art kits rotate around the correct jamb without mesh-pivot hacks. |
@@ -218,3 +219,5 @@ Legend:
 - Complete primary / allocation / derived / vitals / XP snapshot: **Implemented**
 - Custom Widget Blueprint subclass + standard-name auto binding: **Implemented**
 - No permanent UI/component Tick and no replicated UI state: **Implemented**
+
+- **v2.15.41:** canonical Wall story lattice removes rendered Wall mesh height from vertical structural progression and seam validation.
