@@ -1,6 +1,6 @@
 # Quick Start
 
-> **v2.15.53 note:** Build Piece Data Assets may use Static or Skeletal build visuals, and the confirmed Wood Window remains hosted by `WindowWall` with `Window Insert Offset Z = +20` plus the existing replicated button-driven open/close interaction. v2.15.53 completes Stair adjacency for every cardinal rotation: `Wall`, `WindowWall` and `Doorway` share one bidirectional structural **boundary** classifier that accepts exact parallel side boundaries and exact perpendicular LOW/HIGH endpoint boundaries, regardless of build order or Stair-chain hosting. Hosted `Window`/`Door` inserts inherit only their verified host boundary. Finished Foundation/Floor/Ceiling tops remain canonical `0,300,600...` story planes from the confirmed v2.15.43 geometry baseline. — Akuma's RPG Framework
+> **v2.15.54 note:** The v2.15.53 Stair/Wall-family boundary behavior is preserved unchanged. New `Piece Kind = Light` fixtures use a separate surface-placement path: stick/floor lights can seat on terrain, Foundations and Floors; wall lights can mount on either face of completed `Wall`, `WindowWall` and `Doorway`. The existing Interact button toggles replicated/persistent light + Niagara/Cascade state with smooth fading and no fuel requirement. The confirmed Wood Window remains `Window Insert Offset Z = +20`, and finished Foundation/Floor/Ceiling story planes remain `0,300,600...`. — Akuma's RPG Framework
 
 
 ## Definition assets: create Data Assets, not Blueprint Classes
@@ -89,9 +89,9 @@ For a Stone Axe recipe, create `ARPGRecipeDefinition`, set Inputs to Wood x2 and
 
 Durability is stored on the exact runtime Inventory item instance. Broken equipment cannot equip and can automatically unequip when it reaches zero. See `Docs/CRAFTING_DURABILITY_REPAIR.md`.
 
-## 2D. Settlement Building + Storage + Furnace
+## 2D. Settlement Building + Buildable Lights + Storage + Furnace
 
-Every `AARPGCharacter` owns inherited **Building** and **BuildingUI** components. Create `ARPGBuildPieceDefinition` Data Assets, assign either the existing Static **Build Mesh** or the optional **Build Skeletal Mesh** plus a resource Build Cost, then add them to `Building -> Build Catalog`. Leave Actor Class empty for standard pieces; the framework automatically selects native Door, Storage and Production actors when appropriate.
+Every `AARPGCharacter` owns inherited **Building** and **BuildingUI** components. Create `ARPGBuildPieceDefinition` Data Assets, assign either the existing Static **Build Mesh** or the optional **Build Skeletal Mesh** plus a resource Build Cost, then add them to `Building -> Build Catalog`. Leave Actor Class empty for standard pieces; the framework automatically selects native Door, Window, Light, Storage and Production actors when appropriate.
 
 Recommended input calls:
 
@@ -129,6 +129,10 @@ For a skeletal `Window`, set `Piece Kind = Window`, leave `Actor Class` empty, a
 The **Valid Preview Material** and **Invalid Preview Material** remain global settings on the character's `ARPGBuildingComponent`; the Window Data Asset does not need its own ghost material. In v2.15.46 a Skeletal Window preview automatically checks/prepares those assigned materials for Unreal's Skeletal Mesh usage permutation in editor/PIE, so a previously Static-only ghost material does not silently remain grey. `WindowWall -> Window` also has an intrinsic hosted socket and a dedicated third-person acquisition path; do not add custom Window snap points or fake `Placement Offset` values just to make the host selectable.
 
 For v2.15.48 Window interaction, assign **Window Open Animation** on the Window Data Asset and optionally assign **Window Close Animation** (leave Close empty to reverse Open). Keep **Disable Window Collision When Open** enabled for a normal passable opening. Wire the player's normal interaction input action to `Interact Built Structure`; the same call toggles Doors and Windows through server authority. If a WindowWall collision shell covers the opening, no Blueprint workaround is required: the framework resolves the Window occupying that exact host socket.
+
+For v2.15.54 buildable lighting, use `Piece Kind = Light` and leave **Actor Class** empty so the native `ARPGBuildLightActor` is selected. For a stick/standing torch choose **Light Placement Mode = Ground / Foundation / Floor**; enable **Allow Ground Placement** if terrain placement is wanted, and the same definition can also seat on completed Foundations and Floors. For a wall torch/lantern choose **Light Placement Mode = Built Wall Surface**; placement is resolved directly against completed Wall / WindowWall / Doorway faces, with actor local **+Y pointing outward from the wall**. Use **Light Surface Offset** for a small deliberate stand-off rather than changing structural snap data.
+
+Choose **Point** or **Spot** light, configure intensity/radius/color/temperature/shadow properties, and assign a Niagara system and/or legacy Cascade particle system under the Light FX fields. The native actor fades light intensity and optional emissive material scalar smoothly when toggled, replicates the On/Off state, and persists it in world saves. The normal `Interact Built Structure` input toggles a completed build light through server authority and consumes **no fuel or inventory item**. Build-light visuals are intentionally non-blocking so torches and lanterns cannot become hidden Stair/Wall/Floor/Window collision regressions; minimum fixture spacing is enforced semantically instead.
 
 For the current `334 × 300 × 278` Wood Stair on the 300-unit grid, use `Piece Kind = Stair`, `Placement Bounds = 167,150,139`, `Requires Snap Target = true`, `Allow Ground Placement = false`, `Placement Offset = 0,0,0`, and the same `Snap Size = 300` / `Standard Wall Height = 300` as the structural kit. Treat the mesh as **art inside a 300 cm structural flight cell**: the 334 cm run overhangs by 17 cm per end, but Stair chains and Stair-owned landing cells advance exactly 300 cm.
 

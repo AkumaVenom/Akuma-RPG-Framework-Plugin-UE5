@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21553 or descriptor.get("VersionName") != "2.15.53-alpha":
-        issues.append("package descriptor must identify v2.15.53-alpha")
+    if descriptor.get("Version") != 21554 or descriptor.get("VersionName") != "2.15.54-alpha":
+        issues.append("package descriptor must identify v2.15.54-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1796,6 +1796,8 @@ door_h_2150 = root / "Public" / "Building" / "ARPGBuildDoorActor.h"
 door_cpp_2150 = root / "Private" / "Building" / "ARPGBuildDoorActor.cpp"
 window_h_2150 = root / "Public" / "Building" / "ARPGBuildWindowActor.h"
 window_cpp_2150 = root / "Private" / "Building" / "ARPGBuildWindowActor.cpp"
+light_h_2154 = root / "Public" / "Building" / "ARPGBuildLightActor.h"
+light_cpp_2154 = root / "Private" / "Building" / "ARPGBuildLightActor.cpp"
 bui_h_2150 = root / "Public" / "Components" / "ARPGBuildingUIComponent.h"
 bui_cpp_2150 = root / "Private" / "Components" / "ARPGBuildingUIComponent.cpp"
 bwidgets_h_2150 = root / "Public" / "UI" / "ARPGBuildingWidgets.h"
@@ -1807,13 +1809,14 @@ character_cpp_2150 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
 station_h_2150 = root / "Public" / "Crafting" / "ARPGCraftingStationActor.h"
 station_cpp_2150 = root / "Private" / "Crafting" / "ARPGCraftingStationActor.cpp"
 paths_2150 = (build_def_2150, build_h_2150, build_cpp_2150, build_actor_h_2150, build_actor_cpp_2150,
-              preview_cpp_2150, door_h_2150, door_cpp_2150, window_h_2150, window_cpp_2150, bui_h_2150, bui_cpp_2150,
+              preview_cpp_2150, door_h_2150, door_cpp_2150, window_h_2150, window_cpp_2150, light_h_2154, light_cpp_2154, bui_h_2150, bui_cpp_2150,
               bwidgets_h_2150, bwidgets_cpp_2150, interaction_h_2150, interaction_cpp_2150, character_h_2150, character_cpp_2150, station_h_2150, station_cpp_2150)
 if all(p.exists() for p in paths_2150):
     bdh = build_def_2150.read_text(errors="replace"); bh = build_h_2150.read_text(errors="replace"); bc = build_cpp_2150.read_text(errors="replace")
     bah = build_actor_h_2150.read_text(errors="replace"); bac = build_actor_cpp_2150.read_text(errors="replace")
     pc = preview_cpp_2150.read_text(errors="replace"); dh = door_h_2150.read_text(errors="replace"); dc = door_cpp_2150.read_text(errors="replace")
     wh = window_h_2150.read_text(errors="replace"); wc = window_cpp_2150.read_text(errors="replace")
+    lh2154 = light_h_2154.read_text(errors="replace"); lc2154 = light_cpp_2154.read_text(errors="replace")
     buih = bui_h_2150.read_text(errors="replace"); buic = bui_cpp_2150.read_text(errors="replace")
     bwh = bwidgets_h_2150.read_text(errors="replace"); bwc = bwidgets_cpp_2150.read_text(errors="replace")
     inh = interaction_h_2150.read_text(errors="replace"); inc = interaction_cpp_2150.read_text(errors="replace")
@@ -2017,6 +2020,73 @@ if all(p.exists() for p in paths_2150):
     ):
         if required not in bc:
             issues.append(f"v2.15.53 hosted-insert Stair boundary inheritance missing: {required}")
+    # v2.15.54: additive interactive buildable lighting. Light is appended after Custom so existing
+    # PieceKind serialized values remain stable, uses a dedicated native actor/surface-placement path,
+    # and deliberately leaves the confirmed v2.15.53 structural Stair/Wall functions untouched.
+    if not re.search(r"Decoration,\s*Custom,\s*/\*\* Interactive buildable lighting/decor\. Appended to preserve every existing enum value\. \*/\s*Light", bdh, re.S):
+        issues.append("v2.15.54 Light PieceKind must be appended after Custom without shifting existing enum values")
+    for required in (
+        "EARPGBuildLightPlacementMode",
+        "Ground / Foundation / Floor",
+        "Built Wall Surface",
+        "EARPGBuildLightType",
+        "EARPGBuildLightFXMode",
+        "LightSurfaceOffset",
+        "LightMinimumSpacing",
+        "LightInteractionRadius",
+        "bLightStartsOn",
+        "LightFadeSeconds",
+        "LightComponentRelativeTransform",
+        "LightIntensity",
+        "LightAttenuationRadius",
+        "LightNiagaraSystem",
+        "LightCascadeSystem",
+        "LightEffectRelativeTransform",
+        "LightEmissiveMaterialParameter",
+    ):
+        if required not in bdh: issues.append(f"v2.15.54 buildable-light Data Asset contract missing: {required}")
+    for required in (
+        "ARPGIsBuildLightHorizontalHostKind",
+        "ARPGResolveBuildLightPlacementFromHit",
+        "ARPGFindBuildLightSurfaceFromDesired",
+        "ARPGMakeHorizontalBuildLightTransform",
+        "ARPGMakeWallBuildLightTransform",
+        "Hit.ImpactPoint",
+        "Hit.ImpactNormal",
+        "case EARPGBuildPieceKind::Light: return AARPGBuildLightActor::StaticClass();",
+        "TActorIterator<AARPGBuildLightActor>",
+        "LightMinimumSpacing",
+    ):
+        if required not in bc: issues.append(f"v2.15.54 buildable-light placement/authority path missing: {required}")
+    for required in (
+        "ReplicatedUsing=OnRep_LightOn",
+        "ToggleLight",
+        "RestoreLightState",
+        "UPointLightComponent",
+        "USpotLightComponent",
+        "UNiagaraComponent",
+        "UParticleSystemComponent",
+    ):
+        if required not in lh2154: issues.append(f"v2.15.54 native build-light actor API missing: {required}")
+    for required in (
+        "BuildMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision)",
+        "BuildSkeletalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision)",
+        "DOREPLIFETIME(AARPGBuildLightActor, bLightOn)",
+        "FMath::SmoothStep",
+        "SetActorTickEnabled(bLightFadeActive)",
+        "GetFXSystemAsset()",
+        "NiagaraEffect->Activate",
+        "CascadeEffect->Activate",
+        "DeactivateImmediate()",
+    ):
+        if required not in lc2154: issues.append(f"v2.15.54 native build-light runtime missing: {required}")
+    for required in ("ToggleBuiltLight", "ServerToggleBuiltLight"):
+        if required not in inh: issues.append(f"v2.15.54 light interaction RPC declaration missing: {required}")
+    for required in ("ServerToggleBuiltLight_Implementation", "Light->ToggleLight(GetOwner())"):
+        if required not in inc: issues.append(f"v2.15.54 light interaction authority missing: {required}")
+    for required in ("ARPGFindBuildLightFromView", "VisualBox.GetClosestPointTo(ViewStart)", "ToggleBuiltLight(Light)", "DemolishBuilding(Light)"):
+        if required not in buic: issues.append(f"v2.15.54 non-blocking light view interaction/demolition missing: {required}")
+
     for required in ("bNeighborFlatLanding", "HostStoryPlane", "NeighborStoryPlane", "bImmediateGridNeighbor", "actual Stair flight cell", "17 cm art/rail overhang"):
         if required not in bc: issues.append(f"v2.15.38 Stair tiled-deck overhang seam classification missing: {required}")
     stair_host_neighbor_start = bc.find("static bool ARPGIsCompatibleStairHostStructuralNeighbor(")
@@ -2155,11 +2225,13 @@ if all(p.exists() for p in paths_2150):
     if "!StationDefinition || !StationDefinition->StationTag.IsValid()" not in station_can:
         issues.append("v2.15.0 station-required recipes must reject missing/wrong station definitions")
     svh215 = save_h_2140.read_text(errors="replace"); svc215 = save_cpp_2140.read_text(errors="replace"); th215 = types_h_2140.read_text(errors="replace")
-    for required in ("bConstructionComplete", "ConstructionRemainingSeconds", "bDoorOpen", "bWindowOpen"):
+    for required in ("bConstructionComplete", "ConstructionRemainingSeconds", "bDoorOpen", "bWindowOpen", "bLightOn"):
         if required not in th215: issues.append(f"v2.15.0 building persistence state missing: {required}")
-    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 6" not in svh215:
-        issues.append("v2.15.47 world save schema must be v6 while character save remains v5")
-    for required in ("RestoreConstructionState", "RestoreDoorOpenState", "RestoreWindowOpenState", "ProcessOfflineElapsed()"):
+    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 7" not in svh215:
+        issues.append("v2.15.54 world save schema must be v7 while character save remains v5")
+    if "SaveVersion>=6 ? R.bWindowOpen : false" not in svc215:
+        issues.append("v2.15.54 world-save v7 migration must retain v6 Window-state compatibility")
+    for required in ("RestoreConstructionState", "RestoreDoorOpenState", "RestoreWindowOpenState", "RestoreLightState", "ProcessOfflineElapsed()"):
         if required not in svc215: issues.append(f"v2.15.0 world-load integration missing: {required}")
 
     # v2.15.12 persistent build ownership reload: Guest/no-login identity must survive restarts so
@@ -2244,6 +2316,7 @@ if readme_2150.exists():
     if not release_documented("v2.15.51-alpha — Stair Side Endpoint-Overhang Seam Symmetry Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.51 Stair-side endpoint-overhang seam root fix")
     if not release_documented("v2.15.52-alpha — Unified Bidirectional Stair / Wall-Family Seam Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.52 unified bidirectional Stair/Wall-family seam root fix")
     if not release_documented("v2.15.53-alpha — Four-Cardinal Stair / Wall-Family Boundary Seam Completion"): issues.append("README or Docs/CHANGELOG.md must document v2.15.53 four-cardinal Stair/Wall-family boundary completion")
+    if not release_documented("v2.15.54-alpha — Interactive Buildable Lighting & Surface Placement"): issues.append("README or Docs/CHANGELOG.md must document v2.15.54 interactive buildable lighting and surface placement")
 
     persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
     ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")

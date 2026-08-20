@@ -1,6 +1,7 @@
 #include "Components/ARPGBuildingUIComponent.h"
 #include "Actors/ARPGCharacter.h"
 #include "Building/ARPGBuildDoorActor.h"
+#include "Building/ARPGBuildLightActor.h"
 #include "Building/ARPGBuildWindowActor.h"
 #include "Building/ARPGBuildPieceActor.h"
 #include "Building/ARPGBuildingComponent.h"
@@ -11,6 +12,8 @@
 #include "Crafting/ARPGStorageActor.h"
 #include "GameFramework/PlayerController.h"
 #include "EngineUtils.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "TimerManager.h"
 #include "UI/ARPGBuildingWidgets.h"
 
@@ -43,6 +46,82 @@ static AARPGBuildWindowActor* ARPGFindHostedWindowForWindowWall(UWorld* World, c
         if (ARPGWindowOccupiesWindowWallHost(Window, Host)) return Window;
     }
     return nullptr;
+}
+
+
+static AARPGBuildLightActor* ARPGFindBuildLightFromView(
+    UWorld* World,
+    const FVector& ViewStart,
+    const FVector& ViewEnd,
+    ECollisionChannel TraceChannel,
+    const AActor* IgnoredActor)
+{
+    if (!World) return nullptr;
+
+    const FVector Segment = ViewEnd - ViewStart;
+    const float SegmentLength = Segment.Size();
+    if (SegmentLength <= KINDA_SMALL_NUMBER) return nullptr;
+    const FVector Direction = Segment / SegmentLength;
+
+    AARPGBuildLightActor* Best = nullptr;
+    float BestScore = TNumericLimits<float>::Max();
+
+    for (TActorIterator<AARPGBuildLightActor> It(World); It; ++It)
+    {
+        AARPGBuildLightActor* Light = *It;
+        if (!Light || !Light->Definition || !Light->IsConstructionComplete() ||
+            Light->Definition->PieceKind != EARPGBuildPieceKind::Light)
+            continue;
+
+        FVector Center = Light->GetActorLocation();
+        FVector Extent = Light->Definition->PlacementBounds;
+        if (Light->BuildSkeletalMesh && Light->BuildSkeletalMesh->GetSkeletalMeshAsset())
+        {
+            Center = Light->BuildSkeletalMesh->Bounds.Origin;
+            Extent = Light->BuildSkeletalMesh->Bounds.BoxExtent;
+        }
+        else if (Light->BuildMesh && Light->BuildMesh->GetStaticMesh())
+        {
+            Center = Light->BuildMesh->Bounds.Origin;
+            Extent = Light->BuildMesh->Bounds.BoxExtent;
+        }
+
+        const float Along = FVector::DotProduct(Center - ViewStart, Direction);
+        if (Along < 0.f || Along > SegmentLength) continue;
+        const FVector Closest = ViewStart + Direction * Along;
+        const float LateralSq = FVector::DistSquared(Center, Closest);
+        const float VisualAllowance = FMath::Clamp(Extent.GetMax() * 0.35f, 0.f, 80.f);
+        const float Radius = FMath::Max(10.f, Light->Definition->LightInteractionRadius + VisualAllowance);
+        if (LateralSq > FMath::Square(Radius)) continue;
+
+        // The fixture intentionally has no placement-blocking mesh collision. Prove that the view
+        // corridor is not reaching it through an unrelated opaque actor before accepting the semantic
+        // interaction candidate. Aim at the nearest point of the fixture's world bounds rather than its
+        // centre: wall-mounted art often has its pivot/centre close to the host plane even though the
+        // visible lantern/torch projects outward and is plainly reachable from the player's side.
+        const FBox VisualBox(Center - Extent, Center + Extent);
+        const FVector LOSAimPoint = VisualBox.GetClosestPointTo(ViewStart);
+        FCollisionQueryParams Params(SCENE_QUERY_STAT(ARPGBuildLightInteractLOS), false, IgnoredActor);
+        FHitResult Obstruction;
+        if (World->LineTraceSingleByChannel(Obstruction, ViewStart, LOSAimPoint, TraceChannel, Params))
+        {
+            if (Obstruction.GetActor() && Obstruction.GetActor() != Light)
+            {
+                const float HitAlong = FVector::Dist(ViewStart, Obstruction.ImpactPoint);
+                const float LightAlong = FVector::Dist(ViewStart, LOSAimPoint);
+                if (HitAlong + 2.f < LightAlong) continue;
+            }
+        }
+
+        const float Score = FMath::Square(Along) + LateralSq * 4.f;
+        if (Score < BestScore)
+        {
+            BestScore = Score;
+            Best = Light;
+        }
+    }
+
+    return Best;
 }
 
 UARPGBuildingUIComponent::UARPGBuildingUIComponent()
@@ -343,6 +422,11 @@ bool UARPGBuildingUIComponent::InteractWithBuiltStructureFromView()
             if (Character->Interaction) { Character->Interaction->ToggleBuiltWindow(Window); return true; }
             return false;
         }
+        if (AARPGBuildLightActor* Light = Cast<AARPGBuildLightActor>(Actor))
+        {
+            if (Character->Interaction) { Character->Interaction->ToggleBuiltLight(Light); return true; }
+            return false;
+        }
         if (AARPGCraftingStationActor* Station = Cast<AARPGCraftingStationActor>(Actor)) return OpenCraftingStationUI(Station);
         if (AARPGStorageActor* Storage = Cast<AARPGStorageActor>(Actor)) return OpenStorageUI(Storage);
         return false;
@@ -366,6 +450,11 @@ bool UARPGBuildingUIComponent::InteractWithBuiltStructureFromView()
         return false;
     };
 
+    // Buildable lights deliberately do not block placement or Pawn movement, so they are acquired
+    // semantically from the same view ray before the normal blocking structure trace.
+    if (AARPGBuildLightActor* Light = ARPGFindBuildLightFromView(GetWorld(), Start, End, StructureInteractionTraceChannel, Character))
+        if (HandleActor(Light)) return true;
+
     FHitResult Hit;
     if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, StructureInteractionTraceChannel, Params) && HandleHitOrHostedWindow(Hit.GetActor())) return true;
 
@@ -386,6 +475,20 @@ bool UARPGBuildingUIComponent::DemolishBuiltStructureFromView()
     if (!ResolveLocalPlayer(Character, Controller) || !GetWorld() || !Character->Interaction) return false;
     FVector Start; FRotator Rotation; Controller->GetPlayerViewPoint(Start, Rotation);
     const FVector End = Start + Rotation.Vector() * StructureInteractionDistance;
+
+    // Buildable lights intentionally keep their imported fixture mesh collision disabled so they can
+    // never become hidden Wall/Stair/Floor placement blockers. Reuse the same bounded semantic view
+    // acquisition as interaction so those non-blocking fixtures remain fully demolishable.
+    if (AARPGBuildLightActor* Light = ARPGFindBuildLightFromView(
+        GetWorld(), Start, End, StructureInteractionTraceChannel, Character))
+    {
+        if (Light->bRuntimePlaced && Light->CanActorModify(Character))
+        {
+            Character->Interaction->DemolishBuilding(Light);
+            return true;
+        }
+    }
+
     FHitResult Hit;
     FCollisionQueryParams Params(SCENE_QUERY_STAT(ARPGStructureDemolish), false, Character);
     if (!GetWorld()->LineTraceSingleByChannel(Hit, Start, End, StructureInteractionTraceChannel, Params)) return false;

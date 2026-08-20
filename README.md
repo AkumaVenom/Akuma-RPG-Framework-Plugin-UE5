@@ -8,16 +8,16 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.15.53-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.15.54-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest release:** v2.15.53 completes the Stair ↔ Wall-family boundary contract for all four 90-degree Stair rotations. v2.15.52 unified both build orders but still recognized only parallel side seams; the final reported rotation presents the same authored perimeter relationship on the Stair's exact LOW/HIGH boundary with a perpendicular Wall-family run. The shared private classifier now accepts exact side **or endpoint boundary** ownership while still rejecting interior/centreline/distant conflicts. No Data Asset offsets/bounds change. **Confirmed geometry baseline remains v2.15.43**; the Window placement/interaction path through v2.15.48 is also project-confirmed. See [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md) for release history.
+> **Latest release:** v2.15.54 adds **interactive buildable lighting** as an additive, non-structural `Light` Piece Kind: stick torches can seat on terrain/Foundations/Floors, wall torches and lanterns can mount on either face of completed Wall-family surfaces, and the existing Interact button toggles replicated/persistent light + flame state with smooth fades. Native Point/Spot lights, Niagara and Cascade modes, emissive fading and no-fuel toggling are Data Asset driven. Fixture collision is intentionally non-blocking so the project-confirmed v2.15.53 Stair/Wall/Window combinations remain protected. **Confirmed geometry baseline remains v2.15.43; v2.15.53 is the current Stair/Wall-family boundary completion; the Window placement/interaction path through v2.15.48 is project-confirmed.** See [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md) for release history.
 
 ## Start here
 
 - **New to the framework?** Read [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 - **Setting up items/equipment?** Read [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md).
 - **Setting up crafting/durability/repair?** Read [`Docs/CRAFTING_DURABILITY_REPAIR.md`](Docs/CRAFTING_DURABILITY_REPAIR.md).
-- **Setting up settlement building, storage or furnaces?** Read [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md).
+- **Setting up settlement building, buildable lights, storage or furnaces?** Read [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md).
 - **Want the full system status?** Read [`Docs/FEATURE_MATRIX.md`](Docs/FEATURE_MATRIX.md).
 - **Want release history?** Read [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
 
@@ -76,17 +76,18 @@ v2.15 promotes the earlier building backend into a complete player-facing settle
 | Structural Snapping | **Implemented** | Foundations, wall/window/door families, upper floors/ceilings/roofs, stairs/pillars and custom snaps, with logical structural occupancy, multi-storey build-order symmetry and multi-cell-aware facing. |
 | Authoritative Placement | **Implemented** | Server revalidates catalogue membership, snap access, transform, range, support, collision, resources, factions and territory. |
 | Construction | **Implemented** | Instant or timed builds, synchronized progress, mesh reveal/growth, material progress parameters and construction audio. |
+| Buildable Lighting | **Implemented** | Ground/floor stick torches and Wall-family surface lights, replicated/persistent button toggles, smooth light/emissive fades, Point/Spot sources, Niagara/Cascade FX and non-blocking fixture semantics. |
 | Doors | **Implemented** | Replicated smooth open/close, ownership/faction access, persistent state, moving slab collision, data-driven left/right hinge side and hosted-insert structural transparency. |
 | Demolition | **Implemented** | Authoritative modification checks and configurable build-cost refund. |
 | Storage | **Implemented** | Persistent containers, ready transfer UI and exact runtime-instance transfer for durable items. |
 | Production / Furnaces | **Implemented** | Input/fuel/output inventories, recipe queues, tagged fuel, transaction-safe processing and ready production UI. |
-| Building Persistence | **Implemented** | Structure identity, transform, health, construction progress, door state, storage contents and station state. |
+| Building Persistence | **Implemented** | Structure identity, transform, health, construction progress, Door/Window/Light state, storage contents and station state. |
 
 Supported standard build-piece kinds:
 
-`Foundation` · `Wall` · `WindowWall` · `Window` · `Doorway` · `Door` · `Floor` · `Ceiling` · `Roof` · `Stair` · `Pillar` · `Storage` · `Production` · `Decoration` · `Custom`
+`Foundation` · `Wall` · `WindowWall` · `Window` · `Doorway` · `Door` · `Floor` · `Ceiling` · `Roof` · `Stair` · `Pillar` · `Storage` · `Production` · `Decoration` · `Custom` · `Light`
 
-Common structural pieces can be authored with an **`ARPGBuildPieceDefinition` + Static Mesh** without creating an Actor Blueprint. Door, Storage and Production pieces automatically use their specialised native actors when no custom Actor Class is supplied.
+Common structural pieces can be authored with an **`ARPGBuildPieceDefinition` + Static Mesh** without creating an Actor Blueprint. Door, Window, Light, Storage and Production pieces automatically use their specialised native actors when no custom Actor Class is supplied.
 
 See [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md) for the complete Wood/Stone/Metal, snapping, storage and furnace workflow.
 
@@ -299,7 +300,20 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.15.53-alpha
+## Current release — v2.15.54-alpha
+
+v2.15.54 adds an additive player-built lighting layer without changing the confirmed structural snapping code. `Light` is appended after `Custom` in `EARPGBuildPieceKind`, and common fixtures use the native `ARPGBuildLightActor` when `Actor Class` is empty.
+
+- **Stick/freestanding lights:** `Light Placement Mode = Ground / Foundation / Floor` seats the transformed visible bottom on terrain or completed Foundation/Floor top surfaces.
+- **Wall lights:** `Light Placement Mode = Built Wall Surface` follows the actually aimed face of completed `Wall`, `WindowWall` and `Doorway` modules; actor-local `+Y` points outward from the surface.
+- **Interaction:** the existing `Interact Built Structure` path toggles authoritative replicated On/Off state. No fuel/wood is consumed by toggling.
+- **Presentation:** native Point or Spot light, smooth fade duration, color/temperature/shadows/source radius, optional emissive scalar fade, Niagara/Cascade/fallback modes, optional sounds and independent light/FX relative transforms.
+- **Persistence:** world-save schema v7 stores `bLightOn`; v6 Window migration remains intact.
+- **Structural safety:** fixture visual collision is intentionally disabled and semantic spacing/interaction is used instead, so player-built lights cannot become new Stair/Wall/Floor/Window placement blockers. The v2.15.53 Stair/Wall-family boundary functions are unchanged and hash-locked by regression coverage.
+
+See `Docs/BUILDING_CRAFTING.md` for Editor authoring examples for a stick torch, wall torch and hanging wall lantern.
+
+## Previous release — v2.15.53-alpha
 
 v2.15.53 fixes the final Stair/Wall-family rotation that remained red after v2.15.52. The shared classifier was build-order symmetric but still side-only: it accepted a Wall-family module only when its run axis was parallel to the Stair and its anchor sat on `local Y = +/-150`. In the reported remaining rotation, the same authored perimeter module lands on the Stair's exact LOW/HIGH boundary (`local X = +/-150`) with a perpendicular run axis, so it incorrectly fell through to generic collision.
 

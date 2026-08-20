@@ -1,11 +1,28 @@
-# Source Validation — Akuma's RPG Framework v2.15.53-alpha
+# Source Validation — Akuma's RPG Framework v2.15.54-alpha
 
-Package: **Akuma's RPG Framework — v2.15.53-alpha**  
+Package: **Akuma's RPG Framework — v2.15.54-alpha**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
 
-The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline and the Window placement/interaction path through v2.15.48 is project-confirmed. v2.15.53 completes that unified Stair adjacency rule by adding the exact LOW/HIGH endpoint boundary case exposed by the one remaining cardinal Stair rotation. Runtime PIE confirmation is still required for this release.
+The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 is additive: buildable Lights use separate surface placement and non-blocking fixture semantics. Runtime PIE confirmation is still required for this release.
+
+## v2.15.54 interactive buildable-light acceptance
+
+- `Piece Kind = Light` must remain appended after `Custom`; no earlier build-piece enum value may shift.
+- **Ground / Foundation / Floor** preview must seat the fixture's transformed visible bottom on terrain or a completed Foundation/Floor. Ground placement must still obey `Allow Ground Placement`, slope and support checks.
+- **Built Wall Surface** preview must attach to the actually aimed face of a completed Wall/WindowWall/Doorway and orient local `+Y` outward. Test both inside and outside wall faces and several arbitrary points on the same 300 cm module.
+- Authority must independently re-resolve the submitted Light transform to the compatible completed support and retain catalogue/range/resources/faction/territory/modification checks.
+- Completed native Light fixture Static/Skeletal collision must remain disabled so placing a torch cannot change previously-valid Stair/Wall/Floor/Window/Door combinations. Two Lights closer than `Light Minimum Spacing` must still be rejected semantically.
+- The same existing Interact Built Structure input must toggle Light state through `ServerToggleBuiltLight`. Test owner/allowed faction access and interaction range. No fuel or inventory item may be consumed by toggling.
+- Point and Spot modes must respect configured intensity, attenuation, color/temperature, shadows and relative transform. Fade in/out must use short-lived actor Tick only while transitioning, and the runtime light must be hidden at zero alpha.
+- Test Niagara-only, Cascade-only, Niagara-preferred/Cascade-fallback and Niagara+Cascade. FX should activate on ignition, remain during fade-out, and deactivate at zero illumination.
+- Optional emissive scalar should interpolate with the same fade when the configured material parameter exists.
+- Demolition must still find the intentionally non-colliding fixture through the same bounded view resolver and enforce modification access.
+- World save v7 must round-trip one Light On and one Light Off. A v6 fixture load must use `Light Starts On`, while the existing v6 Window migration remains intact.
+- `Tools/test_building_interactive_light_model.py` additionally hash-locks the four protected v2.15.53 Stair/Wall-family functions so this additive release cannot silently modify the confirmed structural seam implementation.
+
+Recommended UE 5.8 PIE acceptance: create one stick torch (`Ground / Foundation / Floor`) and one wall lantern (`Built Wall Surface`). Place the stick torch on terrain, a Foundation and a Floor; place the wall lantern on both faces of Wall, WindowWall and Doorway pieces. Toggle each several times, verify smooth light/FX fade and replication on listen server + client, save/reload mixed On/Off states, then repeat the project's confirmed Stair/Wall/Window placement combinations beside the fixtures. Those structural placements must behave exactly as v2.15.53 with the lights absent.
 
 ## v2.15.53 four-cardinal Stair / Wall-family boundary acceptance
 

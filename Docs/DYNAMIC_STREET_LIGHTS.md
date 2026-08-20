@@ -1,5 +1,7 @@
 # Dynamic Street Lights / Lamps
 
+> **Player-built lights (v2.15.54):** `AARPGDynamicStreetLight` remains the designer-placed, Day/Night-driven world-light actor. For settlement torches/lanterns that players build on terrain/Floors/Walls and manually toggle with the normal Interact button, use `ARPGBuildPieceDefinition` with `Piece Kind = Light`; the framework automatically spawns `ARPGBuildLightActor`. See `BUILDING_CRAFTING.md`.
+
 `AARPGDynamicStreetLight` is a Blueprint-derivable, event-driven world-light actor that follows `AARPGDayNightCycle` without maintaining a second clock. It is intended for street lamps, torches, braziers, shop signs, window lights, magical lanterns and similar world props.
 
 ## Quick setup

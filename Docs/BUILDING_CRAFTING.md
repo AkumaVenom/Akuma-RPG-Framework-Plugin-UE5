@@ -1,8 +1,8 @@
-# Settlement Building, Storage & Production — v2.15.52
+# Settlement Building, Storage, Production & Buildable Lighting — v2.15.54
 
 ## Current canonical story + Stair contract — v2.15.43
 
-v2.15.43 remains the confirmed-good Wood Stair / multi-storey **structural** baseline. v2.15.44-v2.15.48 add the skeletal Window visual/placement/interaction path, which is project-confirmed. v2.15.53 supersedes the v2.15.49-v2.15.52 Stair collision iterations with one bidirectional Stair ↔ Wall-family boundary classifier shared by `Wall`, `WindowWall`, `Doorway` and their verified inserts, including Stair-chain placement and all four cardinal Stair rotations. No Stair or Window authoring values change. The current guide uses **one structural lattice** and deliberately separates structural coordinates from mesh dimensions. Historical experiments remain in `Docs/CHANGELOG.md`; do not reuse superseded raw-mesh story or one-direction seam formulas.
+v2.15.43 remains the confirmed-good Wood Stair / multi-storey **structural** baseline. v2.15.44-v2.15.48 add the skeletal Window visual/placement/interaction path, which is project-confirmed. v2.15.53 supersedes the v2.15.49-v2.15.52 Stair collision iterations with one bidirectional Stair ↔ Wall-family boundary classifier shared by `Wall`, `WindowWall`, `Doorway` and their verified inserts, including Stair-chain placement and all four cardinal Stair rotations. No Stair or Window authoring values change. The current guide uses **one structural lattice** and deliberately separates structural coordinates from mesh dimensions. Historical experiments remain in `Docs/CHANGELOG.md`; do not reuse superseded raw-mesh story or one-direction seam formulas. **v2.15.54 is additive:** buildable `Light` fixtures use a separate surface-placement path and non-blocking fixture semantics; the v2.15.53 structural Stair/Wall-family classifier is unchanged.
 
 For the current Wood kit:
 
@@ -58,13 +58,13 @@ Every `AARPGCharacter` inherits:
 
 - `Building` — replicated authority/placement component and exposed Build Catalog.
 - `BuildingUI` — local ready build menu, placement HUD, storage UI and production-station UI.
-- `Interaction` — player-owned RPC route for storage transfer, production queues, doors and demolition.
+- `Interaction` — player-owned RPC route for storage transfer, production queues, Doors, Windows, buildable Lights and demolition.
 
 The standard build-piece kinds are:
 
-`Foundation`, `Wall`, `WindowWall`, `Window`, `Doorway`, `Door`, `Floor`, `Ceiling`, `Roof`, `Stair`, `Pillar`, `Storage`, `Production`, `Decoration`, `Custom`.
+`Foundation`, `Wall`, `WindowWall`, `Window`, `Doorway`, `Door`, `Floor`, `Ceiling`, `Roof`, `Stair`, `Pillar`, `Storage`, `Production`, `Decoration`, `Custom`, `Light`.
 
-Common pieces need **no build-actor Blueprint**. Assign a Static or Skeletal build visual on an `ARPGBuildPieceDefinition` and leave `Actor Class` empty; the framework chooses the native build actor. `Door`, `Window`, `Storage` and `Production` automatically choose their specialised native actors.
+Common pieces need **no build-actor Blueprint**. Assign a Static or Skeletal build visual on an `ARPGBuildPieceDefinition` and leave `Actor Class` empty; the framework chooses the native build actor. `Door`, `Window`, `Light`, `Storage` and `Production` automatically choose their specialised native actors.
 
 ### Current structural baseline — v2.15.43
 
@@ -85,6 +85,89 @@ Current rules to keep in mind:
 - `Door` and `Window` are hosted inserts, not independent structural cells. A verified insert cannot veto a later valid structural seam around its Doorway/WindowWall host. As of v2.15.49 this includes a legal parallel Stair-side seam: the insert inherits that permission only after exact host-socket verification and only when the host itself passes the Stair-side topology check.
 - Build ownership/modification access remains authoritative and persists for Guest/local play through the stable Guest character identity introduced in v2.15.12.
 
+
+---
+
+## Buildable interactive lights — v2.15.54
+
+`Piece Kind = Light` is a deliberately **non-structural surface fixture**. It does not participate in Foundation/Wall/Floor/Stair snap topology, so adding torches or lanterns cannot change the confirmed v2.15.53 structural boundary rules. Leave `Actor Class` empty to use native `ARPGBuildLightActor`. Static and Skeletal build visuals are both supported through the existing Build Mesh / Build Skeletal Mesh path.
+
+### Placement modes
+
+**Ground / Foundation / Floor** is intended for stick torches, floor lanterns and freestanding lamps. The local placement ghost uses the actual trace point, remains world-upright, quantizes yaw by `Rotation Step Degrees`, and seats the active visual's transformed bottom on the surface. Completed Foundations and Floors are valid built supports; terrain is allowed only when the Data Asset's normal `Allow Ground Placement` option is enabled.
+
+**Built Wall Surface** is intended for wall torches, sconces and hanging lantern brackets. Aim directly at either face of a completed `Wall`, `WindowWall` or `Doorway`. The native solver seats the fixture's transformed visible **back plane** on that face and defines actor-local `+Y` as outward from the wall. Use `Mesh Relative Transform` once to adapt imported art so its back-to-front direction follows that convention. `Light Surface Offset` is then a small intentional lift away from the host plane; do not use it to repair an incorrect mesh orientation.
+
+Both preview and authority use the same logical contract. The client follows the actual aimed surface for responsive arbitrary-position placement; the server independently re-resolves the submitted fixture against compatible completed support geometry before accepting the build request. Existing range, catalogue, resources, territory and ownership/modification checks remain authoritative.
+
+### Native light source
+
+Choose **Point Light** for torches/lanterns or **Spot Light** for directional fixtures. The Data Asset exposes:
+
+- Light Component Relative Transform
+- Intensity and Attenuation Radius
+- Color or optional Kelvin Temperature
+- Cast Shadows
+- Source Radius / Soft Source Radius
+- Spot Inner / Outer Cone angles
+
+`Light Fade Seconds` controls smooth On/Off intensity fading. If `Light Emissive Material Parameter` names a scalar parameter present on the fixture material, the same fade interpolates between `Light Emissive Off Value` and `Light Emissive On Value`. At zero fade alpha the unused runtime light component is hidden as well as set to zero intensity.
+
+### Niagara and Cascade flame/FX
+
+Assign `Light Niagara System`, `Light Cascade System`, or both. `Light FX Mode` supports:
+
+- None
+- Niagara Preferred / Cascade Fallback
+- Niagara Only
+- Cascade Only
+- Niagara + Cascade
+
+Use `Light Effect Relative Transform` to put the flame/smoke emitter at the torch head or inside the lantern. On ignition the selected FX activates as the light fades in. During extinguish, FX remains active through the fade and deactivates when illumination reaches zero. `Reset Light Effects On Activation` controls whether activation restarts the system.
+
+### Interaction, networking and saves
+
+No new input action is required. The existing character **Interact Built Structure** button resolves nearby buildable Lights from the player's view and routes `ToggleBuiltLight` through the replicated player-owned `Interaction` component. Authority validates interaction distance plus the fixture's existing faction/use policy before changing state. `Light Starts On` chooses the initial state for newly built fixtures. **Toggling does not consume Wood, fuel or any inventory item.**
+
+The On/Off state replicates to all clients and world-save schema v7 persists it. Older saves remain compatible: v6 Window state is retained, and a Light loaded from a pre-v7 save uses its Data Asset `Light Starts On` default.
+
+### Structural-blocking policy
+
+Native buildable Lights intentionally disable imported Static/Skeletal fixture collision after construction. This is a safety invariant: a torch pole, lantern bracket or Physics Asset must never become a hidden blocker for a later Wall, Stair, Floor, Window or Door combination. `Light Minimum Spacing` prevents exact fixture stacking semantically even though fixture collision is disabled. Interaction and demolition use a bounded, line-of-sight checked semantic view corridor, so the same non-blocking fixture remains usable/removable.
+
+This is distinct from `AARPGDynamicStreetLight`: that actor is for designer-placed world lamps driven automatically by Day/Night. `ARPGBuildLightActor` is for **player-built, manually interactive and saved settlement fixtures**.
+
+### Recommended first Data Assets
+
+For a **Stick Torch**:
+
+```text
+Piece Kind              = Light
+Light Placement Mode    = Ground / Foundation / Floor
+Allow Ground Placement  = True
+Requires Snap Target    = False
+Requires Support        = True
+Build Light Type        = Point Light
+Light Starts On         = False or True (project choice)
+Light Fade Seconds      = 0.25-0.5
+Light FX Mode           = Niagara Preferred / Cascade Fallback
+```
+
+For a **Wall Torch / Hanging Wall Lantern**:
+
+```text
+Piece Kind              = Light
+Light Placement Mode    = Built Wall Surface
+Allow Ground Placement  = False
+Requires Snap Target    = True
+Requires Support        = True
+Build Light Type        = Point Light (or Spot Light for directional art)
+Light Surface Offset    = 0 initially
+Light Starts On         = False or True (project choice)
+Light Fade Seconds      = 0.25-0.5
+```
+
+Start `Placement Bounds` near the fixture's real logical half-extents for preview/authoritative placement. Do not enlarge them to wall-module size; lights are fixtures, not structural cells. Set `Light Minimum Spacing` to taste (default 20 cm) and tune `Light Interaction Radius` only if the visible art is unusually large.
 
 ---
 

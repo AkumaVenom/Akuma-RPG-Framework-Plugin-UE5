@@ -8,6 +8,7 @@ class AARPGStorageActor;
 class AARPGCraftingStationActor;
 class AARPGBuildDoorActor;
 class AARPGBuildWindowActor;
+class AARPGBuildLightActor;
 class AARPGBuildPieceActor;
 class UARPGRecipeDefinition;
 class UARPGQuestGiverComponent;
@@ -37,6 +38,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Storage") void WithdrawStationOutputInstance(AARPGCraftingStationActor* Station, FGuid InstanceId, int32 Quantity=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void ToggleBuiltDoor(AARPGBuildDoorActor* Door);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void ToggleBuiltWindow(AARPGBuildWindowActor* Window);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void ToggleBuiltLight(AARPGBuildLightActor* Light);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void DemolishBuilding(AARPGBuildPieceActor* Building);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Crafting") void QueueCraft(AARPGCraftingStationActor* Station, UARPGRecipeDefinition* Recipe, int32 Count=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Quest") void AcceptQuest(UARPGQuestGiverComponent* Giver, UARPGQuestDefinition* Quest);
@@ -56,6 +58,7 @@ protected:
     UFUNCTION(Server, Reliable) void ServerWithdrawStationOutputInstance(AARPGCraftingStationActor* Station, FGuid InstanceId, int32 Quantity);
     UFUNCTION(Server, Reliable) void ServerToggleBuiltDoor(AARPGBuildDoorActor* Door);
     UFUNCTION(Server, Reliable) void ServerToggleBuiltWindow(AARPGBuildWindowActor* Window);
+    UFUNCTION(Server, Reliable) void ServerToggleBuiltLight(AARPGBuildLightActor* Light);
     UFUNCTION(Server, Reliable) void ServerDemolishBuilding(AARPGBuildPieceActor* Building);
     UFUNCTION(Server, Reliable) void ServerQueueCraft(AARPGCraftingStationActor* Station, UARPGRecipeDefinition* Recipe, int32 Count);
     UFUNCTION(Server, Reliable) void ServerAcceptQuest(UARPGQuestGiverComponent* Giver, UARPGQuestDefinition* Quest);

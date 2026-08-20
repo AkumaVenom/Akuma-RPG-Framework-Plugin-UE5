@@ -989,11 +989,12 @@ require(station_cpp, 'bConsumesFuel', 'FuelTag', 'FuelPerCraft', 'ARPGCountTagge
 canuse=station_cpp[station_cpp.index('bool AARPGCraftingStationActor::CanUseRecipe'):station_cpp.index('bool AARPGCraftingStationActor::ConsumeRecipeInputs')]
 assert '!StationDefinition || !StationDefinition->StationTag.IsValid()' in canuse
 
-# Persistent construction + door state and existing container/furnace inventories/queues.
-require(types_h, 'bConstructionComplete', 'ConstructionRemainingSeconds', 'bDoorOpen', 'bWindowOpen')
-assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 6' in save_h
+# Persistent construction + Door/Window/Light state and existing container/furnace inventories/queues.
+# Character schema remains v5; world schema is v7 while the v6 Window migration remains explicit.
+require(types_h, 'bConstructionComplete', 'ConstructionRemainingSeconds', 'bDoorOpen', 'bWindowOpen', 'bLightOn')
+assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 7' in save_h
 require(save_cpp, 'R.bConstructionComplete=B->IsConstructionComplete()', 'R.ConstructionRemainingSeconds=B->GetConstructionRemainingSeconds()',
-        'R.bDoorOpen=Door->IsDoorOpen()', 'R.bWindowOpen=Window->IsWindowOpen()', 'RestoreConstructionState', 'RestoreDoorOpenState', 'RestoreWindowOpenState', 'CraftQueue', 'OutputItems',
+        'R.bDoorOpen=Door->IsDoorOpen()', 'R.bWindowOpen=Window->IsWindowOpen()', 'R.bLightOn=Light->IsLightOn()', 'RestoreConstructionState', 'RestoreDoorOpenState', 'RestoreWindowOpenState', 'RestoreLightState', 'Save->SaveVersion>=6 ? R.bWindowOpen : false', 'Save->SaveVersion>=7', 'CraftQueue', 'OutputItems',
         'ProcessOfflineElapsed()', 'SetActorTickEnabled(C->CraftQueue.Num()>0)')
 
 # v2.15.12 persistent build ownership reload regression. Guest/no-login play must keep a stable

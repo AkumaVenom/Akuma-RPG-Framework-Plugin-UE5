@@ -366,6 +366,7 @@ struct AKUMASRPGFRAMEWORK_API FARPGPlacedBuildingSave
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) float ConstructionRemainingSeconds = 0.f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bDoorOpen = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bWindowOpen = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bLightOn = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid OwnerAccountId;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid OwnerCharacterId;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FName OwnerFactionId = NAME_None;

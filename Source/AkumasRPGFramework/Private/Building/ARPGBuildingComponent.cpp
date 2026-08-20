@@ -1,5 +1,6 @@
 #include "Building/ARPGBuildingComponent.h"
 #include "Building/ARPGBuildDoorActor.h"
+#include "Building/ARPGBuildLightActor.h"
 #include "Building/ARPGBuildPieceActor.h"
 #include "Building/ARPGBuildPreviewActor.h"
 #include "Building/ARPGBuildWindowActor.h"
@@ -387,6 +388,209 @@ static FVector ARPGGetBuildPieceBottomAnchorLocal(const UARPGBuildPieceDefinitio
     ARPGGetBuildPieceLocalBounds(Piece, Min, Max);
     const FVector Center = (Min + Max) * 0.5f;
     return FVector(Center.X, Center.Y, Min.Z);
+}
+
+
+static bool ARPGIsBuildLightHorizontalHostKind(EARPGBuildPieceKind Kind)
+{
+    return Kind == EARPGBuildPieceKind::Foundation || Kind == EARPGBuildPieceKind::Floor;
+}
+
+static FVector ARPGGetBuildLightWallContactAnchorLocal(const UARPGBuildPieceDefinition* Piece)
+{
+    FVector Min, Max;
+    ARPGGetBuildPieceLocalBounds(Piece, Min, Max);
+    const FVector Center = (Min + Max) * 0.5f;
+
+    // Build-light logical convention: local +Y points away from the wall. The visible back plane is
+    // therefore local Min.Y after MeshRelativeTransform. Imported kits can be adapted once in the
+    // Data Asset without baking mesh-specific offsets into the placement solver.
+    return FVector(Center.X, Min.Y, Center.Z);
+}
+
+static FTransform ARPGMakeHorizontalBuildLightTransform(
+    const UARPGBuildPieceDefinition* Piece,
+    const FVector& SurfacePoint,
+    float DesiredYaw)
+{
+    if (!Piece) return FTransform::Identity;
+
+    FRotator Rotation(0.f, DesiredYaw, 0.f);
+    Rotation.Yaw = FMath::GridSnap(Rotation.Yaw, FMath::Max(1.f, Piece->RotationStepDegrees));
+    const FQuat Q = Rotation.Quaternion();
+    const FVector BottomAnchor = ARPGGetBuildPieceBottomAnchorLocal(Piece);
+    const FVector SurfaceAnchor = SurfacePoint + FVector::UpVector * FMath::Max(0.f, Piece->LightSurfaceOffset);
+
+    FTransform Result(Q, FVector::ZeroVector);
+    Result.SetLocation(SurfaceAnchor - Q.RotateVector(BottomAnchor) + Q.RotateVector(Piece->PlacementOffset));
+    return Result;
+}
+
+static bool ARPGMakeWallBuildLightTransform(
+    const UARPGBuildPieceDefinition* Piece,
+    const FVector& SurfacePoint,
+    const FVector& SurfaceNormal,
+    FTransform& OutTransform)
+{
+    if (!Piece) return false;
+
+    FVector Normal2D(SurfaceNormal.X, SurfaceNormal.Y, 0.f);
+    if (!Normal2D.Normalize()) return false;
+
+    // Reject top/bottom faces. Wall fixtures are intentionally restricted to near-vertical surfaces.
+    if (FMath::Abs(SurfaceNormal.GetSafeNormal().Z) > 0.35f) return false;
+
+    const float NormalYaw = Normal2D.Rotation().Yaw;
+    const FQuat Q = FRotator(0.f, NormalYaw - 90.f, 0.f).Quaternion(); // local +Y -> outward normal
+    const FVector ContactAnchor = ARPGGetBuildLightWallContactAnchorLocal(Piece);
+    const FVector SurfaceAnchor = SurfacePoint + Normal2D * FMath::Max(0.f, Piece->LightSurfaceOffset);
+
+    OutTransform = FTransform(Q, SurfaceAnchor - Q.RotateVector(ContactAnchor) + Q.RotateVector(Piece->PlacementOffset));
+    return true;
+}
+
+static bool ARPGResolveBuildLightPlacementFromHit(
+    const UARPGBuildPieceDefinition* Piece,
+    const FHitResult& Hit,
+    float DesiredYaw,
+    FTransform& OutTransform,
+    AARPGBuildPieceActor*& OutSupport)
+{
+    OutSupport = nullptr;
+    if (!Piece || Piece->PieceKind != EARPGBuildPieceKind::Light || !Hit.bBlockingHit) return false;
+
+    AARPGBuildPieceActor* BuildHit = Cast<AARPGBuildPieceActor>(Hit.GetActor());
+    if (Piece->LightPlacementMode == EARPGBuildLightPlacementMode::WallSurface)
+    {
+        if (!BuildHit || !BuildHit->Definition || !BuildHit->IsConstructionComplete() ||
+            !ARPGIsWallLikeKind(BuildHit->Definition->PieceKind))
+            return false;
+
+        if (!ARPGMakeWallBuildLightTransform(Piece, Hit.ImpactPoint, Hit.ImpactNormal, OutTransform))
+            return false;
+
+        OutSupport = BuildHit;
+        return true;
+    }
+
+    // Horizontal fixtures may sit on terrain or on the finished top surface of Foundation/Floor only.
+    if (BuildHit)
+    {
+        if (!BuildHit->Definition || !BuildHit->IsConstructionComplete() ||
+            !ARPGIsBuildLightHorizontalHostKind(BuildHit->Definition->PieceKind))
+            return false;
+        OutSupport = BuildHit;
+    }
+    else if (!Piece->bAllowGroundPlacement)
+    {
+        return false;
+    }
+
+    const FVector N = Hit.ImpactNormal.GetSafeNormal();
+    if (N.IsNearlyZero()) return false;
+    const float MaxSlope = FMath::Clamp(Piece->MaxGroundSlopeDegrees, 0.f, 89.f);
+    const float MinUpDot = FMath::Cos(FMath::DegreesToRadians(MaxSlope));
+    if (FVector::DotProduct(N, FVector::UpVector) < MinUpDot) return false;
+
+    OutTransform = ARPGMakeHorizontalBuildLightTransform(Piece, Hit.ImpactPoint, DesiredYaw);
+    return true;
+}
+
+static bool ARPGFindBuildLightSurfaceFromDesired(
+    UWorld* World,
+    const UARPGBuildPieceDefinition* Piece,
+    const FTransform& Desired,
+    FTransform& OutTransform,
+    AARPGBuildPieceActor*& OutSupport)
+{
+    OutSupport = nullptr;
+    if (!World || !Piece || Piece->PieceKind != EARPGBuildPieceKind::Light) return false;
+
+    const float Capture = FMath::Max(4.f, Piece->SnapCaptureDistance);
+    const float CaptureSq = FMath::Square(Capture);
+    float BestScore = TNumericLimits<float>::Max();
+
+    if (Piece->LightPlacementMode == EARPGBuildLightPlacementMode::WallSurface)
+    {
+        const FVector ContactAnchor = ARPGGetBuildLightWallContactAnchorLocal(Piece);
+        const FVector PlacementCorrection = Desired.GetRotation().RotateVector(Piece->PlacementOffset);
+        const FVector DesiredContactWorld = Desired.TransformPosition(ContactAnchor) - PlacementCorrection;
+
+        for (TActorIterator<AARPGBuildPieceActor> It(World); It; ++It)
+        {
+            AARPGBuildPieceActor* Host = *It;
+            if (!Host || !Host->Definition || !Host->IsConstructionComplete() ||
+                !ARPGIsWallLikeKind(Host->Definition->PieceKind))
+                continue;
+
+            FVector HostMin, HostMax;
+            ARPGGetBuildPieceLocalBounds(Host->Definition, HostMin, HostMax);
+            const FTransform HostTransform = Host->GetActorTransform();
+            const FVector LocalPoint = HostTransform.InverseTransformPosition(DesiredContactWorld);
+
+            const float EdgePadding = FMath::Max(2.f, Piece->PlacementCollisionClearance + 1.f);
+            if (LocalPoint.X < HostMin.X - EdgePadding || LocalPoint.X > HostMax.X + EdgePadding ||
+                LocalPoint.Z < HostMin.Z - EdgePadding || LocalPoint.Z > HostMax.Z + EdgePadding)
+                continue;
+
+            const float DistToMinFace = FMath::Abs(LocalPoint.Y - HostMin.Y);
+            const float DistToMaxFace = FMath::Abs(LocalPoint.Y - HostMax.Y);
+            const bool bUseMaxFace = DistToMaxFace <= DistToMinFace;
+            const float FaceY = bUseMaxFace ? HostMax.Y : HostMin.Y;
+            const FVector SurfaceLocal(
+                FMath::Clamp(LocalPoint.X, HostMin.X, HostMax.X),
+                FaceY,
+                FMath::Clamp(LocalPoint.Z, HostMin.Z, HostMax.Z));
+            const FVector SurfaceWorld = HostTransform.TransformPosition(SurfaceLocal);
+            const float DistSq = FVector::DistSquared(DesiredContactWorld, SurfaceWorld);
+            if (DistSq > CaptureSq || DistSq >= BestScore) continue;
+
+            const FVector NormalLocal = bUseMaxFace ? FVector::YAxisVector : -FVector::YAxisVector;
+            const FVector NormalWorld = HostTransform.TransformVectorNoScale(NormalLocal).GetSafeNormal();
+            FTransform Candidate;
+            if (!ARPGMakeWallBuildLightTransform(Piece, SurfaceWorld, NormalWorld, Candidate)) continue;
+
+            BestScore = DistSq;
+            OutTransform = Candidate;
+            OutSupport = Host;
+        }
+        return OutSupport != nullptr;
+    }
+
+    const FVector BottomAnchor = ARPGGetBuildPieceBottomAnchorLocal(Piece);
+    const FVector PlacementCorrection = Desired.GetRotation().RotateVector(Piece->PlacementOffset);
+    const FVector DesiredBottomWorld = Desired.TransformPosition(BottomAnchor) - PlacementCorrection;
+
+    for (TActorIterator<AARPGBuildPieceActor> It(World); It; ++It)
+    {
+        AARPGBuildPieceActor* Host = *It;
+        if (!Host || !Host->Definition || !Host->IsConstructionComplete() ||
+            !ARPGIsBuildLightHorizontalHostKind(Host->Definition->PieceKind))
+            continue;
+
+        FVector HostMin, HostMax;
+        ARPGGetBuildPieceLocalBounds(Host->Definition, HostMin, HostMax);
+        const FTransform HostTransform = Host->GetActorTransform();
+        const FVector LocalPoint = HostTransform.InverseTransformPosition(DesiredBottomWorld);
+        const float EdgePadding = FMath::Max(2.f, Piece->PlacementCollisionClearance + 1.f);
+        if (LocalPoint.X < HostMin.X - EdgePadding || LocalPoint.X > HostMax.X + EdgePadding ||
+            LocalPoint.Y < HostMin.Y - EdgePadding || LocalPoint.Y > HostMax.Y + EdgePadding)
+            continue;
+
+        const FVector SurfaceLocal(
+            FMath::Clamp(LocalPoint.X, HostMin.X, HostMax.X),
+            FMath::Clamp(LocalPoint.Y, HostMin.Y, HostMax.Y),
+            HostMax.Z);
+        const FVector SurfaceWorld = HostTransform.TransformPosition(SurfaceLocal);
+        const float DistSq = FVector::DistSquared(DesiredBottomWorld, SurfaceWorld);
+        if (DistSq > CaptureSq || DistSq >= BestScore) continue;
+
+        BestScore = DistSq;
+        OutTransform = ARPGMakeHorizontalBuildLightTransform(Piece, SurfaceWorld, Desired.Rotator().Yaw);
+        OutSupport = Host;
+    }
+
+    return OutSupport != nullptr;
 }
 
 /**
@@ -2145,20 +2349,39 @@ void UARPGBuildingComponent::UpdatePlacementPreview()
     FTransform Desired(DesiredRotation, Location);
     AARPGBuildPieceActor* SnapTarget = nullptr;
 
-    // Door/Window inserts use a dedicated full-view semantic search. Do not truncate this at the
-    // generic placement trace hit: in third-person that hit is frequently the supporting floor before
-    // the camera ray reaches the doorway. Each compatible opening performs its own LOS validation.
-    FTransform ViewDirectedInsertTransform;
-    AARPGBuildPieceActor* PreferredInsertHost = bHit ? Cast<AARPGBuildPieceActor>(Hit.GetActor()) : nullptr;
-    if (ARPGFindViewDirectedInsertSnap(
-        GetWorld(), SelectedBuildPiece, ViewLocation, End, PlacementTraceChannel, GetOwner(),
-        PreferredInsertHost, ViewDirectedInsertTransform, SnapTarget))
+    if (SelectedBuildPiece->PieceKind == EARPGBuildPieceKind::Light)
     {
-        CurrentPreviewTransform = ViewDirectedInsertTransform;
+        // Buildable lights use surface placement rather than the structural grid/snap graph. A wall
+        // fixture follows the actually aimed wall face; a stick/floor light seats its visible bottom
+        // on terrain or a Foundation/Floor top plane. No existing structural snap code is touched.
+        FTransform SurfaceTransform;
+        if (bHit && ARPGResolveBuildLightPlacementFromHit(
+            SelectedBuildPiece, Hit, ViewRotation.Yaw + PreviewYawOffset, SurfaceTransform, SnapTarget))
+        {
+            CurrentPreviewTransform = SurfaceTransform;
+        }
+        else
+        {
+            CurrentPreviewTransform = Desired;
+        }
     }
     else
     {
-        CurrentPreviewTransform = ResolvePlacementTransform(SelectedBuildPiece, Desired, SnapTarget);
+        // Door/Window inserts use a dedicated full-view semantic search. Do not truncate this at the
+        // generic placement trace hit: in third-person that hit is frequently the supporting floor before
+        // the camera ray reaches the doorway. Each compatible opening performs its own LOS validation.
+        FTransform ViewDirectedInsertTransform;
+        AARPGBuildPieceActor* PreferredInsertHost = bHit ? Cast<AARPGBuildPieceActor>(Hit.GetActor()) : nullptr;
+        if (ARPGFindViewDirectedInsertSnap(
+            GetWorld(), SelectedBuildPiece, ViewLocation, End, PlacementTraceChannel, GetOwner(),
+            PreferredInsertHost, ViewDirectedInsertTransform, SnapTarget))
+        {
+            CurrentPreviewTransform = ViewDirectedInsertTransform;
+        }
+        else
+        {
+            CurrentPreviewTransform = ResolvePlacementTransform(SelectedBuildPiece, Desired, SnapTarget);
+        }
     }
     CurrentSnapTarget = SnapTarget;
     CurrentPreviewResult = bHit || SnapTarget ? EvaluatePlacementInternal(SelectedBuildPiece, CurrentPreviewTransform, SnapTarget) : EARPGPlacementResult::InvalidSurface;
@@ -2175,6 +2398,49 @@ FTransform UARPGBuildingComponent::ResolvePlacementTransform(const UARPGBuildPie
 {
     OutSnapTarget = nullptr;
     if (!Piece) return DesiredTransform;
+
+    if (Piece->PieceKind == EARPGBuildPieceKind::Light)
+    {
+        FTransform SurfaceTransform;
+        if (ARPGFindBuildLightSurfaceFromDesired(GetWorld(), Piece, DesiredTransform, SurfaceTransform, OutSnapTarget))
+            return SurfaceTransform;
+
+        // Ground lights have no build actor as their support, but authority must never trust the
+        // client-supplied Z. Re-seat the visible bottom on the server's own support trace so a crafted
+        // placement request cannot float a torch anywhere within SupportTraceDepth. If the trace hits
+        // a built Foundation/Floor that escaped the proximity scan above, preserve normal host access
+        // semantics by returning it as the snap target instead of treating it as anonymous terrain.
+        if (Piece->LightPlacementMode == EARPGBuildLightPlacementMode::HorizontalSurface && Piece->bAllowGroundPlacement && GetWorld())
+        {
+            const FVector BottomAnchor = ARPGGetBuildPieceBottomAnchorLocal(Piece);
+            const FVector PlacementCorrection = DesiredTransform.GetRotation().RotateVector(Piece->PlacementOffset);
+            const FVector DesiredBottomWorld = DesiredTransform.TransformPosition(BottomAnchor) - PlacementCorrection;
+            const float ProbeLift = FMath::Max(4.f, Piece->PlacementCollisionClearance + 2.f);
+            const FVector TraceStart = DesiredBottomWorld + FVector::UpVector * ProbeLift;
+            const FVector TraceEnd = DesiredBottomWorld - FVector::UpVector * FMath::Max(1.f, Piece->SupportTraceDepth);
+
+            FCollisionQueryParams LightSupportParams(SCENE_QUERY_STAT(ARPGBuildLightAuthoritySupport), false, GetOwner());
+            FHitResult SupportHit;
+            if (GetWorld()->LineTraceSingleByChannel(SupportHit, TraceStart, TraceEnd, PlacementCollisionChannel, LightSupportParams))
+            {
+                AARPGBuildPieceActor* BuildSupport = Cast<AARPGBuildPieceActor>(SupportHit.GetActor());
+                if (!BuildSupport || (BuildSupport->Definition && BuildSupport->IsConstructionComplete() &&
+                    ARPGIsBuildLightHorizontalHostKind(BuildSupport->Definition->PieceKind)))
+                {
+                    const FVector N = SupportHit.ImpactNormal.GetSafeNormal();
+                    const float MaxSlope = FMath::Clamp(Piece->MaxGroundSlopeDegrees, 0.f, 89.f);
+                    const float MinUpDot = FMath::Cos(FMath::DegreesToRadians(MaxSlope));
+                    if (!N.IsNearlyZero() && FVector::DotProduct(N, FVector::UpVector) >= MinUpDot)
+                    {
+                        OutSnapTarget = BuildSupport;
+                        return ARPGMakeHorizontalBuildLightTransform(Piece, SupportHit.ImpactPoint, DesiredTransform.Rotator().Yaw);
+                    }
+                }
+            }
+        }
+        return DesiredTransform;
+    }
+
     FTransform Snapped;
     if (Piece->bSnapPlacement && FindBestSnapTransform(Piece, DesiredTransform, Snapped, OutSnapTarget)) return Snapped;
 
@@ -2409,6 +2675,42 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
     if (FVector::DistSquared(Owner->GetActorLocation(), Final.GetLocation()) > FMath::Square(MaxPlacementDistance)) return EARPGPlacementResult::TooFar;
     if (!HasBuildResources(Piece)) return EARPGPlacementResult::MissingResources;
     if (Piece->bRequiresSnapTarget && !SnapTarget) return EARPGPlacementResult::Unsupported;
+
+    if (Piece->PieceKind == EARPGBuildPieceKind::Light)
+    {
+        if (Piece->LightPlacementMode == EARPGBuildLightPlacementMode::WallSurface)
+        {
+            if (!SnapTarget || !SnapTarget->Definition || !SnapTarget->IsConstructionComplete() ||
+                !ARPGIsWallLikeKind(SnapTarget->Definition->PieceKind))
+                return EARPGPlacementResult::Unsupported;
+        }
+        else if (SnapTarget)
+        {
+            if (!SnapTarget->Definition || !SnapTarget->IsConstructionComplete() ||
+                !ARPGIsBuildLightHorizontalHostKind(SnapTarget->Definition->PieceKind))
+                return EARPGPlacementResult::Unsupported;
+        }
+        else if (!Piece->bAllowGroundPlacement)
+        {
+            return EARPGPlacementResult::Unsupported;
+        }
+
+        // Native light visuals are intentionally non-blocking so they cannot regress structural
+        // placement. Preserve a small semantic fixture-spacing rule so exact duplicate lamps are still
+        // rejected even though their imported mesh collision is disabled.
+        const float MinimumSpacing = FMath::Max(0.f, Piece->LightMinimumSpacing);
+        if (MinimumSpacing > KINDA_SMALL_NUMBER)
+        {
+            const float MinimumSpacingSq = FMath::Square(MinimumSpacing);
+            for (TActorIterator<AARPGBuildLightActor> It(World); It; ++It)
+            {
+                const AARPGBuildLightActor* ExistingLight = *It;
+                if (!ExistingLight || !ExistingLight->Definition || !ExistingLight->IsConstructionComplete()) continue;
+                if (FVector::DistSquared(ExistingLight->GetActorLocation(), Final.GetLocation()) < MinimumSpacingSq)
+                    return EARPGPlacementResult::Blocked;
+            }
+        }
+    }
 
     // Hosted inserts are singleton occupants of their semantic host socket. Do not depend on current
     // physical collision for duplicate detection: an open Door/Window may legitimately move/disable its
@@ -2697,6 +2999,7 @@ UClass* UARPGBuildingComponent::ResolveNativeBuildActorClass(const UARPGBuildPie
     {
         case EARPGBuildPieceKind::Door: return AARPGBuildDoorActor::StaticClass();
         case EARPGBuildPieceKind::Window: return AARPGBuildWindowActor::StaticClass();
+        case EARPGBuildPieceKind::Light: return AARPGBuildLightActor::StaticClass();
         case EARPGBuildPieceKind::Storage: return AARPGStorageActor::StaticClass();
         case EARPGBuildPieceKind::Production: return AARPGCraftingStationActor::StaticClass();
         default: return AARPGBuildPieceActor::StaticClass();

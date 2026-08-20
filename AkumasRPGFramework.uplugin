@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 21553,
-  "VersionName": "2.15.53-alpha",
+  "Version": 21554,
+  "VersionName": "2.15.54-alpha",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with server-authoritative settlement building, structural snapping, construction visuals, persistent storage and fuel-driven production stations, player crafting, functional instance durability and repair, reskinnable native UI, Inventory + Quick Access drag/drop, generic item use, JRPG stats, NPC UI, replicated spawning/footsteps, gathering, combat, factions, saves and networking.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with server-authoritative settlement building, structural snapping, interactive persistent buildable lighting (fadeable Point/Spot lights with Niagara/Cascade FX), construction visuals, persistent storage and fuel-driven production stations, player crafting, functional instance durability and repair, reskinnable native UI, Inventory + Quick Access drag/drop, generic item use, JRPG stats, NPC UI, replicated spawning/footsteps, gathering, combat, factions, saves and networking.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,
