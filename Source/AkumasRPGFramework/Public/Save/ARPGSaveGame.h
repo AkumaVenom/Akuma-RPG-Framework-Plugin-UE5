@@ -22,8 +22,8 @@ class AKUMASRPGFRAMEWORK_API UARPGWorldSaveGame : public USaveGame
 {
     GENERATED_BODY()
 public:
-    // v5 adds in-progress building construction and built-door state persistence.
-    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 5;
+    // v6 adds replicated built-Window open/closed persistence; v5 construction/Door fields remain unchanged.
+    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 6;
     UPROPERTY(SaveGame, BlueprintReadWrite) FARPGWorldSaveData World;
 };
 

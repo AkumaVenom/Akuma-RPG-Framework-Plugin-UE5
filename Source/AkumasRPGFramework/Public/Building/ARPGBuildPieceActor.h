@@ -7,6 +7,8 @@
 class UARPGFactionOwnershipComponent;
 class USceneComponent;
 class UStaticMeshComponent;
+class USkeletalMeshComponent;
+class UMeshComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FARPGBuildingHealthChanged, float, NewHealth, float, Delta);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FARPGBuildingDestroyed);
@@ -21,7 +23,10 @@ public:
     AARPGBuildPieceActor();
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building|Components") TObjectPtr<USceneComponent> BuildRoot;
+    /** Existing Static Mesh visual component. Kept intact for Blueprint/backward compatibility. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building|Components") TObjectPtr<UStaticMeshComponent> BuildMesh;
+    /** Optional Skeletal Mesh visual component selected automatically when Definition->BuildSkeletalMesh is assigned. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building|Components") TObjectPtr<USkeletalMeshComponent> BuildSkeletalMesh;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, SaveGame, Category="Building") FGuid BuildingId;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Definition, Category="Building") TObjectPtr<UARPGBuildPieceDefinition> Definition;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building") TObjectPtr<UARPGFactionOwnershipComponent> Ownership;
@@ -64,6 +69,12 @@ protected:
     UFUNCTION() void OnRep_ConstructionState();
     virtual void RefreshDefinitionPresentation();
     virtual void RefreshConstructionPresentation(bool bForce = false);
+    /** Returns the currently selected Static/Skeletal visual component, or null when this definition is custom-actor-only. */
+    UMeshComponent* GetActiveBuildMeshComponent() const;
+    /** Returns transformed actor-local visible bounds for the currently selected Static/Skeletal build visual. */
+    bool GetActiveBuildVisualLocalBounds(FVector& OutMin, FVector& OutMax) const;
+    /** Returns raw asset-local bounds before MeshRelativeTransform; used by the existing construction reveal. */
+    bool GetActiveBuildVisualRawBounds(FVector& OutMin, FVector& OutMax) const;
     void CompleteConstructionAuthority();
     float GetAuthoritativeServerTime() const;
 private:

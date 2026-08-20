@@ -8,9 +8,9 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.15.43-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.15.53-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest / confirmed building baseline:** v2.15.43 is the current framework baseline. It preserves the v2.15.40 player-only relog/combat persistence boundary and finalizes the Wood Stair multi-storey contract on one canonical 300 cm lattice: finished Foundation/Floor/Ceiling tops own story surfaces, slab thickness extends downward, the `334 × 300 × 278` Stair uses a `300 × 300 × 300` structural flight cell, and a LOW-departure Stair starts on the **current** walking surface instead of inheriting a `+22 cm` lift. Fresh multi-storey runtime testing confirmed the Stair/Floor/Wall stack remains aligned across repeated storeys. See [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md) for the release-by-release history.
+> **Latest release:** v2.15.53 completes the Stair ↔ Wall-family boundary contract for all four 90-degree Stair rotations. v2.15.52 unified both build orders but still recognized only parallel side seams; the final reported rotation presents the same authored perimeter relationship on the Stair's exact LOW/HIGH boundary with a perpendicular Wall-family run. The shared private classifier now accepts exact side **or endpoint boundary** ownership while still rejecting interior/centreline/distant conflicts. No Data Asset offsets/bounds change. **Confirmed geometry baseline remains v2.15.43**; the Window placement/interaction path through v2.15.48 is also project-confirmed. See [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md) for release history.
 
 ## Start here
 
@@ -299,33 +299,84 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.15.43-alpha
+## Current release — v2.15.53-alpha
 
-v2.15.43 removes the last **22 cm Stair-per-storey actor offset** from the standard Wood Stair topology.
+v2.15.53 fixes the final Stair/Wall-family rotation that remained red after v2.15.52. The shared classifier was build-order symmetric but still side-only: it accepted a Wall-family module only when its run axis was parallel to the Stair and its anchor sat on `local Y = +/-150`. In the reported remaining rotation, the same authored perimeter module lands on the Stair's exact LOW/HIGH boundary (`local X = +/-150`) with a perpendicular run axis, so it incorrectly fell through to generic collision.
 
-**Canonical Stair/Floor relationship**
+- One `ARPGIsStairWallFamilyBoundarySeam()` predicate now owns both legal boundary forms in both build orders.
+- **Side boundary:** parallel/180-equivalent run axis, exact `local Y = +/-SnapSize/2`, and longitudinal overlap against Stair `PlacementBounds.X`.
+- **LOW/HIGH endpoint boundary:** perpendicular run axis, exact `local X = +/-SnapSize/2`, and lateral overlap against Stair `PlacementBounds.Y`.
+- The calculation is performed in the final Stair-local structural frame, so yaw `0/90/180/270` receives the same result.
+- `Wall`, `WindowWall`, `Doorway` and their verified hosted `Window`/`Door` inserts share the same boundary semantics.
+- Walls through the Stair interior/centreline, distant modules, unrelated inserts and other real non-boundary conflicts remain blocked.
+- No Editor authoring changes are required: keep the confirmed Stair bounds/snap settings and Wood `Window Insert Offset Z = +20`.
 
-- Finished Foundation/Floor/Ceiling tops remain the structural story surfaces: `0, 300, 600, 900...` for the current kit.
-- The `334 × 300 × 278` Stair is traversal art inside a `300 × 300 × 300` structural flight cell. Its visual rise does **not** define story height.
-- A LOW-departure/up-flight Stair now aligns its **visible LOW plane to the current walking surface**. On story `Z=300`, the Stair starts at `Z=300` rather than `Z=322`.
-- The same Stair therefore ends visually at `Z=578`. The next `18 cm` Floor occupies `Z=582..600`, leaving only the intended `4 cm` art/underside tolerance and a final `22 cm` stair-to-landing rise to the finished surface.
-- `Stair -> Floor/Ceiling` no longer derives upper landing Z from rendered Stair top. The upper Floor finished surface is always `current Stair LOW story + StandardWallHeight`, so it remains exactly on `300/600/900...`.
-- Direct Stair chains still advance by the structural `300 cm` XY/Z cell step, not by the 334 cm visual run or 278 cm visual rise.
+## Previous release — v2.15.52-alpha
 
-This fixes the failure where every new up-flight sat another 22 cm above its Floor and made a multi-storey stair tower look progressively separated even though the nominal story planes were canonical.
+v2.15.52 removed the forward/reverse Stair-side classifier split and made Stair-chain hosting use the same rule, but project-side PIE then exposed one remaining cardinal orientation that requires exact endpoint-boundary acceptance. v2.15.53 supersedes the side-only boundary contract while preserving the unified architecture.
 
-**Confirmed acceptance baseline**
 
-- Fresh repeated `Stair -> Floor -> Wall -> Stair` storeys remain on one `300 cm` structural lattice instead of accumulating `+22 cm`, `+18 cm`, or `+34 cm` drift.
-- Stair visual dimensions are presentation geometry: the 334 cm run overhangs the 300 cm flight cell by 17 cm per end, while the 278 cm rise remains inside the 300 cm story.
-- Landscape support, tiled-deck overhang seams, Stair-to-Stair chains, Stair-owned Floor/Ceiling landings, and Wall/Doorway side seams remain part of the confirmed Stair baseline.
+## Previous release — v2.15.51-alpha
 
-**Preserved combat/relog integrity**
+v2.15.51 corrected the 334-vs-300 cm endpoint-overhang calculation but project-side PIE subsequently proved the wider subsystem was still asymmetric across build order and Stair-chain hosting. v2.15.52 supersedes those separate forward/reverse seam decisions with one shared classifier.
 
-- Account character persistence remains player-only; `AARPGAICharacter` cannot consume the account `LastCharacterId` or load the player save on relog.
-- Reciprocal combat/targeting hostility safeguards from v2.15.39 remain unchanged.
+## Previous release — v2.15.50-alpha
 
-No reflected Blueprint API or save-schema migration is required for v2.15.43. Existing already-placed structures keep their saved transforms; test this correction with **fresh Stairs and Stair-owned upper Floors** because the framework deliberately does not relocate saved player structures.
+v2.15.50 replaced the old exact longitudinal actor-centre test with Wall-family span classification, but project-side PIE subsequently proved its comparison against the 300 cm structural cell was still insufficient for the 334 cm Stair's 17 cm endpoint collision overhang. v2.15.51 supersedes that forward seam calculation.
+
+## Previous release — v2.15.49-alpha
+
+v2.15.49 fixes a hosted-insert collision layer where a completed `Window` or `Door` could independently return **Blocked by another object** beside an otherwise-valid host seam. v2.15.51 retains that exact host-socket inheritance on top of the corrected Stair-side endpoint-overhang classifier.
+
+## Previous release — v2.15.48-alpha
+
+v2.15.48 fixes a real-world Window interaction occlusion case without changing the confirmed Window placement or animation setup. Conservative/simple collision on some WindowWall meshes can cover the visual aperture, causing the player view trace to hit the structural WindowWall before the hosted Window. The interaction layer now resolves the completed Window occupying that exact native WindowWall socket and toggles it through the same authoritative interaction RPC. It never traces through arbitrary blockers.
+
+The v2.15.47 replicated/persistent Skeletal Window interaction, animation, collision and save behavior remains current and unchanged.
+
+- `ARPGBuildWindowActor` now replicates authoritative open/closed state and persists it in world-save schema v6. Older worlds load safely with Windows closed.
+- Window Build Piece Data Assets expose an Open Animation, optional Close Animation, playback rate, optional open/close sounds, and an open-collision policy. Leaving Close Animation empty automatically reverses the Open Animation.
+- The active Skeletal Mesh ticks only while a Window is transitioning, then returns to a dormant final pose. Authority rejects another toggle while a transition is already running.
+- Native `WindowCollision` is the gameplay blocker rather than imported mesh/Physics Asset collision. Opening removes it immediately; closing restores it only when fully closed.
+- A separate Visibility-only interaction box remains targetable while open but never blocks Pawn movement, so the same `Interact Built Structure` button can close the Window again.
+- `AARPGCharacter::InteractBuiltStructure()` now handles Doors, Windows, Storage and Production through the existing player-owned interaction authority path. No new hard-coded key is introduced; wire your project's normal Interact input action to that wrapper.
+- v2.15.46 ghost/WindowWall acquisition, v2.15.45 X/Y/Z Window centering / `Window Insert Offset`, and the confirmed v2.15.43 structural lattice are protected.
+
+## Previous release — v2.15.46-alpha
+
+v2.15.46 hardens the first real Skeletal Window editor/PIE workflow without changing the confirmed structural baseline.
+
+- Skeletal placement ghosts prepare the existing global Valid/Invalid Preview Materials for Skeletal Mesh material usage before applying them.
+- `WindowWall -> Window` local acquisition accepts direct compatible host hits and a bounded hollow-frame/third-person view corridor while retaining the host's native socket as the only final transform.
+- The semantic Window socket remains available even when generic standard snap generation is disabled.
+- Authority still reacquires/validates the host and all v2.15.45/v2.15.43 geometry contracts remain unchanged.
+
+## Previous release — v2.15.45-alpha
+
+v2.15.45 corrects the native hosted-Window vertical socket while preserving the confirmed Door and structural behavior.
+
+- `Doorway -> Door` remains floor-standing: visible bounds are centered in X/Y and bottom-aligned in Z exactly as before.
+- `WindowWall -> Window` now centers transformed visible bounds in X/Y/Z. A 95 cm-high Window inside a 271 cm-high WindowWall therefore resolves 88 cm above a shared bottom plane by default instead of being forced to the bottom of the wall.
+- `WindowWall` definitions expose **Window Insert Offset** under `Building | Window`. Keep it `0,0,0` for centered openings; use the host-local offset only for deliberately high/low/off-centre window apertures. Do not compensate with the incoming Window's generic `Placement Offset`.
+- The rule is visual-type agnostic: Static and Skeletal Windows use the same `Mesh Relative Transform`-aware bounds calculation. v2.15.44 skeletal preview/final visual support and `ARPGBuildWindowActor` collision remain unchanged.
+- Existing already-placed Window transforms are not migrated. Test the new socket with fresh Window placements after compiling.
+- The confirmed v2.15.43 Foundation/Wall/WindowWall/Doorway/Floor/Stair story lattice and all Door behavior remain protected.
+
+## Earlier release — v2.15.44-alpha
+
+v2.15.44 adds a fully native **Skeletal Mesh visual path for building pieces** without replacing or renaming the established Static Mesh workflow.
+
+- `ARPGBuildPieceDefinition` now exposes optional **Build Skeletal Mesh** and **Preview Skeletal Mesh** fields. Existing `Build Mesh` / `Preview Mesh` Static Mesh fields and existing Data Assets remain unchanged.
+- A valid Build Skeletal Mesh is an explicit opt-in and takes presentation/bounds precedence over Build Mesh. If no skeletal asset is assigned, the original Static Mesh path is used exactly as before.
+- Placement preview supports Skeletal Mesh ghosts. An explicit Static `Preview Mesh` may still be used as a lighter proxy for a skeletal final piece.
+- Pivot-aware ground placement, transformed visible bounds, structural snapping, hosted `WindowWall -> Window` centering, collision validation and construction reveal all use the same active Static/Skeletal visual bounds. Skeletal art therefore does not require hand-authored snap offsets merely because its pivot differs.
+- `Window` now resolves to a native `ARPGBuildWindowActor` with bounds-driven `WindowCollision`, so an imported Skeletal Window does not need a Physics Asset just to participate in authoritative duplicate-insert/occupancy collision. v2.15.47 layers replicated Data-Asset-driven open/close animation and persistence on this native Window actor without changing its placement bounds/sockets.
+- Native Door presentation also accepts a skeletal visual beneath the existing moving `DoorPivot`; the confirmed Static Door behavior is preserved.
+- Construction scaling/collision/material progress is applied through the active mesh component for either visual type; plain skeletal build visuals remain component-Tick dormant until a dedicated animation/interaction actor needs animation work.
+
+The **v2.15.43 structural snapping and story/Stair behavior is intentionally unchanged** in this release. There is no save-schema migration. Existing Static Mesh build definitions require no edits.
+
+For a Skeletal Window Data Asset, leave `Actor Class` empty, set `Piece Kind = Window`, assign the skeletal asset to **Build Skeletal Mesh**, clear `Build Mesh` if the definition was duplicated from a Static Mesh piece, and keep using `Mesh Relative Transform`, `Placement Bounds`, `Snap Size` and `Standard Wall Height` exactly as normal.
 
 ## Project boundaries
 

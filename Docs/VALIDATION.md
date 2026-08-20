@@ -1,11 +1,110 @@
-# Source Validation — Akuma's RPG Framework v2.15.43-alpha
+# Source Validation — Akuma's RPG Framework v2.15.53-alpha
 
-Package: **Akuma's RPG Framework — v2.15.43-alpha**  
+Package: **Akuma's RPG Framework — v2.15.53-alpha**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
 
-The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. The final v2.15.43 Stair/story contract has also received project-side runtime acceptance with fresh multi-storey Stair/Floor/Wall pieces.
+The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline and the Window placement/interaction path through v2.15.48 is project-confirmed. v2.15.53 completes that unified Stair adjacency rule by adding the exact LOW/HIGH endpoint boundary case exposed by the one remaining cardinal Stair rotation. Runtime PIE confirmation is still required for this release.
+
+## v2.15.53 four-cardinal Stair / Wall-family boundary acceptance
+
+- Reproduce the final reported red Stair rotation **without changing Data Asset values**. The Wall-family module on that exact authored perimeter boundary must now be **VALID PLACEMENT**.
+- Test Stair yaws `0`, `90`, `180`, and `270` against the same rotated layout. All four must classify identically.
+- Verify side boundaries: Wall actor snap origin on Stair-local `Y = ±150 cm`, Wall run axis parallel/180-equivalent to Stair run, and longitudinal overlap against the Wood Stair `PlacementBounds.X = 167`.
+- Verify LOW/HIGH endpoint boundaries: Wall actor snap origin on Stair-local `X = ±150 cm`, Wall run axis perpendicular to Stair run, and lateral overlap against `PlacementBounds.Y = 150`.
+- Repeat for `Wall`, bare `WindowWall`, `Doorway`, and Window/Door-hosted variants, in both build orders and with a Stair-chain active host.
+- Keep negative cases red: parallel centreline wall (`Y = 0`), perpendicular wall through the flight interior (`X = 0`), distant modules outside both boundary spans, unrelated inserts/world geometry and duplicate occupancy.
+- No `Placement Bounds`, `Snap Size`, `Placement Offset`, `Window Insert Offset` or collision-channel changes are part of acceptance.
+
+Recommended UE 5.8 PIE acceptance: reproduce the exact screenshot rotation first, then rotate the Stair through all four cardinal orientations around the same perimeter.
+
+## v2.15.52 unified bidirectional Stair / Wall-family side-seam acceptance
+
+v2.15.52 is retained as historical regression coverage for the build-order/Stair-chain unification. Its side-only rule is superseded by the v2.15.53 boundary classifier above.
+
+## v2.15.51 plain Wall / WindowWall -> Stair endpoint-overhang seam acceptance
+
+- Reproduce the latest reported case with a fresh tiled `Floor`, an ordinary parallel `Wall` beside the intended flight, and a fresh Wood `Stair`. Repeat with a bare `WindowWall`. Both must remain **VALID PLACEMENT** at the same Stair socket.
+- The current Wood dimensions are the key regression: Stair run `334 cm`, structural grid `300 cm`, therefore `17 cm` authored overhang at each endpoint. A side-wall continuation centred one full grid cell away spans `[150,450]` while the Stair art reaches to `167`; the `17 cm` overlap is a legal modular seam even though the structural cells only touch at `150`.
+- Validate the same result on both `+Y` and `-Y` Stair side planes and with 180-degree wall facing reversal. `Wall`, `WindowWall` and `Doorway` must share one classifier.
+- Keep negative cases blocked: 90-degree end walls across travel, centreline walls, a parallel side module moved beyond the authored Stair run (for the current kit, centre around `320 cm` or farther), unrelated world geometry and real travel-volume occupancy.
+- Repeat with a hosted closed/open Window after the bare WindowWall passes. v2.15.49 exact host-socket inheritance must not make the result depend on Window animation/collision state.
+- No `Placement Bounds`, `Snap Size`, Stair offset, Window offset or collision-channel authoring change is permitted as part of acceptance.
+
+Recommended UE 5.8 PIE acceptance: use the exact room configuration from the reported screenshots, first with ordinary side Walls, then bare WindowWalls, then hosted Windows. Test both Stair directions. The Stair should be green whenever the surrounding Wall-family pieces occupy only the legal parallel side corridor.
+
+## v2.15.50 bare Wall-family -> Stair-side structural-span acceptance
+
+- Reproduce the reported case with a fresh `Floor`, a **bare** parallel `WindowWall` (no Window inserted), and a `Stair` snapped beside it. The Stair must remain **VALID PLACEMENT** rather than **Blocked by another object** when the WindowWall module occupies the legal side corridor.
+- Repeat with ordinary `Wall` and `Doorway`; all Wall-family kinds must use the same structural rule.
+- Validate longitudinal offset explicitly: a 300 cm Wall-family module whose actor origin is offset along the flight must still be accepted when its `SnapSize` segment overlaps the Stair structural cell. The old `NeighborInCell.X ~= 0` point test must not return.
+- Keep negative cases blocked: rotate the wall 90 degrees across Stair travel, put it on the Stair centreline, or move the parallel wall segment completely outside the Stair cell so its structural spans do not overlap.
+- Repeat with a hosted Window/Door after the bare-host test passes; v2.15.49 host-socket inheritance must remain valid on top of the corrected host classification.
+- No Stair/Window/WindowWall Data Asset offsets or Placement Bounds should be changed to pass this test.
+
+Recommended UE 5.8 PIE acceptance: use the same Wood WindowWall row that previously reproduced the failure, leave at least one WindowWall opening empty, and snap the Wood Stair beside each bare WindowWall from both side orientations. Then add a Window and repeat open/closed. The result must not depend on insert presence or animation state.
+
+## v2.15.49 hosted Door/Window -> Stair-side seam acceptance
+
+- Reproduce the reported case with a fresh `Floor`, a parallel side `WindowWall`, a completed hosted `Window`, and a `Stair` snapped to the Floor edge beside that wall. The Stair must remain **VALID PLACEMENT** instead of returning **Blocked by another object** solely because the Window collider overlaps the Stair profile.
+- Repeat with `Doorway -> Door`; the behavior must be identical because the rule is hosted-insert generic rather than Window-special-cased.
+- The insert may be ignored only after `ARPGInsertActorMatchesHost()` proves it occupies the candidate host's exact native insert socket and `ARPGIsCompatibleStairHostStructuralNeighbor()` proves that host lies on the incoming Stair's legal parallel side edge.
+- The active Stair must still resolve to a valid flat `Foundation` / `Floor` / `Ceiling` snap. Unsnapped/free Stair placement cannot use this exception.
+- Negative regressions must keep a misplaced/unrelated Window or Door, a perpendicular end-wall host, a centreline host, and a real occupied travel cell blocked.
+- Modification-access checks still apply to both the hosted insert and its resolved host. Window open/close collision behavior, duplicate-host occupancy, Stair segmented occupancy and the v2.15.43 300 cm structural lattice remain unchanged.
+
+Recommended UE 5.8 PIE acceptance: use the exact current Wood setup, close a Window in a WindowWall beside the intended Stair flight, and confirm the Stair ghost stays valid at the same snap transform that was valid before Windows were added. Open/close the Window and retest; placement validity must not depend on the Window animation state. Then rotate the Wall/WindowWall 90 degrees across the travel opening and confirm the conflicting Stair placement remains blocked.
+
+## v2.15.48 replicated Skeletal Window interaction acceptance
+
+- Test a WindowWall whose simple/Visibility collision covers the visual opening. Aim at the closed Window through the opening/frame and press the same Interact button used by Doors. The hosted Window must toggle even when the first trace hit reports the WindowWall host; an unrelated wall in front must still block interaction.
+
+- A completed native Window must toggle only through server authority and normal `CanActorUse` / interaction-distance checks. A second toggle during an active transition must be rejected.
+- `Window Open Animation` must play forward for opening. An explicit `Window Close Animation` must play forward for closing; if it is empty, the Open sequence must play in reverse.
+- Skeletal component Tick must be enabled only during transition playback and disabled at the final open/closed pose.
+- Imported Window mesh/Physics Asset collision must not remain as a second gameplay blocker. Native `WindowCollision` owns gameplay blocking; opening disables it immediately and closing restores it only at the fully closed pose when configured.
+- A separate Visibility-only interaction target must remain queryable while open without blocking Pawn movement. `Interact Built Structure` must recognize `ARPGBuildWindowActor` and route through the player-owned Interaction RPC.
+- `bWindowOpen` must replicate and persist in world-save schema v6. v5/older worlds restore Windows closed. Loading a state applies the final pose directly rather than replaying a sound/transition.
+- v2.15.46 placement ghost/host acquisition, v2.15.45 Window socket alignment/host offset, Door behavior and v2.15.43 structural regressions remain enabled.
+
+Recommended UE 5.8 PIE acceptance: assign the actual Wood Window Open animation (and Close if available), wire the player's interaction input action to `Interact Built Structure`, place a fresh Window, press the interaction button to open and close it repeatedly, verify collision opens/closes with the visual, then test listen-server + client replication and a world save/reload with one Window left open.
+
+## v2.15.46 Skeletal Window ghost + host-acquisition acceptance
+
+- A Skeletal Window preview must continue to use the character `ARPGBuildingComponent`'s existing global Valid/Invalid Preview Materials; no per-piece ghost material field is introduced.
+- Before overriding a Skeletal Mesh ghost, the preview path must call `CheckMaterialUsage(MATUSAGE_SkeletalMesh)` on the assigned material and complete shader preparation. Static Mesh ghosts must remain on their existing path.
+- A directly traced completed `WindowWall` must be accepted immediately as the semantic host for an incoming `Window` when the pair is compatible.
+- If the exact camera-centre ray misses the host OBB, a bounded third-person view corridor may acquire a compatible Doorway/WindowWall, but it must only select the host; the final transform must still be the host's native insert candidate.
+- `WindowWall -> Window` must still advertise its centered native insert socket when `Generate Standard Snap Points = false`. Existing standard-generated WindowWall sockets must not be duplicated, and `Doorway -> Door` behavior must remain unchanged.
+- Authority must continue to re-resolve the host from the submitted snapped transform and perform normal access/range/resources/support/collision/duplicate validation. The local acquisition corridor must not authorize free placement.
+- v2.15.45 3D Window centering / `Window Insert Offset`, v2.15.44 native skeletal actor/collision, and v2.15.43 structural story/Stair regressions remain enabled.
+
+Recommended PIE acceptance after compiling in UE 5.8: with the same global preview materials already used by Static pieces, select the skeletal Wood Window and verify the ghost renders with the normal invalid/valid colors instead of grey. Aim at the WindowWall frame and then through/near the hollow opening from several third-person camera angles; the ghost should acquire the WindowWall and jump to its centered native socket. Place it, verify a second Window in the same host is rejected, and verify a normal Door still behaves unchanged.
+
+## v2.15.45 suspended Window insert acceptance
+
+- `Doorway -> Door` must continue to center transformed visible bounds on X/Y while aligning Door visible bottom to Doorway visible bottom on Z. This is a protected regression contract.
+- `WindowWall -> Window` must center transformed visible bounds on X/Y/Z. It must not reuse the Door bottom-plane Z formula.
+- `Window Insert Offset` must be exposed only for `Piece Kind = WindowWall`, default to `0,0,0`, and be applied after automatic Window 3D centering in host-local logical axes.
+- Static and Skeletal Windows must resolve through the same transformed asset-bounds path; `Mesh Relative Transform` must be respected before insert centering.
+- Current Wood dimensional model check: a 95 cm-high Window in a 271 cm-high WindowWall resolves an 88 cm visible-bottom difference at zero host offset. A +12 cm host Z offset resolves 100 cm.
+- Existing full-view insert acquisition, duplicate-insert blocking, hosted-insert structural transparency, Door hinge/collision/replication behavior, v2.15.44 skeletal Window collision and v2.15.43 story/Stair formulas remain unchanged.
+
+Recommended PIE acceptance after compiling in UE 5.8: place a **fresh** skeletal Wood Window into lower- and upper-storey WindowWalls with `Window Insert Offset = 0,0,0`; verify it appears centered in the aperture and remains stable from different camera angles. If the authored aperture is intentionally not centered, adjust only the WindowWall host's `Window Insert Offset`, then verify the same Window asset can be reused against another WindowWall host without changing the Window Data Asset. Re-test one normal Door to confirm its floor alignment is unchanged. Existing placed Window transforms are intentionally not relocated automatically.
+
+## v2.15.44 skeletal build-visual acceptance
+
+- Existing `Build Mesh` / `Preview Mesh` reflected names remain present and existing Static Mesh definitions stay on the original path when no skeletal asset is assigned.
+- `Build Skeletal Mesh` and `Preview Skeletal Mesh` are additive soft asset references. A valid final skeletal asset takes presentation/bounds precedence; explicit preview assets may use either type.
+- Final `ARPGBuildPieceActor` owns a `USkeletalMeshComponent`; local `ARPGBuildPreviewActor` owns a collisionless skeletal ghost component. Both apply the same `Mesh Relative Transform`, and their skeletal component Tick stays disabled by default so static-pose skeletal assets do not add permanent per-frame work.
+- Pivot-aware ground placement, structural snap generation, `WindowWall -> Window` insert centering and validation must read transformed Skeletal Mesh asset bounds when the skeletal path is active.
+- Timed construction must drive the active Static/Skeletal `UMeshComponent` for scale, collision and material progress.
+- `Window` must resolve to native `ARPGBuildWindowActor`; its bounds-driven collision must remain available even when the imported Skeletal Mesh has no Physics Asset.
+- Native Door keeps its existing Static behavior and reparents the optional skeletal visual under the same `DoorPivot`.
+- v2.15.43 story/Stair regressions remain enabled unchanged.
+
+Recommended PIE acceptance after compiling in UE 5.8: create a fresh `Window` Build Piece Definition with only **Build Skeletal Mesh** assigned, verify the local placement ghost renders, snap it repeatedly into lower- and upper-storey `WindowWall` openings, verify duplicate Window placement is blocked, then reload the map/save and confirm the visual remains aligned. Then configure the v2.15.48 Window interaction fields and run the dedicated interaction acceptance above.
 
 ## v2.15.43 confirmed Stair/story acceptance
 

@@ -2,26 +2,10 @@
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
-
-namespace
-{
-    static bool ARPGGetDoorActorLocalBounds(const AARPGBuildDoorActor* Door, FVector& OutMin, FVector& OutMax)
-    {
-        if (!Door || !Door->BuildMesh || !Door->BuildMesh->GetStaticMesh()) return false;
-
-        const FBoxSphereBounds Bounds = Door->BuildMesh->GetStaticMesh()->GetBounds();
-        const FBox RawBox(Bounds.Origin - Bounds.BoxExtent, Bounds.Origin + Bounds.BoxExtent);
-        const FBox ActorLocalBox = RawBox.TransformBy(Door->BuildMesh->GetRelativeTransform());
-        if (!ActorLocalBox.IsValid) return false;
-
-        OutMin = ActorLocalBox.Min;
-        OutMax = ActorLocalBox.Max;
-        return true;
-    }
-}
 
 AARPGBuildDoorActor::AARPGBuildDoorActor()
 {
@@ -36,6 +20,11 @@ AARPGBuildDoorActor::AARPGBuildDoorActor()
     {
         BuildMesh->SetupAttachment(DoorPivot);
         BuildMesh->SetMobility(EComponentMobility::Movable);
+    }
+    if (BuildSkeletalMesh)
+    {
+        BuildSkeletalMesh->SetupAttachment(DoorPivot);
+        BuildSkeletalMesh->SetMobility(EComponentMobility::Movable);
     }
 
     // Do not trust marketplace/imported mesh simple collision for a gameplay-critical door.
@@ -149,11 +138,11 @@ void AARPGBuildDoorActor::Tick(float DeltaSeconds)
 
 void AARPGBuildDoorActor::RefreshDoorGeometry()
 {
-    if (!DoorCollision || !BuildMesh) return;
+    if (!DoorCollision) return;
 
     FVector LocalMin;
     FVector LocalMax;
-    if (!ARPGGetDoorActorLocalBounds(this, LocalMin, LocalMax))
+    if (!GetActiveBuildVisualLocalBounds(LocalMin, LocalMax))
     {
         DoorCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
         DoorHingeLocal = FVector::ZeroVector;
@@ -197,7 +186,7 @@ void AARPGBuildDoorActor::ApplyDoorPose()
     const float DoorYaw = OpenYaw * DoorAlpha;
     const FQuat DoorRotation = FRotator(0.f, DoorYaw, 0.f).Quaternion();
 
-    // Rotate around an arbitrary actor-local hinge without altering the authored BuildMesh relative
+    // Rotate around an arbitrary actor-local hinge without altering the authored active build visual relative
     // transform. Translation = H - R(H) keeps hinge point H stationary while the whole DoorPivot rotates.
     const FVector PivotTranslation = DoorHingeLocal - DoorRotation.RotateVector(DoorHingeLocal);
     DoorPivot->SetRelativeLocationAndRotation(PivotTranslation, DoorRotation);

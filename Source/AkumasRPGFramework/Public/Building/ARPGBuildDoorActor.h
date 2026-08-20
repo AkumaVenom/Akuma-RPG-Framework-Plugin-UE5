@@ -8,7 +8,7 @@ class UBoxComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FARPGDoorStateChanged, bool, bOpen);
 
-/** Ready replicated buildable door. The base BuildMesh is re-parented under DoorPivot and animated locally from replicated state. */
+/** Ready replicated buildable door. The active Static/Skeletal build visual is re-parented under DoorPivot and animated locally from replicated state. */
 UCLASS(BlueprintType, Blueprintable)
 class AKUMASRPGFRAMEWORK_API AARPGBuildDoorActor : public AARPGBuildPieceActor
 {

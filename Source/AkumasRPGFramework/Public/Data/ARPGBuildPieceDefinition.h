@@ -7,7 +7,9 @@
 class AARPGBuildPieceActor;
 class UARPGCraftingStationDefinition;
 class UStaticMesh;
+class USkeletalMesh;
 class UMaterialInterface;
+class UAnimSequenceBase;
 class USoundBase;
 
 UENUM(BlueprintType)
@@ -61,10 +63,18 @@ class AKUMASRPGFRAMEWORK_API UARPGBuildPieceDefinition : public UARPGDefinitionB
 public:
     /** Optional custom actor class. Leave empty to use the framework's native actor for this Piece Kind. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor") TSoftClassPtr<AARPGBuildPieceActor> ActorClass;
-    /** Main visible world mesh. This is enough to use the native build actor without making a Blueprint actor. */
+    /** Main visible world Static Mesh. Existing definitions continue to use this path unchanged. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor") TSoftObjectPtr<UStaticMesh> BuildMesh;
-    /** Optional lighter proxy mesh for placement. Falls back to Build Mesh. */
+    /**
+     * Optional main visible world Skeletal Mesh. When a valid skeletal asset is assigned it takes
+     * presentation/bounds precedence over Build Mesh, allowing animated build pieces without a custom
+     * actor Blueprint while preserving every existing Static Mesh definition unchanged.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor", meta=(DisplayName="Build Skeletal Mesh")) TSoftObjectPtr<USkeletalMesh> BuildSkeletalMesh;
+    /** Optional lighter Static Mesh proxy for placement. If neither preview field is assigned, the active Build Mesh is used. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor") TSoftObjectPtr<UStaticMesh> PreviewMesh;
+    /** Optional Skeletal Mesh placement proxy. Takes preview precedence when valid. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Actor", meta=(DisplayName="Preview Skeletal Mesh")) TSoftObjectPtr<USkeletalMesh> PreviewSkeletalMesh;
     /**
      * Data-driven transform applied to the visible Build/Preview mesh inside the framework actor.
      * Use this to adapt third-party modular meshes without reimporting them. For wall-family pieces,
@@ -88,6 +98,35 @@ public:
      */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Door", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Door", EditConditionHides))
     EARPGBuildDoorHingeSide DoorHingeSide = EARPGBuildDoorHingeSide::Left;
+
+    /**
+     * Optional host-local correction for the standard WindowWall -> Window insert socket. The native
+     * default centers the incoming Window's transformed visible bounds inside the WindowWall's
+     * transformed visible bounds on X/Y/Z. Use this only when a particular WindowWall kit authors its
+     * opening away from that visual center (for example a deliberately high sill). Because the offset
+     * belongs to the WindowWall host, one Window asset can remain reusable across differently authored
+     * wall openings without abusing the incoming piece's generic Placement Offset.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Window", meta=(DisplayName="Window Insert Offset", EditCondition="PieceKind==EARPGBuildPieceKind::WindowWall", EditConditionHides))
+    FVector WindowInsertOffset = FVector::ZeroVector;
+
+    /** Skeletal Window only. Animation from the authored closed pose to the open pose. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Window|Interaction", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Window", EditConditionHides))
+    TSoftObjectPtr<UAnimSequenceBase> WindowOpenAnimation;
+    /** Optional explicit open-to-closed animation. Leave empty to play Window Open Animation in reverse. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Window|Interaction", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Window", EditConditionHides))
+    TSoftObjectPtr<UAnimSequenceBase> WindowCloseAnimation;
+    /** Playback-rate magnitude for native Window open/close animation. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Window|Interaction", meta=(ClampMin="0.01", EditCondition="PieceKind==EARPGBuildPieceKind::Window", EditConditionHides))
+    float WindowAnimationPlayRate = 1.f;
+    /** Optional one-shot sounds played when an authoritative Window begins opening/closing. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Window|Interaction", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Window", EditConditionHides))
+    TSoftObjectPtr<USoundBase> WindowOpenSound;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Window|Interaction", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Window", EditConditionHides))
+    TSoftObjectPtr<USoundBase> WindowCloseSound;
+    /** When true, the native gameplay blocker is removed while open and throughout a closing transition, then restored once fully closed. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Window|Interaction", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Window", EditConditionHides))
+    bool bDisableWindowCollisionWhenOpen = true;
 
     /** Resource requirements are read directly from the player's replicated Inventory. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Cost") TArray<FARPGItemAmount> BuildCost;

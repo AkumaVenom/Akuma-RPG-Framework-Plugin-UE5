@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21543 or descriptor.get("VersionName") != "2.15.43-alpha":
-        issues.append("package descriptor must identify v2.15.43-alpha")
+    if descriptor.get("Version") != 21553 or descriptor.get("VersionName") != "2.15.53-alpha":
+        issues.append("package descriptor must identify v2.15.53-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1794,6 +1794,8 @@ build_actor_cpp_2150 = root / "Private" / "Building" / "ARPGBuildPieceActor.cpp"
 preview_cpp_2150 = root / "Private" / "Building" / "ARPGBuildPreviewActor.cpp"
 door_h_2150 = root / "Public" / "Building" / "ARPGBuildDoorActor.h"
 door_cpp_2150 = root / "Private" / "Building" / "ARPGBuildDoorActor.cpp"
+window_h_2150 = root / "Public" / "Building" / "ARPGBuildWindowActor.h"
+window_cpp_2150 = root / "Private" / "Building" / "ARPGBuildWindowActor.cpp"
 bui_h_2150 = root / "Public" / "Components" / "ARPGBuildingUIComponent.h"
 bui_cpp_2150 = root / "Private" / "Components" / "ARPGBuildingUIComponent.cpp"
 bwidgets_h_2150 = root / "Public" / "UI" / "ARPGBuildingWidgets.h"
@@ -1805,12 +1807,13 @@ character_cpp_2150 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
 station_h_2150 = root / "Public" / "Crafting" / "ARPGCraftingStationActor.h"
 station_cpp_2150 = root / "Private" / "Crafting" / "ARPGCraftingStationActor.cpp"
 paths_2150 = (build_def_2150, build_h_2150, build_cpp_2150, build_actor_h_2150, build_actor_cpp_2150,
-              preview_cpp_2150, door_h_2150, door_cpp_2150, bui_h_2150, bui_cpp_2150,
+              preview_cpp_2150, door_h_2150, door_cpp_2150, window_h_2150, window_cpp_2150, bui_h_2150, bui_cpp_2150,
               bwidgets_h_2150, bwidgets_cpp_2150, interaction_h_2150, interaction_cpp_2150, character_h_2150, character_cpp_2150, station_h_2150, station_cpp_2150)
 if all(p.exists() for p in paths_2150):
     bdh = build_def_2150.read_text(errors="replace"); bh = build_h_2150.read_text(errors="replace"); bc = build_cpp_2150.read_text(errors="replace")
     bah = build_actor_h_2150.read_text(errors="replace"); bac = build_actor_cpp_2150.read_text(errors="replace")
     pc = preview_cpp_2150.read_text(errors="replace"); dh = door_h_2150.read_text(errors="replace"); dc = door_cpp_2150.read_text(errors="replace")
+    wh = window_h_2150.read_text(errors="replace"); wc = window_cpp_2150.read_text(errors="replace")
     buih = bui_h_2150.read_text(errors="replace"); buic = bui_cpp_2150.read_text(errors="replace")
     bwh = bwidgets_h_2150.read_text(errors="replace"); bwc = bwidgets_cpp_2150.read_text(errors="replace")
     inh = interaction_h_2150.read_text(errors="replace"); inc = interaction_cpp_2150.read_text(errors="replace")
@@ -1868,13 +1871,13 @@ if all(p.exists() for p in paths_2150):
         "ARPGInsertActorMatchesHost",
         "ARPGHostedInsertAllowsStructuralNeighbor",
         "Reverse hosted-insert rule",
-        "bNeighborIsInsert && bIncomingIsStructural",
+        "bNeighborIsInsert && (bIncomingIsStandardStructural || bIncomingIsStair)",
         "ARPGIsInsertSnapPair(CandidateHost->Definition->PieceKind, NeighborKind)",
         "!BuildNeighbor->CanActorModify(Owner) || !ResolvedHost->CanActorModify(Owner)",
     ):
         if required not in bc:
             issues.append(f"v2.15.22 reverse hosted-insert structural validation missing: {required}")
-    for required in ("Foundation", "Wall", "WindowWall", "Window", "Doorway", "Door", "Floor", "Ceiling", "Roof", "Stair", "Storage", "Production", "BuildMesh", "BuildCost", "ConstructionSeconds", "CustomSnapPoints", "StationDefinition"):
+    for required in ("Foundation", "Wall", "WindowWall", "Window", "Doorway", "Door", "Floor", "Ceiling", "Roof", "Stair", "Storage", "Production", "BuildMesh", "BuildSkeletalMesh", "PreviewSkeletalMesh", "BuildCost", "ConstructionSeconds", "CustomSnapPoints", "StationDefinition"):
         if required not in bdh: issues.append(f"v2.15.0 build-piece authoring missing: {required}")
     for required in ("BuildCatalog", "BeginBuildMode", "ConfirmPreviewPlacement", "RotatePreview", "NextBuildPiece", "PreviousBuildPiece", "ServerPlacePiece", "FindBestSnapTransform", "bAllowUnlistedBuildRequests", "bRequireSnapTargetModificationAccess"):
         if required not in bh and required not in bc: issues.append(f"v2.15.0 player build mode missing: {required}")
@@ -1907,6 +1910,25 @@ if all(p.exists() for p in paths_2150):
         issues.append("v2.15.3 final Build Mesh must apply the Data Asset mesh-relative transform")
     if "PreviewMesh->SetRelativeTransform(Piece->MeshRelativeTransform)" not in pc or "PreviewMesh->SetupAttachment(PreviewRoot)" not in pc:
         issues.append("v2.15.3 preview must apply mesh-relative transform beneath a dedicated scene root")
+    # v2.15.44 adds skeletal build/preview visuals without replacing the established Static Mesh path.
+    for required in ("BuildSkeletalMesh", "PreviewSkeletalMesh", "USkeletalMesh"):
+        if required not in bdh: issues.append(f"v2.15.44 skeletal build definition support missing: {required}")
+    for required in ("USkeletalMeshComponent", "BuildSkeletalMesh", "GetActiveBuildMeshComponent", "GetActiveBuildVisualLocalBounds", "GetActiveBuildVisualRawBounds"):
+        if required not in bah and required not in bac: issues.append(f"v2.15.44 active skeletal build visual support missing: {required}")
+    for required in ("Definition->BuildSkeletalMesh", "BuildSkeletalMesh->SetSkeletalMesh", "BuildSkeletalMesh->SetComponentTickEnabled(false)", "USkeletalMesh* Mesh = Piece->BuildSkeletalMesh.LoadSynchronous()", "ActiveMesh->SetScalarParameterValueOnMaterials"):
+        if required not in bac and required not in bc: issues.append(f"v2.15.44 skeletal bounds/construction parity missing: {required}")
+    for required in ("PreviewSkeletalMesh", "Piece->PreviewSkeletalMesh", "Piece->BuildSkeletalMesh", "PreviewSkeletalMesh->SetComponentTickEnabled(false)", "GetActivePreviewMeshComponent"):
+        if required not in pc: issues.append(f"v2.15.44 skeletal placement preview support missing: {required}")
+    if "Build Mesh (Static)" in bdh or "Preview Mesh (Static)" in bdh:
+        issues.append("v2.15.44 must preserve the established Build Mesh / Preview Mesh editor field names")
+    if "EARPGBuildPieceKind::Window: return AARPGBuildWindowActor::StaticClass()" not in bc:
+        issues.append("v2.15.44 Window pieces must resolve to the native ARPGBuildWindowActor")
+    for required in ("AARPGBuildWindowActor", "WindowCollision"):
+        if required not in wh: issues.append(f"v2.15.44 native Window actor declaration missing: {required}")
+    for required in ("GetActiveBuildVisualLocalBounds", "WindowCollision->SetBoxExtent", "IsConstructionComplete() || Definition->bCollisionDuringConstruction"):
+        if required not in wc: issues.append(f"v2.15.44 native Window bounds collision missing: {required}")
+    for required in ("BuildSkeletalMesh->SetupAttachment(DoorPivot)", "GetActiveBuildVisualLocalBounds"):
+        if required not in dc: issues.append(f"v2.15.44 skeletal Door compatibility missing: {required}")
     for required in ("TargetHalfGrid", "IncomingHalfGrid", "CornerOffsets[]", "FVector( TargetHalfGrid,  IncomingHalfGrid, AlignBottomPlaneZ)", "FVector(-TargetHalfGrid, -IncomingHalfGrid, AlignBottomPlaneZ)", "FRotator(0.f,  90.f, 0.f)", "FRotator(0.f, -90.f, 0.f)"):
         if required not in bac: issues.append(f"v2.15.4 wall L-corner snap graph missing: {required}")
     for required in ("ARPGIsValidSnappedBuildNeighbor", "Neighbor->GetSnapTransformsFor", "PlacementCollisionClearance + 0.5f", "BuildNeighbor->CanActorModify(Owner)"):
@@ -1919,8 +1941,26 @@ if all(p.exists() for p in paths_2150):
         if required not in bc: issues.append(f"v2.15.6 vertical wall-stack facing ownership missing: {required}")
     if "inherits the supporting wall's world facing as well as its structural column" not in bac:
         issues.append("v2.15.6 vertical wall stack must explicitly inherit the support wall facing")
-    for required in ("ARPGGetCenteredInsertTranslation", "TargetCenter.X - IncomingCenter.X", "TargetCenter.Y - IncomingCenter.Y", "TargetMin.Z - IncomingMin.Z"):
-        if required not in bac: issues.append(f"v2.15.7 pivot-aware insert alignment missing: {required}")
+    for required in ("ARPGGetBottomAlignedInsertTranslation", "TargetCenter.X - IncomingCenter.X", "TargetCenter.Y - IncomingCenter.Y", "TargetMin.Z - IncomingMin.Z"):
+        if required not in bac: issues.append(f"v2.15.7 Door bottom-aligned insert behavior missing: {required}")
+    for required in ("WindowInsertOffset", "DisplayName=\"Window Insert Offset\"", "PieceKind==EARPGBuildPieceKind::WindowWall"):
+        if required not in bdh: issues.append(f"v2.15.45 WindowWall insert-offset authoring support missing: {required}")
+    for required in ("ARPGGetCenteredInsertTranslation", "return TargetCenter - IncomingCenter + HostLocalOffset", "Definition->WindowInsertOffset"):
+        if required not in bac: issues.append(f"v2.15.45 suspended Window 3D centering missing: {required}")
+    for required in ("ARPGPrepareSkeletalPreviewMaterial", "CheckMaterialUsage(MATUSAGE_SkeletalMesh)", "EnsureIsComplete()", "MarkRenderStateDirty()"):
+        if required not in pc: issues.append(f"v2.15.46 skeletal preview material preparation missing: {required}")
+    for required in ("ARPGSegmentPassesInsertAimCorridor", "PreferredTraceTarget", "PreferredInsertHost", "CorridorPenalty", "WorldExtent.GetMax()"):
+        if required not in bc: issues.append(f"v2.15.46 third-person insert host acquisition hardening missing: {required}")
+    for required in ("!Definition->bGenerateStandardSnapPoints", "Definition->PieceKind == EARPGBuildPieceKind::WindowWall", "IncomingPiece->PieceKind == EARPGBuildPieceKind::Window"):
+        if required not in bac: issues.append(f"v2.15.46 intrinsic WindowWall hosted socket fallback missing: {required}")
+    for required in ("WindowOpenAnimation", "WindowCloseAnimation", "WindowAnimationPlayRate", "bDisableWindowCollisionWhenOpen"):
+        if required not in bdh: issues.append(f"v2.15.47 Window interaction Data Asset authoring missing: {required}")
+    for required in ("ReplicatedUsing=OnRep_WindowOpen", "ToggleWindow", "RestoreWindowOpenState", "WindowInteractionCollision"):
+        if required not in wh: issues.append(f"v2.15.47 native replicated Window actor contract missing: {required}")
+    for required in ("DOREPLIFETIME(AARPGBuildWindowActor, bWindowOpen)", "SetPlayRate(bReverse ? -RateMagnitude : RateMagnitude)", "SetComponentTickEnabled(false)", "if (bWindowOpen || bWindowTransitioning) bShouldCollide = false", "WindowInteractionCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block)"):
+        if required not in wc: issues.append(f"v2.15.47 Window animation/collision implementation missing: {required}")
+    for required in ("Hosted inserts are singleton occupants of their semantic host socket", "ARPGInsertActorMatchesHost(ExistingInsert, SnapTarget)"):
+        if required not in bc: issues.append(f"v2.15.47 collision-independent hosted-insert duplicate guard missing: {required}")
     for required in ("ARPGIsInsertSnapPair", "ARPGDistanceSquaredToBuildPieceBounds", "InsertAimDistSq", "CaptureMetricSq", "SemanticTieBreak"):
         if required not in bc: issues.append(f"v2.15.7 insert target-bounds snap capture missing: {required}")
     for required in ("ARPGSegmentIntersectsLocalBox", "ARPGFindViewDirectedInsertSnap", "ARPGHasClearInsertAimPath", "ProbeLocals[]", "TActorIterator<AARPGBuildPieceActor>", "LineTraceSingleByChannel", "FMath::Min(InsertAimDistSq, CandidateDistSq)"):
@@ -1929,13 +1969,65 @@ if all(p.exists() for p in paths_2150):
         if forbidden in bc: issues.append(f"v2.15.9 insert targeting must not be truncated by generic placement-hit state: {forbidden}")
     for required in ("ARPGIsUpperHorizontalStructuralKind", "ARPGDistanceSquaredToDefinitionBoundsAtTransform", "CandidateEnvelopeDistSq", "bHorizontalFootprintCapture", "ARPGRotationsPreservePlacementFootprint", "Piece->PlacementBounds.X - Piece->PlacementBounds.Y", "same physical slot can be advertised"):
         if required not in bc: issues.append(f"v2.15.13 upper-horizontal multi-support placement polish missing: {required}")
-    for required in ("ARPGIsStairSupportSnapPair", "ARPGIsStairChainSnapPair", "ARPGIsAnyStairSnapPair", "bStairSupportSnapPair", "bStairChainSnapPair", "bAnyStairSnapPair", "StairTargetAimDistSq", "CandidateEnvelopeDistSq", "CandidateAffinitySq", "ARPGIsCompatibleStairHostStructuralNeighbor", "ARPGTransformMatchesStairHostCandidate", "bLowEndOwnsHostEdge", "StairCellCenter", "bOnSideEdge", "bParallelToStairRun"):
-        if required not in bc: issues.append(f"v2.15.32 Stair landing/chain snap topology missing: {required}")
+    for required in ("ARPGIsStairSupportSnapPair", "ARPGIsStairChainSnapPair", "ARPGIsAnyStairSnapPair", "bStairSupportSnapPair", "bStairChainSnapPair", "bAnyStairSnapPair", "StairTargetAimDistSq", "CandidateEnvelopeDistSq", "CandidateAffinitySq", "ARPGIsCompatibleStairHostStructuralNeighbor", "ARPGTransformMatchesStairHostCandidate", "bLowEndOwnsHostEdge", "StairCellCenter", "ARPGIsStairWallFamilyBoundarySeam", "bOnSidePlane", "bOnEndpointPlane", "bParallelToStairRun", "bPerpendicularToStairRun", "WallHalfRun", "LongitudinalOverlap", "LateralOverlap"):
+        if required not in bc: issues.append(f"v2.15.32+ Stair landing/chain snap topology missing: {required}")
+    # v2.15.53: one shared bidirectional Stair <-> Wall-family boundary classifier is authoritative for
+    # plain Wall, WindowWall and Doorway in both build orders. It accepts exact parallel side boundaries
+    # and exact perpendicular LOW/HIGH endpoint boundaries in every cardinal Stair rotation, while
+    # centre/interior/distant geometry remains blocked.
+    for required in (
+        "ARPGIsStairWallFamilyBoundarySeam",
+        "One authoritative bidirectional Stair <-> Wall-family boundary-seam classifier",
+        "StairBoundsCenterLocal",
+        "StairFrame",
+        "WallAnchorInStair",
+        "WallTransform.GetLocation()",
+        "bOnSidePlane",
+        "bOnEndpointPlane",
+        "bParallelToStairRun",
+        "bPerpendicularToStairRun",
+        "StairPiece->PlacementBounds.X",
+        "StairPiece->PlacementBounds.Y",
+        "WallHalfRun",
+        "WallRunMin",
+        "WallRunMax",
+        "LongitudinalOverlap",
+        "LateralOverlap",
+        "return LongitudinalOverlap > PositionTolerance;",
+        "return LateralOverlap > PositionTolerance;",
+        "return ARPGIsStairWallFamilyBoundarySeam(",
+    ):
+        if required not in bc:
+            issues.append(f"v2.15.53 unified Stair/Wall-family boundary contract missing: {required}")
+    # Hosted Door/Window collision inherits only its verified Doorway/WindowWall host's shared Stair
+    # seam. Both directions are required: existing insert while placing Stair, and incoming insert after
+    # a Stair already exists. Incoming Stair may be snapped to a flat landing or chained from a Stair.
+    for required in (
+        "ARPGHostedInsertAllowsStairSideNeighbor",
+        "ARPGInsertActorMatchesHost(InsertActor, InsertHost)",
+        "StairPiece->PieceKind != EARPGBuildPieceKind::Stair",
+        "ARPGIsAnyStairSnapPair",
+        "ARPGTransformMatchesStairHostCandidate",
+        "ARPGIsStairWallFamilyBoundarySeam(",
+        "ARPGIsCompatibleInsertHostStairNeighbor",
+        "ARPGIsCompatibleInsertHostStairNeighbor(BuildNeighbor, SnapTarget, Piece)",
+        "const bool bIncomingIsStair = Piece->PieceKind == EARPGBuildPieceKind::Stair;",
+        "bNeighborIsInsert && (bIncomingIsStandardStructural || bIncomingIsStair)",
+        "InsertAllowsIncomingNeighbor",
+    ):
+        if required not in bc:
+            issues.append(f"v2.15.53 hosted-insert Stair boundary inheritance missing: {required}")
     for required in ("bNeighborFlatLanding", "HostStoryPlane", "NeighborStoryPlane", "bImmediateGridNeighbor", "actual Stair flight cell", "17 cm art/rail overhang"):
         if required not in bc: issues.append(f"v2.15.38 Stair tiled-deck overhang seam classification missing: {required}")
     stair_host_neighbor_start = bc.find("static bool ARPGIsCompatibleStairHostStructuralNeighbor(")
-    stair_host_neighbor_end = bc.find("/**\n * Reverse Stair-side seam", stair_host_neighbor_start) if stair_host_neighbor_start >= 0 else -1
+    stair_host_neighbor_end = bc.find("/**\n * Hosted Window/Door inserts inherit", stair_host_neighbor_start) if stair_host_neighbor_start >= 0 else -1
     stair_host_neighbor_fn = bc[stair_host_neighbor_start:stair_host_neighbor_end] if stair_host_neighbor_start >= 0 and stair_host_neighbor_end > stair_host_neighbor_start else ""
+    if "FMath::Abs(NeighborInCell.X) <= PositionTolerance" in stair_host_neighbor_fn:
+        issues.append("v2.15.53 must not restore exact longitudinal actor-centre Stair boundary classification")
+    wall_branch = stair_host_neighbor_fn.find("if (ARPGIsWallLikeKind(NeighborKind))")
+    flat_gate = stair_host_neighbor_fn.find("if (!ARPGIsStairSupportSnapPair")
+    if wall_branch < 0 or flat_gate < 0 or wall_branch > flat_gate:
+        issues.append("v2.15.53 Wall-family Stair boundary must be evaluated before the flat-support-only gate so Stair-chain placement remains valid")
     if "if (ARPGIsHorizontalStructuralKind(NeighborKind))" in stair_host_neighbor_fn and "return false;" in stair_host_neighbor_fn[stair_host_neighbor_fn.find("if (ARPGIsHorizontalStructuralKind(NeighborKind))"):stair_host_neighbor_fn.find("if (!ARPGIsWallLikeKind", stair_host_neighbor_fn.find("if (ARPGIsHorizontalStructuralKind(NeighborKind))"))]:
         issues.append("v2.15.38 Stair host-neighbour classifier must not blanket-reject every horizontal neighbour; immediate same-story deck seams need structural-cell classification")
     for required in ("IncomingStairHalfRun", "StairHighStructuralXYLocal", "StairLowStructuralXYLocal", "TargetStoryPlaneZ", "StairHighArrivalAlignedZ", "StairLowDepartureAlignedZ", "FStairEdgeSocket", "HighArrivalTranslation", "LowDepartureTranslation", "Structural Stair endpoints belong to the authored SnapSize grid", "TargetKind == EARPGBuildPieceKind::Stair && IncomingKind == EARPGBuildPieceKind::Stair", "ChainStep", "CenterDeltaX", "ContinueUpZ", "ContinueDownZ", "FVector(CenterDeltaX + ChainStep, 0.f, ContinueUpZ)", "FVector(CenterDeltaX - ChainStep, 0.f, ContinueDownZ)", "local +X = uphill"):
@@ -1971,13 +2063,13 @@ if all(p.exists() for p in paths_2150):
     wall_target_block = bac[wall_target_start:wall_target_end] if wall_target_start >= 0 and wall_target_end > wall_target_start else ""
     if "IncomingAboveTargetZ" in wall_target_block:
         issues.append("v2.15.41 Wall-family vertical story paths must not derive next-storey Z from rendered TargetMax.Z")
-    for required in ("ARPGIsValidExistingStairWallSideSeamNeighbor", "bOnSidePlane", "WallHalfRun", "LongitudinalOverlap", "WallAnchorInStair", "IncomingFinal.GetLocation()", "Reverse Stair-side seam", "ARPGYawAxesEquivalent(ExistingStair->GetActorRotation().Yaw, IncomingFinal.Rotator().Yaw)"):
-        if required not in bc: issues.append(f"v2.15.35 Stair-first Wall-family structural-anchor side-seam contract missing: {required}")
-    stair_wall_start = bc.find("static bool ARPGIsValidExistingStairWallSideSeamNeighbor(")
-    stair_wall_end = bc.find("/**", stair_wall_start + 8) if stair_wall_start >= 0 else -1
-    stair_wall_fn = bc[stair_wall_start:stair_wall_end] if stair_wall_start >= 0 and stair_wall_end > stair_wall_start else ""
-    if "WallBoundsCenterLocal" in stair_wall_fn or "WallCenterWorld" in stair_wall_fn:
-        issues.append("v2.15.35 Stair reverse Wall seam must use the structural actor snap origin, not transformed Wall bounds centre")
+    for required in ("ARPGIsValidExistingStairWallSideSeamNeighbor", "ARPGIsStairWallFamilyBoundarySeam", "WallAnchorInStair", "WallTransform.GetLocation()", "Reverse build order wrapper"):
+        if required not in bc: issues.append(f"v2.15.35+ Stair-first Wall-family structural-anchor side-seam contract missing: {required}")
+    shared_stair_wall_start = bc.find("static bool ARPGIsStairWallFamilyBoundarySeam(")
+    shared_stair_wall_end = bc.find("/**\n * Structural neighbours around an incoming snapped Stair", shared_stair_wall_start) if shared_stair_wall_start >= 0 else -1
+    shared_stair_wall_fn = bc[shared_stair_wall_start:shared_stair_wall_end] if shared_stair_wall_start >= 0 and shared_stair_wall_end > shared_stair_wall_start else ""
+    if "WallBoundsCenterLocal" in shared_stair_wall_fn or "WallCenterWorld" in shared_stair_wall_fn:
+        issues.append("v2.15.53 Stair/Wall-family boundary must use the structural Wall actor snap origin, not transformed Wall bounds centre")
     for required in ("ARPGIsValidStairWorldSupportContact", "supported by continuous WorldStatic geometry", "SurfaceAboveSliceBottom", "bFoundSupportingSurface", "SideOffsets", "SurfaceAboveSliceBottom > SurfaceTolerance"):
         if required not in bc: issues.append(f"v2.15.30 Stair per-slice WorldStatic support classification missing: {required}")
     support_start = bc.find("static bool ARPGIsValidStairWorldSupportContact(")
@@ -2049,7 +2141,7 @@ if all(p.exists() for p in paths_2150):
     for required in ("TransferItemInstanceTo",):
         if required not in inv_h_2140.read_text(errors="replace") or required not in inv_cpp_2140.read_text(errors="replace"):
             issues.append(f"v2.15.0 exact-instance storage transfer missing: {required}")
-    for required in ("DepositToStorageInstance", "WithdrawFromStorageInstance", "WithdrawStationOutputInstance", "ToggleBuiltDoor", "DemolishBuilding", "QueueCraft"):
+    for required in ("DepositToStorageInstance", "WithdrawFromStorageInstance", "WithdrawStationOutputInstance", "ToggleBuiltDoor", "ToggleBuiltWindow", "DemolishBuilding", "QueueCraft"):
         if required not in inh or required not in inc: issues.append(f"v2.15.0 authoritative structure interaction missing: {required}")
     for required in ("ServerDemolishBuilding",):
         if required not in inh: issues.append(f"v2.15.0 authoritative structure interaction RPC declaration missing: {required}")
@@ -2063,11 +2155,11 @@ if all(p.exists() for p in paths_2150):
     if "!StationDefinition || !StationDefinition->StationTag.IsValid()" not in station_can:
         issues.append("v2.15.0 station-required recipes must reject missing/wrong station definitions")
     svh215 = save_h_2140.read_text(errors="replace"); svc215 = save_cpp_2140.read_text(errors="replace"); th215 = types_h_2140.read_text(errors="replace")
-    for required in ("bConstructionComplete", "ConstructionRemainingSeconds", "bDoorOpen"):
+    for required in ("bConstructionComplete", "ConstructionRemainingSeconds", "bDoorOpen", "bWindowOpen"):
         if required not in th215: issues.append(f"v2.15.0 building persistence state missing: {required}")
-    if svh215.count("SaveVersion = 5") < 2:
-        issues.append("v2.15.0 world save schema must be v5 while character save remains v5")
-    for required in ("RestoreConstructionState", "RestoreDoorOpenState", "ProcessOfflineElapsed()"):
+    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 6" not in svh215:
+        issues.append("v2.15.47 world save schema must be v6 while character save remains v5")
+    for required in ("RestoreConstructionState", "RestoreDoorOpenState", "RestoreWindowOpenState", "ProcessOfflineElapsed()"):
         if required not in svc215: issues.append(f"v2.15.0 world-load integration missing: {required}")
 
     # v2.15.12 persistent build ownership reload: Guest/no-login identity must survive restarts so
@@ -2140,6 +2232,18 @@ if readme_2150.exists():
     if not release_documented("v2.15.41-alpha — Canonical Wall Story Lattice Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.41 canonical Wall story lattice fix")
     if not release_documented("v2.15.42-alpha — Finished-Surface Story Plane & Stair/Floor Recess Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.42 finished-surface story-plane fix")
     if not release_documented("v2.15.43-alpha — Stair Low-End Story-Surface Anchor Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.43 Stair low-end story-surface fix")
+    if not release_documented("v2.15.44-alpha — Native Skeletal Build Visual Support"): issues.append("README or Docs/CHANGELOG.md must document v2.15.44 skeletal build visual support")
+    if not release_documented("v2.15.45-alpha — Suspended Window Insert Alignment Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.45 suspended Window insert alignment root fix")
+    if not release_documented("v2.15.46-alpha — Skeletal Window Ghost + Hosted Snap Acquisition Hardening"): issues.append("README or Docs/CHANGELOG.md must document v2.15.46 skeletal Window ghost and hosted snap acquisition hardening")
+
+    for required in ["ARPGWindowOccupiesWindowWallHost", "ARPGFindHostedWindowForWindowWall", "HandleHitOrHostedWindow", "Host->GetSnapTransformsFor(Window->Definition, Candidates)"]:
+        if required not in buic: issues.append(f"v2.15.48 WindowWall-occluded hosted Window interaction recovery missing: {required}")
+    if not release_documented("v2.15.47-alpha — Replicated Skeletal Window Interaction & Animation"): issues.append("README or Docs/CHANGELOG.md must document v2.15.47 replicated skeletal Window interaction and animation")
+    if not release_documented("v2.15.48-alpha — WindowWall-Occluded Interaction Trace Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.48 WindowWall-occluded Window interaction root fix")
+    if not release_documented("v2.15.49-alpha — Hosted Insert / Stair-Side Seam Collision Polish"): issues.append("README or Docs/CHANGELOG.md must document v2.15.49 hosted-insert Stair-side seam collision polish")
+    if not release_documented("v2.15.51-alpha — Stair Side Endpoint-Overhang Seam Symmetry Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.51 Stair-side endpoint-overhang seam root fix")
+    if not release_documented("v2.15.52-alpha — Unified Bidirectional Stair / Wall-Family Seam Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.52 unified bidirectional Stair/Wall-family seam root fix")
+    if not release_documented("v2.15.53-alpha — Four-Cardinal Stair / Wall-Family Boundary Seam Completion"): issues.append("README or Docs/CHANGELOG.md must document v2.15.53 four-cardinal Stair/Wall-family boundary completion")
 
     persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
     ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")

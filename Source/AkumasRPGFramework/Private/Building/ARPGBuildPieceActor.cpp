@@ -3,8 +3,11 @@
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/MeshComponent.h"
 #include "Data/ARPGItemDefinition.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/SkeletalMesh.h"
 #include "GameFramework/GameStateBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
@@ -29,6 +32,17 @@ static void ARPGGetBuildDefinitionLocalBounds(const UARPGBuildPieceDefinition* P
 {
     if (Piece)
     {
+        // Skeletal presentation is additive and takes precedence only when a valid skeletal asset is
+        // explicitly assigned. Existing Static Mesh definitions therefore resolve exactly as before.
+        if (USkeletalMesh* Mesh = Piece->BuildSkeletalMesh.LoadSynchronous())
+        {
+            const FBoxSphereBounds Bounds = Mesh->GetBounds();
+            const FBox RawBox(Bounds.Origin - Bounds.BoxExtent, Bounds.Origin + Bounds.BoxExtent);
+            const FBox ActorLocalBox = RawBox.TransformBy(Piece->MeshRelativeTransform);
+            OutMin = ActorLocalBox.Min;
+            OutMax = ActorLocalBox.Max;
+            return;
+        }
         if (UStaticMesh* Mesh = Piece->BuildMesh.LoadSynchronous())
         {
             const FBoxSphereBounds Bounds = Mesh->GetBounds();
@@ -46,7 +60,7 @@ static void ARPGGetBuildDefinitionLocalBounds(const UARPGBuildPieceDefinition* P
     OutMax = FVector::ZeroVector;
 }
 
-static FVector ARPGGetCenteredInsertTranslation(
+static FVector ARPGGetBottomAlignedInsertTranslation(
     const FVector& TargetMin,
     const FVector& TargetMax,
     const FVector& IncomingMin,
@@ -55,14 +69,30 @@ static FVector ARPGGetCenteredInsertTranslation(
     const FVector TargetCenter = (TargetMin + TargetMax) * 0.5f;
     const FVector IncomingCenter = (IncomingMin + IncomingMax) * 0.5f;
 
-    // Door/window inserts should align by their visible geometry rather than assuming the two assets
-    // share an actor pivot. Center the incoming visible bounds in the target's XY envelope and align
-    // the incoming visible bottom to the target visible bottom. This keeps bottom-, center- and
-    // corner-pivot modular kits compatible without forcing a hand-authored snap offset.
+    // Doors are floor-standing hosted inserts. Center their visible geometry in the Doorway's XY
+    // envelope, but preserve the proven bottom-plane contract on Z. This keeps the existing Door
+    // behavior exactly unchanged for bottom-, center- and corner-pivot modular kits.
     return FVector(
         TargetCenter.X - IncomingCenter.X,
         TargetCenter.Y - IncomingCenter.Y,
         TargetMin.Z - IncomingMin.Z);
+}
+
+static FVector ARPGGetCenteredInsertTranslation(
+    const FVector& TargetMin,
+    const FVector& TargetMax,
+    const FVector& IncomingMin,
+    const FVector& IncomingMax,
+    const FVector& HostLocalOffset)
+{
+    const FVector TargetCenter = (TargetMin + TargetMax) * 0.5f;
+    const FVector IncomingCenter = (IncomingMin + IncomingMax) * 0.5f;
+
+    // Windows are suspended hosted inserts, not floor-standing Doors. Center the incoming transformed
+    // visible bounds against the WindowWall transformed visible bounds in all three axes. An optional
+    // host-local WindowInsertOffset then adapts intentionally off-centre openings (for example a high
+    // sill) without changing the Window asset, its generic PlacementOffset, or the structural actor.
+    return TargetCenter - IncomingCenter + HostLocalOffset;
 }
 
 AARPGBuildPieceActor::AARPGBuildPieceActor()
@@ -78,15 +108,35 @@ AARPGBuildPieceActor::AARPGBuildPieceActor()
     BuildMesh->SetupAttachment(BuildRoot);
     BuildMesh->SetCollisionProfileName(TEXT("BlockAll"));
 
+    BuildSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("BuildSkeletalMesh"));
+    BuildSkeletalMesh->SetupAttachment(BuildRoot);
+    BuildSkeletalMesh->SetCollisionProfileName(TEXT("BlockAll"));
+    BuildSkeletalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    BuildSkeletalMesh->SetGenerateOverlapEvents(false);
+    BuildSkeletalMesh->SetVisibility(false, true);
+    BuildSkeletalMesh->SetHiddenInGame(true, true);
+    // A plain skeletal build visual is a stable posed asset, not an always-running character. Keep its
+    // component Tick dormant; dedicated animated actors (for example the Window interaction layer)
+    // can enable it only while animation is actually required.
+    BuildSkeletalMesh->SetComponentTickEnabled(false);
+
     Ownership = CreateDefaultSubobject<UARPGFactionOwnershipComponent>(TEXT("Ownership"));
 }
 
 void AARPGBuildPieceActor::BeginPlay()
 {
     Super::BeginPlay();
-    BaseMeshRelativeLocation = BuildMesh ? BuildMesh->GetRelativeLocation() : FVector::ZeroVector;
-    BaseMeshRelativeScale = BuildMesh ? BuildMesh->GetRelativeScale3D() : FVector::OneVector;
     RefreshDefinitionPresentation();
+    if (UMeshComponent* ActiveMesh = GetActiveBuildMeshComponent())
+    {
+        BaseMeshRelativeLocation = ActiveMesh->GetRelativeLocation();
+        BaseMeshRelativeScale = ActiveMesh->GetRelativeScale3D();
+    }
+    else
+    {
+        BaseMeshRelativeLocation = FVector::ZeroVector;
+        BaseMeshRelativeScale = FVector::OneVector;
+    }
     RefreshConstructionPresentation(true);
 }
 
@@ -186,33 +236,119 @@ void AARPGBuildPieceActor::RestoreConstructionState(bool bWasComplete, float Rem
 
 void AARPGBuildPieceActor::RefreshDefinitionPresentation()
 {
-    if (!BuildMesh || !Definition) return;
-    if (UStaticMesh* Mesh = Definition->BuildMesh.LoadSynchronous()) BuildMesh->SetStaticMesh(Mesh);
+    if (!Definition) return;
+
+    // A valid Skeletal Mesh is the explicit opt-in path and takes precedence over the legacy Static
+    // Mesh field. This lets a duplicated Static-Mesh definition be converted by assigning the skeletal
+    // asset without changing any existing Static-Mesh asset or reflected property name.
+    USkeletalMesh* LoadedSkeletalMesh = Definition->BuildSkeletalMesh.IsNull() ? nullptr : Definition->BuildSkeletalMesh.LoadSynchronous();
+    UStaticMesh* LoadedStaticMesh = nullptr;
+    if (!LoadedSkeletalMesh && !Definition->BuildMesh.IsNull())
+        LoadedStaticMesh = Definition->BuildMesh.LoadSynchronous();
+    const bool bUseSkeletalMesh = LoadedSkeletalMesh != nullptr;
+
+    if (BuildSkeletalMesh)
+    {
+        BuildSkeletalMesh->SetSkeletalMesh(LoadedSkeletalMesh, true);
+        BuildSkeletalMesh->SetRelativeTransform(Definition->MeshRelativeTransform);
+        BuildSkeletalMesh->SetVisibility(bUseSkeletalMesh, true);
+        BuildSkeletalMesh->SetHiddenInGame(!bUseSkeletalMesh, true);
+        BuildSkeletalMesh->SetCollisionEnabled(bUseSkeletalMesh ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+    }
+
+    if (BuildMesh)
+    {
+        BuildMesh->SetStaticMesh(bUseSkeletalMesh ? nullptr : LoadedStaticMesh);
+        BuildMesh->SetRelativeTransform(Definition->MeshRelativeTransform);
+        BuildMesh->SetVisibility(!bUseSkeletalMesh && LoadedStaticMesh != nullptr, true);
+        BuildMesh->SetHiddenInGame(bUseSkeletalMesh || LoadedStaticMesh == nullptr, true);
+        BuildMesh->SetCollisionEnabled(!bUseSkeletalMesh && LoadedStaticMesh != nullptr ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+    }
 
     // Keep the gameplay actor on the framework's stable logical axes while letting content creators
-    // adapt arbitrary imported mesh orientation/pivot/scale entirely from the Build Piece Data Asset.
-    // This is deliberately component-relative so replication/save transforms remain clean and the
-    // native structural snap graph does not inherit art-pipeline axis assumptions.
-    BuildMesh->SetRelativeTransform(Definition->MeshRelativeTransform);
+    // adapt arbitrary imported Static/Skeletal mesh orientation/pivot/scale entirely from the Build
+    // Piece Data Asset. The same transform drives bounds, preview and final presentation.
+    if (UMeshComponent* ActiveMesh = GetActiveBuildMeshComponent())
+    {
+        BaseMeshRelativeLocation = ActiveMesh->GetRelativeLocation();
+        BaseMeshRelativeScale = ActiveMesh->GetRelativeScale3D();
+    }
+    else
+    {
+        BaseMeshRelativeLocation = FVector::ZeroVector;
+        BaseMeshRelativeScale = FVector::OneVector;
+    }
+}
 
-    BaseMeshRelativeLocation = BuildMesh->GetRelativeLocation();
-    BaseMeshRelativeScale = BuildMesh->GetRelativeScale3D();
+UMeshComponent* AARPGBuildPieceActor::GetActiveBuildMeshComponent() const
+{
+    if (BuildSkeletalMesh && BuildSkeletalMesh->GetSkeletalMeshAsset()) return BuildSkeletalMesh;
+    if (BuildMesh && BuildMesh->GetStaticMesh()) return BuildMesh;
+    return nullptr;
+}
+
+bool AARPGBuildPieceActor::GetActiveBuildVisualRawBounds(FVector& OutMin, FVector& OutMax) const
+{
+    if (BuildSkeletalMesh)
+    {
+        if (USkeletalMesh* Mesh = BuildSkeletalMesh->GetSkeletalMeshAsset())
+        {
+            const FBoxSphereBounds Bounds = Mesh->GetBounds();
+            OutMin = Bounds.Origin - Bounds.BoxExtent;
+            OutMax = Bounds.Origin + Bounds.BoxExtent;
+            return true;
+        }
+    }
+    if (BuildMesh)
+    {
+        if (UStaticMesh* Mesh = BuildMesh->GetStaticMesh())
+        {
+            const FBoxSphereBounds Bounds = Mesh->GetBounds();
+            OutMin = Bounds.Origin - Bounds.BoxExtent;
+            OutMax = Bounds.Origin + Bounds.BoxExtent;
+            return true;
+        }
+    }
+    OutMin = FVector::ZeroVector;
+    OutMax = FVector::ZeroVector;
+    return false;
+}
+
+bool AARPGBuildPieceActor::GetActiveBuildVisualLocalBounds(FVector& OutMin, FVector& OutMax) const
+{
+    FVector RawMin;
+    FVector RawMax;
+    if (!GetActiveBuildVisualRawBounds(RawMin, RawMax))
+    {
+        OutMin = FVector::ZeroVector;
+        OutMax = FVector::ZeroVector;
+        return false;
+    }
+
+    const UMeshComponent* ActiveMesh = GetActiveBuildMeshComponent();
+    if (!ActiveMesh) return false;
+    const FBox ActorLocalBox = FBox(RawMin, RawMax).TransformBy(ActiveMesh->GetRelativeTransform());
+    if (!ActorLocalBox.IsValid) return false;
+    OutMin = ActorLocalBox.Min;
+    OutMax = ActorLocalBox.Max;
+    return true;
 }
 
 void AARPGBuildPieceActor::RefreshConstructionPresentation(bool bForce)
 {
-    if (!BuildMesh) return;
+    UMeshComponent* ActiveMesh = GetActiveBuildMeshComponent();
+    if (!ActiveMesh) return;
     const float P = GetConstructionProgress01();
     if (!bForce && FMath::IsNearlyEqual(P, LastConstructionVisualProgress, 0.002f)) return;
     LastConstructionVisualProgress = P;
 
     if (bConstructionComplete || !Definition)
     {
-        BuildMesh->SetRelativeScale3D(BaseMeshRelativeScale);
-        BuildMesh->SetRelativeLocation(BaseMeshRelativeLocation);
-        BuildMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        BuildMesh->SetScalarParameterValueOnMaterials(TEXT("ConstructionProgress"), 1.f);
-        BuildMesh->SetScalarParameterValueOnMaterials(TEXT("BuildProgress"), 1.f);
+        ActiveMesh->SetRelativeScale3D(BaseMeshRelativeScale);
+        ActiveMesh->SetRelativeLocation(BaseMeshRelativeLocation);
+        ActiveMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        ActiveMesh->SetScalarParameterValueOnMaterials(TEXT("ConstructionProgress"), 1.f);
+        ActiveMesh->SetScalarParameterValueOnMaterials(TEXT("BuildProgress"), 1.f);
         SetActorTickEnabled(false);
         OnConstructionProgressChanged.Broadcast(1.f);
         return;
@@ -222,17 +358,18 @@ void AARPGBuildPieceActor::RefreshConstructionPresentation(bool bForce)
     const float Reveal = FMath::Lerp(MinZ, 1.f, FMath::SmoothStep(0.f, 1.f, P));
     FVector Scale = BaseMeshRelativeScale;
     Scale.Z *= Reveal;
-    BuildMesh->SetRelativeScale3D(Scale);
+    ActiveMesh->SetRelativeScale3D(Scale);
 
-    FVector LocalMin, LocalMax;
-    BuildMesh->GetLocalBounds(LocalMin, LocalMax);
+    FVector LocalMin;
+    FVector LocalMax;
+    GetActiveBuildVisualRawBounds(LocalMin, LocalMax);
     const float HalfHeight = FMath::Max(0.f, (LocalMax.Z - LocalMin.Z) * 0.5f * BaseMeshRelativeScale.Z);
     FVector Location = BaseMeshRelativeLocation;
     Location.Z -= HalfHeight * (1.f - Reveal);
-    BuildMesh->SetRelativeLocation(Location);
-    BuildMesh->SetCollisionEnabled(Definition->bCollisionDuringConstruction ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-    BuildMesh->SetScalarParameterValueOnMaterials(Definition->ConstructionProgressMaterialParameter, P);
-    BuildMesh->SetScalarParameterValueOnMaterials(TEXT("BuildProgress"), P);
+    ActiveMesh->SetRelativeLocation(Location);
+    ActiveMesh->SetCollisionEnabled(Definition->bCollisionDuringConstruction ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+    ActiveMesh->SetScalarParameterValueOnMaterials(Definition->ConstructionProgressMaterialParameter, P);
+    ActiveMesh->SetScalarParameterValueOnMaterials(TEXT("BuildProgress"), P);
     SetActorTickEnabled(true);
     OnConstructionProgressChanged.Broadcast(P);
 }
@@ -568,12 +705,13 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
 
             if (TargetKind == EARPGBuildPieceKind::Doorway && IncomingKind == EARPGBuildPieceKind::Door)
             {
-                const FVector InsertTranslation = ARPGGetCenteredInsertTranslation(TargetMin, TargetMax, IncomingMin, IncomingMax);
+                const FVector InsertTranslation = ARPGGetBottomAlignedInsertTranslation(TargetMin, TargetMax, IncomingMin, IncomingMax);
                 AddLocal(FTransform(FRotator::ZeroRotator, InsertTranslation));
             }
             if (TargetKind == EARPGBuildPieceKind::WindowWall && IncomingKind == EARPGBuildPieceKind::Window)
             {
-                const FVector InsertTranslation = ARPGGetCenteredInsertTranslation(TargetMin, TargetMax, IncomingMin, IncomingMax);
+                const FVector InsertTranslation = ARPGGetCenteredInsertTranslation(
+                    TargetMin, TargetMax, IncomingMin, IncomingMax, Definition->WindowInsertOffset);
                 AddLocal(FTransform(FRotator::ZeroRotator, InsertTranslation));
             }
         }
@@ -584,6 +722,20 @@ void AARPGBuildPieceActor::GetSnapTransformsFor(const UARPGBuildPieceDefinition*
             AddLocal(FTransform(FRotator::ZeroRotator, FVector(Half, 0.f, PillarTopZ)));
             AddLocal(FTransform(FRotator(0.f, 90.f, 0.f), FVector(0.f, Half, PillarTopZ)));
         }
+    }
+
+    // WindowWall -> Window is an intrinsic hosted-insert contract, not an optional generic structural
+    // edge. A WindowWall must always advertise its one semantic Window socket even when a project has
+    // disabled Generate Standard Snap Points to author the wall's structural neighbours manually.
+    // Keep the existing generated path untouched when standard points are enabled to avoid duplicate
+    // candidates and preserve every confirmed Wall/Doorway/Foundation behaviour.
+    if (!Definition->bGenerateStandardSnapPoints &&
+        Definition->PieceKind == EARPGBuildPieceKind::WindowWall &&
+        IncomingPiece->PieceKind == EARPGBuildPieceKind::Window)
+    {
+        const FVector InsertTranslation = ARPGGetCenteredInsertTranslation(
+            TargetMin, TargetMax, IncomingMin, IncomingMax, Definition->WindowInsertOffset);
+        AddLocal(FTransform(FRotator::ZeroRotator, InsertTranslation));
     }
 
     for (const FARPGBuildSnapPoint& Point : Definition->CustomSnapPoints)

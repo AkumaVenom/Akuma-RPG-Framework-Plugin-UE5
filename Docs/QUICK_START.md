@@ -1,7 +1,6 @@
 # Quick Start
 
-> **v2.15.43 vertical convention:** finished Foundation/Floor/Ceiling tops are the canonical story planes (`0, 300, 600...`). LOW-departure Stairs start on the current finished surface; the 278 cm Stair rise stays inside the 300 cm story instead of lifting each flight by 22 cm. Floor thickness extends downward. — Akuma's RPG Framework
-
+> **v2.15.53 note:** Build Piece Data Assets may use Static or Skeletal build visuals, and the confirmed Wood Window remains hosted by `WindowWall` with `Window Insert Offset Z = +20` plus the existing replicated button-driven open/close interaction. v2.15.53 completes Stair adjacency for every cardinal rotation: `Wall`, `WindowWall` and `Doorway` share one bidirectional structural **boundary** classifier that accepts exact parallel side boundaries and exact perpendicular LOW/HIGH endpoint boundaries, regardless of build order or Stair-chain hosting. Hosted `Window`/`Door` inserts inherit only their verified host boundary. Finished Foundation/Floor/Ceiling tops remain canonical `0,300,600...` story planes from the confirmed v2.15.43 geometry baseline. — Akuma's RPG Framework
 
 
 ## Definition assets: create Data Assets, not Blueprint Classes
@@ -92,7 +91,7 @@ Durability is stored on the exact runtime Inventory item instance. Broken equipm
 
 ## 2D. Settlement Building + Storage + Furnace
 
-Every `AARPGCharacter` owns inherited **Building** and **BuildingUI** components. Create `ARPGBuildPieceDefinition` Data Assets, assign a Build Mesh + resource Build Cost, then add them to `Building -> Build Catalog`. Leave Actor Class empty for standard pieces; the framework automatically selects native Door, Storage and Production actors when appropriate.
+Every `AARPGCharacter` owns inherited **Building** and **BuildingUI** components. Create `ARPGBuildPieceDefinition` Data Assets, assign either the existing Static **Build Mesh** or the optional **Build Skeletal Mesh** plus a resource Build Cost, then add them to `Building -> Build Catalog`. Leave Actor Class empty for standard pieces; the framework automatically selects native Door, Storage and Production actors when appropriate.
 
 Recommended input calls:
 
@@ -124,6 +123,12 @@ Foundation
 For a `300 × 300 × 18` upper-floor mesh, use `Placement Bounds = 150,150,9`, keep `Placement Offset = 0,0,0`, and copy `Snap Size` / `Standard Wall Height` from the existing modular kit. Upper Walls use the slab finished top/story plane, while the 18 cm slab extends downward. Do not add a manual Z lift for Floor thickness.
 
 Doors and Windows are hosted inserts. A Door already placed in a Doorway must not prevent a later valid upper Floor seam around that host. On connected Foundation/Floor footprints, perimeter Wall-family facing is resolved from occupied cells and the owning support's native Wall socket; shared interior edges preserve the established/selected native facing.
+
+For a skeletal `Window`, set `Piece Kind = Window`, leave `Actor Class` empty, assign the asset to **Build Skeletal Mesh**, and normally leave **Preview Skeletal Mesh** empty so the placement ghost falls back to the same skeletal asset. You may instead assign a lightweight Static **Preview Mesh**. The framework uses the transformed active-asset bounds for the pivot-aware `WindowWall -> Window` snap and spawns the native `ARPGBuildWindowActor` collision wrapper automatically. v2.15.45 centers the suspended Window on X/Y/Z; keep the **WindowWall host's** `Window Insert Offset = 0,0,0` for a centered opening and adjust that host-local field only for deliberately raised/off-centre apertures. Door Z behavior remains bottom-aligned.
+
+The **Valid Preview Material** and **Invalid Preview Material** remain global settings on the character's `ARPGBuildingComponent`; the Window Data Asset does not need its own ghost material. In v2.15.46 a Skeletal Window preview automatically checks/prepares those assigned materials for Unreal's Skeletal Mesh usage permutation in editor/PIE, so a previously Static-only ghost material does not silently remain grey. `WindowWall -> Window` also has an intrinsic hosted socket and a dedicated third-person acquisition path; do not add custom Window snap points or fake `Placement Offset` values just to make the host selectable.
+
+For v2.15.48 Window interaction, assign **Window Open Animation** on the Window Data Asset and optionally assign **Window Close Animation** (leave Close empty to reverse Open). Keep **Disable Window Collision When Open** enabled for a normal passable opening. Wire the player's normal interaction input action to `Interact Built Structure`; the same call toggles Doors and Windows through server authority. If a WindowWall collision shell covers the opening, no Blueprint workaround is required: the framework resolves the Window occupying that exact host socket.
 
 For the current `334 × 300 × 278` Wood Stair on the 300-unit grid, use `Piece Kind = Stair`, `Placement Bounds = 167,150,139`, `Requires Snap Target = true`, `Allow Ground Placement = false`, `Placement Offset = 0,0,0`, and the same `Snap Size = 300` / `Standard Wall Height = 300` as the structural kit. Treat the mesh as **art inside a 300 cm structural flight cell**: the 334 cm run overhangs by 17 cm per end, but Stair chains and Stair-owned landing cells advance exactly 300 cm.
 

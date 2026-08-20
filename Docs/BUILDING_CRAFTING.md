@@ -1,8 +1,8 @@
-# Settlement Building, Storage & Production — v2.15.43
+# Settlement Building, Storage & Production — v2.15.52
 
 ## Current canonical story + Stair contract — v2.15.43
 
-v2.15.43 is the confirmed-good Wood Stair / multi-storey baseline. The current authoring guide uses **one structural lattice** and deliberately separates structural coordinates from mesh dimensions. Historical v2.15.24-v2.15.42 experiments remain in `Docs/CHANGELOG.md`; do not reuse their superseded raw-mesh story formulas as current setup guidance.
+v2.15.43 remains the confirmed-good Wood Stair / multi-storey **structural** baseline. v2.15.44-v2.15.48 add the skeletal Window visual/placement/interaction path, which is project-confirmed. v2.15.53 supersedes the v2.15.49-v2.15.52 Stair collision iterations with one bidirectional Stair ↔ Wall-family boundary classifier shared by `Wall`, `WindowWall`, `Doorway` and their verified inserts, including Stair-chain placement and all four cardinal Stair rotations. No Stair or Window authoring values change. The current guide uses **one structural lattice** and deliberately separates structural coordinates from mesh dimensions. Historical experiments remain in `Docs/CHANGELOG.md`; do not reuse superseded raw-mesh story or one-direction seam formulas.
 
 For the current Wood kit:
 
@@ -64,25 +64,25 @@ The standard build-piece kinds are:
 
 `Foundation`, `Wall`, `WindowWall`, `Window`, `Doorway`, `Door`, `Floor`, `Ceiling`, `Roof`, `Stair`, `Pillar`, `Storage`, `Production`, `Decoration`, `Custom`.
 
-Common pieces need **no build-actor Blueprint**. Assign a mesh on an `ARPGBuildPieceDefinition` and leave `Actor Class` empty; the framework chooses the native build actor. `Door`, `Storage` and `Production` automatically choose their specialised native actors.
+Common pieces need **no build-actor Blueprint**. Assign a Static or Skeletal build visual on an `ARPGBuildPieceDefinition` and leave `Actor Class` empty; the framework chooses the native build actor. `Door`, `Window`, `Storage` and `Production` automatically choose their specialised native actors.
 
 ### Current structural baseline — v2.15.43
 
 The standard authored workflow is now:
 
-`Foundation → Wall / Doorway → Door → upper Floor → upper Wall / Doorway → next Floor`
+`Foundation → Wall / WindowWall / Doorway → Window / Door → upper Floor → upper Wall-family → next Floor`
 
 The same logical structure can also be authored in the reverse local order where appropriate, for example `Walls → insert Floor later` or `Doorway → Door → insert upper Floor later`. The validator treats declared/semantic structural seams as topology rather than relying on decorative mesh collision.
 
 Current rules to keep in mind:
 
-- `Placement Bounds` define **logical build occupancy**. Static Mesh collision remains physical gameplay/art collision and may overlap at posts, braces, trim and framing seams.
+- `Placement Bounds` define **logical build occupancy**. Rendered Static/Skeletal mesh collision remains physical gameplay/art collision and may overlap at posts, braces, trim and framing seams.
 - `Floor`, `Ceiling` and `Roof` thickness does **not** increase storey height. Their finished **top/walking surface** is the story plane and slab thickness extends downward.
 - `Stair` uses the kit grid, not raw mesh dimensions, for topology. In the current Wood kit the `334 × 300 × 278` mesh occupies a `300 × 300 × 300` structural flight: 17 cm visual overhang per end, LOW-departure starts on the current story surface, and the next landing remains exactly one 300 cm story/grid step away.
 - Exterior/perimeter Wall-family facing is multi-cell aware. Occupied Foundation/Floor cells identify which side is outside; the owning support's native Wall socket supplies the actual authored yaw.
 - A directly stacked Wall-family piece below preserves upper-storey facing continuity when the same vertical column exists.
 - A shared interior edge between two occupied cells has no universal exterior side; the selected/established native facing is preserved.
-- `Door` and `Window` are hosted inserts, not independent structural cells. A verified insert cannot veto a later valid structural seam around its Doorway/WindowWall host.
+- `Door` and `Window` are hosted inserts, not independent structural cells. A verified insert cannot veto a later valid structural seam around its Doorway/WindowWall host. As of v2.15.49 this includes a legal parallel Stair-side seam: the insert inherits that permission only after exact host-socket verification and only when the host itself passes the Stair-side topology check.
 - Build ownership/modification access remains authoritative and persists for Guest/local play through the stable Guest character identity introduced in v2.15.12.
 
 
@@ -129,9 +129,14 @@ Recommended values:
 
 ### Actor
 
-- Build Mesh: your foundation Static Mesh
-- Preview Mesh: optional; leave empty to reuse Build Mesh
-- Actor Class: **leave empty** unless you intentionally need a custom actor subclass
+- Actor Class: leave empty for the native framework actor unless you intentionally need a custom subclass
+- Build Mesh: existing Static Mesh world visual
+- Build Skeletal Mesh: optional Skeletal Mesh world visual; a valid assignment takes visual/bounds precedence over Build Mesh
+- Preview Mesh: optional Static Mesh placement proxy
+- Preview Skeletal Mesh: optional Skeletal Mesh placement proxy
+- Mesh Relative Transform: content-space orientation/offset/scale adaptation applied identically to the active Static/Skeletal visual
+
+If both final Build fields are populated, **Build Skeletal Mesh wins**. Existing Static Mesh definitions require no migration. For a skeletal final piece, preview selection is: explicit `Preview Skeletal Mesh`, then explicit Static `Preview Mesh`, then the active final Build visual. This lets an animated final asset use a lighter Static preview proxy when desired.
 
 ### Cost
 
@@ -159,13 +164,29 @@ Typical modular starter values:
 
 ### Ground placement and mesh pivots (v2.15.2+)
 
-Do **not** use `Placement Offset Z` just to compensate for a bottom-pivot foundation. Ground placement automatically reads the selected **Build Mesh** bounds and anchors its visible bottom-center to the traced landscape/support surface. A bottom-pivot mesh receives zero artificial lift; a centered mesh receives only its real half-height; corner pivots are also handled through the visible footprint anchor. `Placement Bounds` remains the collision-validation half-extents and is no longer used as an unconditional visual ground lift. Use `Placement Offset` only when you intentionally want an authored local offset.
+Do **not** use `Placement Offset Z` just to compensate for a bottom-pivot foundation. Ground placement automatically reads the active **Build Mesh or Build Skeletal Mesh** bounds and anchors its visible bottom-center to the traced landscape/support surface. A bottom-pivot mesh receives zero artificial lift; a centered mesh receives only its real half-height; corner pivots are also handled through the visible footprint anchor. `Placement Bounds` remains the collision-validation half-extents and is no longer used as an unconditional visual ground lift. Use `Placement Offset` only when you intentionally want an authored local offset.
 
 ### Imported mesh orientation (v2.15.3+)
 
-You do **not** need to reimport a modular mesh just because its authored horizontal axis differs from the framework's logical snapping axis. Use **Actor → Mesh Relative Transform** on the Build Piece Data Asset. The transform is applied identically to the local placement ghost and the final native build actor, and transformed Build Mesh bounds are used by pivot-aware placement/snapping.
+You do **not** need to reimport a modular mesh just because its authored horizontal axis differs from the framework's logical snapping axis. Use **Actor → Mesh Relative Transform** on the Build Piece Data Asset. The transform is applied identically to the local placement ghost and the final native build actor, and transformed active build-visual bounds are used by pivot-aware placement/snapping.
 
 The standard wall graph intentionally keeps its logical wall run on actor-local **X** and defines actor-local **+Y as the logical front/exterior side**. For a wall mesh whose raw dimensions are approximately `31 × 302 × 271` (long axis on mesh Y), set **Mesh Relative Transform → Rotation Z** to `90` or `-90` so the visible wall becomes approximately `302 × 31 × 271` in actor space. No Static Mesh reimport or custom build Actor Blueprint is required. Choose the sign that places the wall face you consider the exterior/front toward actor-local +Y. Existing assets leave Mesh Relative Transform at Identity.
+
+### Static + Skeletal build visuals (v2.15.44+)
+
+The native build actor exposes both a `UStaticMeshComponent` and `USkeletalMeshComponent` path but activates only the visual selected by the Data Asset. The legacy `Build Mesh` property/component is retained intact for backward compatibility. Skeletal support is opt-in through **Build Skeletal Mesh**.
+
+All placement math uses the active asset's stable imported/extended bounds transformed by `Mesh Relative Transform`. That includes visible-bottom ground anchoring, snap transforms, insert centering, support checks and placement envelopes. The bounds are asset bounds rather than the current animated pose, so opening/closing animation cannot move the structural snap socket or make save/replication transforms drift.
+
+Timed construction also drives the active mesh component; the plain skeletal visual component remains Tick-disabled unless a dedicated animated actor explicitly needs it: relative scale/reveal, collision policy, `ConstructionProgress` and `BuildProgress` material parameters work for either Static or Skeletal presentation. The Building component's explicit Valid/Invalid preview-material overrides are shared by Static and Skeletal ghosts. From v2.15.46 the framework checks/prepares those assigned materials for Unreal's Skeletal Mesh usage in editor/PIE before applying them; a lightweight Static preview proxy remains optional for projects that prefer one.
+
+For hosted Windows, `WindowWall -> Window` now uses the v2.15.45 suspended-insert rule: transformed visible bounds are centered in **X/Y/Z**. This is deliberately different from `Doorway -> Door`, whose Z remains bottom-aligned because Doors are floor-standing. `WindowWall` Data Assets also expose **Window Insert Offset** (`Building | Window`) in host-local logical axes. Leave it `0,0,0` for a centered opening; use it only when the wall art intentionally places its opening high/low/off-centre. Do not move the reusable Window with generic `Placement Offset` just to match one wall variant.
+
+`Window` pieces with Actor Class empty spawn `ARPGBuildWindowActor`, whose native bounds-driven collision keeps duplicate-insert/occupancy validation reliable even if the Skeletal Mesh has no useful Physics Asset. v2.15.45 still does **not** invent open/close animation mappings; interaction state/animation is configured in the dedicated Window interaction layer after the skeletal asset is proven in placement.
+
+In v2.15.46 the WindowWall host contract is intentionally stronger than generic structural snap generation: a `WindowWall` still advertises its one native Window socket if `Generate Standard Snap Points` is disabled. Local build-mode acquisition first accepts a compatible WindowWall directly hit by the placement trace; if the camera is offset or the frame is hollow, a bounded view corridor can acquire the visible host module without moving the final socket. Authority then reacquires the host from the submitted snapped transform and performs the normal validation. Do not solve host-acquisition problems with custom Window snap points.
+
+Skeletal Window ghosts continue to use the character `ARPGBuildingComponent`'s global **Valid Preview Material** / **Invalid Preview Material**. v2.15.46 checks those materials for Unreal's Skeletal Mesh usage permutation and prepares the shader in editor/PIE before applying the override. The Window Data Asset therefore still needs no per-piece ghost material field.
 
 ### Modular wall seams and 90-degree corners (v2.15.4+)
 
@@ -297,7 +318,7 @@ A completed Stair also exposes native **Floor/Ceiling landing sockets**. The lan
 
 On tiled decks, the Stair's 17 cm visual overhang may touch an immediately adjacent same-story Foundation/Floor/Ceiling cell. That is a compatible modular seam when the neighbour is outside the actual structural flight cell. A horizontal module occupying the real flight/travel cell remains blocked.
 
-Stair-first enclosure is side-corridor based. An existing Stair does not veto a correctly snapped `Wall`, `WindowWall` or `Doorway` beside/beneath a flight when the Wall-family structural actor origin lies on the Stair's `±150 cm` side plane and runs parallel to the flight. Perpendicular end walls and centreline walls remain blockers.
+Stair perimeter enclosure separates **structural boundary ownership** from generic collision through one v2.15.53 bidirectional rule. A `Wall`, `WindowWall` or `Doorway` may occupy either exact boundary form of the Stair's 300 cm structural cell: **side boundaries** use a run axis parallel/180-equivalent to the Stair with the Wall actor snap origin on local `Y = ±150 cm`, while **LOW/HIGH endpoint boundaries** use a perpendicular run axis with the actor snap origin on local `X = ±150 cm`. Side longitudinal overlap uses the Stair's authored `PlacementBounds.X` (`167 cm` half-run for the current Wood Stair), preserving the intentional `17 cm` endpoint contact; endpoint lateral overlap uses `PlacementBounds.Y` (`150 cm` half-width). The same transform-relative predicate is used for yaw `0/90/180/270`, whether Stair or Wall-family is placed first, and for Stair-chain hosts. A hosted `Window` or `Door` inherits only its verified `WindowWall` / `Doorway` host boundary in both directions. Parallel centreline walls, perpendicular walls through the Stair interior, distant modules/inserts and unrelated non-boundary conflicts remain blockers.
 
 Landscape handling remains intentionally narrow: once a Stair matches a verified native landing/chain socket, Unreal `Landscape` is treated as terrain support rather than a discrete WorldStatic blocker. Static-mesh rocks, cliffs, props, other structures and true profile penetrations still block.
 
@@ -345,7 +366,7 @@ The native snap graph covers the ordinary modular relationships automatically:
 - Foundation / Floor / Ceiling → four cardinal **paired Stair landing anchors**: HIGH-arrival/down-flight plus LOW-departure/up-flight on each edge (Roof excluded from the flat standard contract)
 - Stair → Stair → endpoint continuation in both directions: LOW(incoming) → HIGH(target) and HIGH(incoming) → LOW(target)
 - Stair → Floor/Ceiling → canonical landing cells at the Stair structural endpoints; tile finished top resolves to the next story surface
-- Existing Stair ↔ Wall/WindowWall/Doorway → semantic parallel side seams when the Wall-family actor is on the Stair corridor side plane; perpendicular end walls remain blocked
+- Existing Stair ↔ Wall/WindowWall/Doorway → semantic structural boundary seams: parallel exact side planes or perpendicular exact LOW/HIGH endpoint planes, invariant across all four cardinal Stair rotations
 - Pillar → wall-family connections
 
 The local preview searches nearby completed build actors and chooses the closest compatible snap transform inside `Snap Capture Distance`. Upper horizontal tiles capture against their candidate envelope; Stairs additionally capture against compatible Foundation/Floor/Ceiling or Stair target bounds and rank by the candidate envelope, so paired landing/chain sockets can be selected without targeting an invisible pivot.
@@ -458,7 +479,7 @@ It:
 
 - never replicates
 - has no collision
-- uses Preview Mesh or Build Mesh fallback
+- uses Static or Skeletal preview assets with fallback to the active Build visual
 - follows the player view trace
 - uses structural snapping when a compatible piece is close
 - reflects resource/support/collision/territory validity
@@ -479,8 +500,8 @@ For timed structures:
 
 1. resources are committed on successful authoritative placement
 2. the replicated structure is spawned
-3. its mesh begins at `Construction Start Scale Z`
-4. the visible mesh grows upward over the configured duration
+3. its active Static/Skeletal visual begins at `Construction Start Scale Z`
+4. the visible build visual grows upward over the configured duration
 5. optional `ConstructionProgress` / `BuildProgress` material scalar advances 0→1
 6. collision is disabled during construction by default
 7. the piece becomes fully interactive/supporting when complete
@@ -497,7 +518,7 @@ For a Door definition:
 
 - Piece Kind: `Door`
 - Requires Snap Target: true
-- Build Mesh: door mesh
+- Build Mesh **or Build Skeletal Mesh**: door visual
 - leave Actor Class empty
 
 A Doorway automatically exposes the standard Door snap. The native insert is pivot-aware: the Door's visible bounds are centered in the Doorway's visible XY envelope and its visible bottom is aligned to the Doorway bottom. In v2.15.9, insert acquisition scans the **full placement view ray** rather than stopping at the generic placement trace's first hit. This is important in third-person building, where the supporting Foundation/Floor can be hit before the camera ray reaches the visible doorway. Each compatible opening receives its own center/upper/lower line-of-sight probes, so hollow/complex-only frame collision remains supported while unrelated solid geometry still blocks through-wall snapping. Server authority independently reacquires the exact insert support from the snapped transform.
@@ -524,7 +545,56 @@ In v2.15.11 the physical hinge edge is no longer hard-coded. `Door Hinge Side` i
 
 ---
 
-## 10. Functional storage container
+## 10. Skeletal Window placement + interaction baseline (v2.15.48)
+
+> **v2.15.48 interaction note:** If the WindowWall mesh uses simple/conservative collision that covers its opening, the view trace may hit the WindowWall first. The framework now resolves the Window occupying that exact native host socket automatically; do not remove WindowWall collision or add a second interaction trace in Blueprint.
+
+For a Window definition:
+
+- Piece Kind: `Window`
+- Requires Snap Target: true
+- Build Skeletal Mesh: assign the Window Skeletal Mesh
+- Build Mesh: clear it if this Data Asset was duplicated from a Static piece
+- Preview Skeletal Mesh: optional; leave empty to reuse the Build Skeletal Mesh
+- Actor Class: empty
+- Placement Bounds: logical half-extents of the transformed Window asset
+- Placement Offset: normally `0,0,0`
+
+A `WindowWall` automatically exposes the standard Window insert snap. The incoming Window's transformed Static/Skeletal asset bounds are centered against the WindowWall transformed visible bounds on **all three axes** and then the host's `Window Insert Offset` is applied. For the currently validated Wood art, `Window Insert Offset Z = +20 cm` seats the skeletal Window cleanly in the authored aperture; keep that correction on the WindowWall host rather than moving the reusable Window Data Asset.
+
+### Open / close animation
+
+On the **Window** Build Piece Definition under `Building | Window | Interaction`:
+
+- **Window Open Animation** — animation sequence authored from the closed pose to the open pose.
+- **Window Close Animation** — optional. If empty, the framework plays Open Animation in reverse.
+- **Window Animation Play Rate** — default `1.0`.
+- **Window Open Sound / Window Close Sound** — optional one-shot audio.
+- **Disable Window Collision When Open** — normally true.
+
+The animation must be compatible with the Window Skeletal Mesh's skeleton. The native Window actor uses single-node playback for this building prop: component Tick is enabled only during the transition and disabled again at the exact final pose. A second toggle during the active transition is rejected by authority rather than starting overlapping playback.
+
+The active imported Static/Skeletal visual does not own gameplay collision on a native Window. `WindowCollision` is rebuilt from the stable visible bounds and is the authoritative gameplay blocker. Opening disables it immediately. During closing it remains disabled until the animation reaches the fully closed pose, then it becomes solid again. This avoids imported Physics Asset quality and prevents a closing Window from trapping a character before the visual has actually closed.
+
+`WindowInteractionCollision` is a separate Visibility-only query target. It stays targetable while the gameplay blocker is open and does not block Pawn movement, so the player can look at an open Window and press the same interaction button to close it.
+
+### Input / button press
+
+No Window-specific key is hard-coded. `AARPGCharacter` already exposes:
+
+`Interact Built Structure`
+
+Wire your project's normal Enhanced Input interaction action (for example your existing E/F interact action) **Started/Pressed** execution pin to `Interact Built Structure` on the player character. The same wrapper now handles native Doors and Windows, plus the existing Storage/Production interactions. Authority and range validation stay inside `ARPGInteractionComponent`; default structure interaction distance is configured on `ARPGBuildingUIComponent`.
+
+### Replication and saves
+
+`bWindowOpen` is server-authoritative and replicated. World-save schema v6 stores that state per runtime building. A loaded open Window restores directly to its final open pose without replaying the transition or sound; v5 and older worlds restore Windows closed. Placement transforms are not migrated.
+
+The v2.15.46 ghost and WindowWall acquisition path, v2.15.45 centered socket / host offset, and v2.15.43 structural story/Stair behavior remain unchanged.
+
+---
+
+## 11. Functional storage container
 
 Create another `ARPGBuildPieceDefinition`:
 
@@ -550,7 +620,7 @@ Storage contents and ownership are already part of world persistence.
 
 ---
 
-## 11. Build a working Wood-fuel Furnace
+## 12. Build a working Wood-fuel Furnace
 
 The Furnace is simply a Production build piece + Crafting Station Definition + station-only recipe.
 
@@ -644,7 +714,7 @@ Station recipe validation is strict: a recipe requiring `Station.Furnace` cannot
 
 ---
 
-## 12. Ready UI classes / reskinning
+## 13. Ready UI classes / reskinning
 
 Select inherited **BuildingUI** on the player Blueprint.
 
@@ -674,7 +744,7 @@ The ready panels use no permanent UI Tick. The production UI uses a short timer 
 
 ---
 
-## 13. Multiplayer authority
+## 14. Multiplayer authority
 
 Local client:
 
@@ -699,7 +769,7 @@ The server does not trust the preview's green/red result or an arbitrary client 
 
 ---
 
-## 14. Persistence
+## 15. Persistence
 
 World save schema v5 stores:
 
@@ -728,7 +798,7 @@ Offline station elapsed time can resume when enabled. Output capacity and fuel r
 
 ---
 
-## 15. Multi-storey structural snapping and occupancy
+## 16. Multi-storey structural snapping and occupancy
 
 ### Multi-support Floor/Ceiling/Roof placement (v2.15.13+)
 
@@ -754,7 +824,7 @@ v2.15.16 fixes the final control-flow gap in inter-story collision validation. A
 
 ### Logical build occupancy vs rendered collision (v2.15.17+)
 
-v2.15.17 corrects the placement-collision model at its root. `Placement Bounds` are the authored logical occupancy volume for a build piece; Static Mesh collision is gameplay/art collision and may intentionally include posts, beams, braces or trim that extend across a modular seam. When two runtime build pieces overlap the broad physics query, the framework now compares the **logical Placement Bounds of both pieces** using oriented-box intersection before declaring a structural conflict. Decorative rendered collision alone is therefore not enough to reject an otherwise clean module.
+v2.15.17 corrects the placement-collision model at its root. `Placement Bounds` are the authored logical occupancy volume for a build piece; rendered Static/Skeletal mesh collision is gameplay/art collision and may intentionally include posts, beams, braces or trim that extend across a modular seam. When two runtime build pieces overlap the broad physics query, the framework now compares the **logical Placement Bounds of both pieces** using oriented-box intersection before declaring a structural conflict. Decorative rendered collision alone is therefore not enough to reject an otherwise clean module.
 
 Native/custom snap matches and strict inter-story seam relationships are still checked first. If neither relationship applies and the two logical placement volumes truly penetrate, placement remains blocked. World/terrain/NPC/non-building blockers continue through the normal collision path.
 
@@ -809,7 +879,7 @@ For `Wall`, `WindowWall` and `Doorway` placement, the framework separates **stru
 
 This is deterministic for 1×2, 2×2 and larger footprints and does not depend on where the camera/player stands while placing the piece.
 
-## 16. Performance rules
+## 17. Performance rules
 
 The ready implementation avoids permanent ticking:
 
@@ -820,4 +890,4 @@ The ready implementation avoids permanent ticking:
 - production station ticks only while it has queue work.
 - production UI progress timer exists only while that UI is open.
 
-Completed static structures therefore do not each carry a permanent framework gameplay Tick.
+Completed Static structures and plain skeletal build visuals therefore do not each carry a permanent framework gameplay/component Tick; dedicated animated actors enable Tick only while their runtime animation requires it.

@@ -1,6 +1,7 @@
 #include "Components/ARPGBuildingUIComponent.h"
 #include "Actors/ARPGCharacter.h"
 #include "Building/ARPGBuildDoorActor.h"
+#include "Building/ARPGBuildWindowActor.h"
 #include "Building/ARPGBuildPieceActor.h"
 #include "Building/ARPGBuildingComponent.h"
 #include "Components/ARPGInteractionComponent.h"
@@ -9,8 +10,40 @@
 #include "Crafting/ARPGCraftingStationActor.h"
 #include "Crafting/ARPGStorageActor.h"
 #include "GameFramework/PlayerController.h"
+#include "EngineUtils.h"
 #include "TimerManager.h"
 #include "UI/ARPGBuildingWidgets.h"
+
+
+static bool ARPGWindowOccupiesWindowWallHost(const AARPGBuildWindowActor* Window, const AARPGBuildPieceActor* Host)
+{
+    if (!Window || !Window->Definition || !Host || !Host->Definition) return false;
+    if (!Window->IsConstructionComplete() || !Host->IsConstructionComplete()) return false;
+    if (Window->Definition->PieceKind != EARPGBuildPieceKind::Window || Host->Definition->PieceKind != EARPGBuildPieceKind::WindowWall) return false;
+
+    const float Tolerance = FMath::Max(1.f, FMath::Max(Window->Definition->PlacementCollisionClearance, Host->Definition->PlacementCollisionClearance) + 0.5f);
+    const float ToleranceSq = FMath::Square(Tolerance);
+    TArray<FTransform> Candidates;
+    Host->GetSnapTransformsFor(Window->Definition, Candidates);
+    for (const FTransform& Candidate : Candidates)
+    {
+        if (FVector::DistSquared(Candidate.GetLocation(), Window->GetActorLocation()) > ToleranceSq) continue;
+        const float YawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(Candidate.Rotator().Yaw, Window->GetActorRotation().Yaw));
+        if (YawDelta <= 1.f) return true;
+    }
+    return false;
+}
+
+static AARPGBuildWindowActor* ARPGFindHostedWindowForWindowWall(UWorld* World, const AARPGBuildPieceActor* Host)
+{
+    if (!World || !Host || !Host->Definition || Host->Definition->PieceKind != EARPGBuildPieceKind::WindowWall) return nullptr;
+    for (TActorIterator<AARPGBuildWindowActor> It(World); It; ++It)
+    {
+        AARPGBuildWindowActor* Window = *It;
+        if (ARPGWindowOccupiesWindowWallHost(Window, Host)) return Window;
+    }
+    return nullptr;
+}
 
 UARPGBuildingUIComponent::UARPGBuildingUIComponent()
 {
@@ -296,17 +329,54 @@ bool UARPGBuildingUIComponent::InteractWithBuiltStructureFromView()
     if (!ResolveLocalPlayer(Character, Controller) || !GetWorld()) return false;
     FVector Start; FRotator Rotation; Controller->GetPlayerViewPoint(Start, Rotation);
     const FVector End = Start + Rotation.Vector() * StructureInteractionDistance;
-    FHitResult Hit;
     FCollisionQueryParams Params(SCENE_QUERY_STAT(ARPGStructureInteract), false, Character);
-    if (!GetWorld()->LineTraceSingleByChannel(Hit, Start, End, StructureInteractionTraceChannel, Params)) return false;
-    AActor* Actor = Hit.GetActor();
-    if (AARPGBuildDoorActor* Door = Cast<AARPGBuildDoorActor>(Actor))
+
+    auto HandleActor = [&](AActor* Actor) -> bool
     {
-        if (Character->Interaction) { Character->Interaction->ToggleBuiltDoor(Door); return true; }
+        if (AARPGBuildDoorActor* Door = Cast<AARPGBuildDoorActor>(Actor))
+        {
+            if (Character->Interaction) { Character->Interaction->ToggleBuiltDoor(Door); return true; }
+            return false;
+        }
+        if (AARPGBuildWindowActor* Window = Cast<AARPGBuildWindowActor>(Actor))
+        {
+            if (Character->Interaction) { Character->Interaction->ToggleBuiltWindow(Window); return true; }
+            return false;
+        }
+        if (AARPGCraftingStationActor* Station = Cast<AARPGCraftingStationActor>(Actor)) return OpenCraftingStationUI(Station);
+        if (AARPGStorageActor* Storage = Cast<AARPGStorageActor>(Actor)) return OpenStorageUI(Storage);
         return false;
+    };
+
+    auto HandleHitOrHostedWindow = [&](AActor* HitActor) -> bool
+    {
+        if (!HitActor) return false;
+        if (HandleActor(HitActor)) return true;
+
+        // WindowWall art frequently uses conservative/simple collision that covers the visual aperture.
+        // In that case the view trace correctly hits the structural host before it can ever reach the
+        // hosted Window collider. Resolve only the Window occupying THIS exact native host socket; do
+        // not multi-trace through unrelated walls or arbitrary blockers.
+        if (AARPGBuildPieceActor* Host = Cast<AARPGBuildPieceActor>(HitActor))
+        {
+            if (Host->Definition && Host->Definition->PieceKind == EARPGBuildPieceKind::WindowWall)
+                if (AARPGBuildWindowActor* HostedWindow = ARPGFindHostedWindowForWindowWall(GetWorld(), Host))
+                    return HandleActor(HostedWindow);
+        }
+        return false;
+    };
+
+    FHitResult Hit;
+    if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, StructureInteractionTraceChannel, Params) && HandleHitOrHostedWindow(Hit.GetActor())) return true;
+
+    // Native Windows keep a dedicated Visibility-only interaction target while open. If a project has
+    // changed StructureInteractionTraceChannel, retain plug-and-play Window toggling through this narrow fallback.
+    if (StructureInteractionTraceChannel != ECC_Visibility)
+    {
+        FHitResult VisibilityHit;
+        if (GetWorld()->LineTraceSingleByChannel(VisibilityHit, Start, End, ECC_Visibility, Params) && HandleHitOrHostedWindow(VisibilityHit.GetActor()))
+            return true;
     }
-    if (AARPGCraftingStationActor* Station = Cast<AARPGCraftingStationActor>(Actor)) return OpenCraftingStationUI(Station);
-    if (AARPGStorageActor* Storage = Cast<AARPGStorageActor>(Actor)) return OpenStorageUI(Storage);
     return false;
 }
 

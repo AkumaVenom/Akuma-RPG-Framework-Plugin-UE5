@@ -76,7 +76,7 @@ assert transfer_body.find("if (Definition && Definition->bUsesDurability)") < tr
 
 # Durability persists in new saves and legacy pre-durability saves are migrated once to authored max.
 assert "SaveGame) float Durability" in types_h
-assert save_h.count("SaveVersion = 5") >= 2  # v2.15 world save advanced to schema 5; character save remains 5
+assert save_h.count("SaveVersion = 5") >= 1 and "SaveVersion = 6" in save_h  # character schema remains 5; world schema advances independently
 assert "ARPGMigrateLegacyInventoryDurability" in save_cpp
 assert "Save->SaveVersion < 5" in save_cpp
 assert "Save->SaveVersion<4" in save_cpp

@@ -2,6 +2,7 @@
 #include "Building/ARPGBuildDoorActor.h"
 #include "Building/ARPGBuildPieceActor.h"
 #include "Building/ARPGBuildPreviewActor.h"
+#include "Building/ARPGBuildWindowActor.h"
 #include "Building/ARPGFactionTerritoryVolume.h"
 #include "Components/ARPGEventRouterComponent.h"
 #include "Components/ARPGFactionComponent.h"
@@ -13,6 +14,7 @@
 #include "Data/ARPGItemDefinition.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
@@ -151,6 +153,49 @@ static bool ARPGSegmentIntersectsLocalBox(
 }
 
 /**
+ * Third-person cameras are intentionally offset from the controlled pawn and may not put the exact
+ * camera centre ray through a WindowWall's OBB even while the opening clearly occupies the player's
+ * aim region. This bounded corridor is only a semantic acquisition fallback for Door/Window inserts.
+ * It never changes the final snap transform and never affects ordinary structural placement.
+ */
+static bool ARPGSegmentPassesInsertAimCorridor(
+    const FVector& SegmentStart,
+    const FVector& SegmentEnd,
+    const FTransform& TargetTransform,
+    const FVector& TargetLocalCenter,
+    const FVector& TargetLocalExtent,
+    float ExtraPadding,
+    float& OutEnterT,
+    float& OutCenterlineErrorSq)
+{
+    const FVector Segment = SegmentEnd - SegmentStart;
+    const float SegmentLength = Segment.Size();
+    if (SegmentLength <= KINDA_SMALL_NUMBER) return false;
+
+    const FVector Direction = Segment / SegmentLength;
+    const FVector TargetCenterWorld = TargetTransform.TransformPosition(TargetLocalCenter);
+    const float Along = FVector::DotProduct(TargetCenterWorld - SegmentStart, Direction);
+    if (Along < 0.f || Along > SegmentLength) return false;
+
+    const FVector ClosestPoint = SegmentStart + Direction * Along;
+    OutCenterlineErrorSq = FVector::DistSquared(TargetCenterWorld, ClosestPoint);
+
+    const FVector ScaleAbs = TargetTransform.GetScale3D().GetAbs();
+    const FVector WorldExtent(
+        TargetLocalExtent.X * ScaleAbs.X,
+        TargetLocalExtent.Y * ScaleAbs.Y,
+        TargetLocalExtent.Z * ScaleAbs.Z);
+
+    // Use the host's largest half-extent rather than its diagonal sphere. This allows aiming anywhere
+    // over the visible WindowWall module while avoiding an excessively broad neighbouring-wall cone.
+    const float CorridorRadius = FMath::Max(1.f, WorldExtent.GetMax() + FMath::Max(0.f, ExtraPadding));
+    if (OutCenterlineErrorSq > FMath::Square(CorridorRadius)) return false;
+
+    OutEnterT = FMath::Clamp(Along / SegmentLength, 0.f, 1.f);
+    return true;
+}
+
+/**
  * Multiple completed structures can advertise the same geometric snap slot. Wall placement needs
  * deterministic ownership that is independent of overlap iteration order and camera yaw:
  *
@@ -225,6 +270,20 @@ static int32 ARPGGetSnapCandidateSemanticPriority(
 static bool ARPGGetBuildPieceLocalBounds(const UARPGBuildPieceDefinition* Piece, FVector& OutMin, FVector& OutMax)
 {
     if (!Piece) return false;
+
+    // Match final presentation exactly: an explicitly assigned valid Skeletal Mesh takes precedence,
+    // while every legacy Static Mesh definition continues down the original path unchanged. Using the
+    // same transformed bounds here keeps pivot-aware ground placement, structural snapping, hosted
+    // Window/Door insert centering and placement validation in parity for both visual types.
+    if (USkeletalMesh* Mesh = Piece->BuildSkeletalMesh.LoadSynchronous())
+    {
+        const FBoxSphereBounds Bounds = Mesh->GetBounds();
+        const FBox RawBox(Bounds.Origin - Bounds.BoxExtent, Bounds.Origin + Bounds.BoxExtent);
+        const FBox ActorLocalBox = RawBox.TransformBy(Piece->MeshRelativeTransform);
+        OutMin = ActorLocalBox.Min;
+        OutMax = ActorLocalBox.Max;
+        return true;
+    }
     if (UStaticMesh* Mesh = Piece->BuildMesh.LoadSynchronous())
     {
         const FBoxSphereBounds Bounds = Mesh->GetBounds();
@@ -1080,8 +1139,7 @@ static EARPGStructuralOccupancyRelation ARPGClassifyStandardStructuralOccupancy(
  * validation must not reject the insert merely because the Floor/Ceiling/adjacent Wall framing that
  * legitimately connects to that host touches the insert's authored bounds. Validate those surrounding
  * structures against the host's own semantic structural slot instead. A duplicate/conflicting wall
- * slot is deliberately not accepted, and other inserts still use normal collision so duplicate Doors
- * or Windows remain blocked.
+ * slot is deliberately not accepted, and duplicate inserts are blocked by explicit semantic host occupancy even when an open insert has moved or disabled gameplay collision.
  */
 static bool ARPGIsCompatibleInsertHostStructuralNeighbor(
     const AARPGBuildPieceActor* Neighbor,
@@ -1193,18 +1251,114 @@ static bool ARPGTransformMatchesStairHostCandidate(
 }
 
 /**
- * Horizontal Stair hosts expose two endpoint modes on the same edge: HIGH-arrival (flight outside/down)
- * and LOW-departure (flight inside/up). Structural neighbour classification must derive the occupied
- * stairwell cell from which endpoint actually owns the host edge instead of assuming every Stair is a
- * descending outside flight.
+ * One authoritative bidirectional Stair <-> Wall-family boundary-seam classifier.
  *
- * Build-vs-build validation remains conservative:
- *   - the host itself is ignored by the placement overlap query;
- *   - horizontal neighbours are not blanket-whitelisted; native endpoint sockets/semantic occupancy
- *     still decide whether another landing tile is legitimate;
- *   - Wall/WindowWall/Doorway pieces are accepted only on the two exact side edges of the occupied
- *     Stair cell and only when their run axis is parallel to the Stair run;
- *   - end walls across the travel opening remain blockers.
+ * The current settlement kit intentionally lets Wall-family modules frame a Stair flight on any exact
+ * structural boundary of its 300 cm cell. That includes BOTH:
+ *   - longitudinal side seams: Wall/WindowWall/Doorway run parallel to the Stair and their actor snap
+ *     origin sits on local Y = +/- SnapSize/2; and
+ *   - LOW/HIGH endpoint seams: Wall-family run is perpendicular to the Stair and its actor snap origin
+ *     sits on local X = +/- SnapSize/2.
+ *
+ * v2.15.52 only modeled the first case. Three cardinal rotations happened to present side-seam geometry
+ * in the reported layouts, while the remaining rotation presented the same authored perimeter module as
+ * an endpoint seam and fell through to generic collision as `Blocked by another object`.
+ *
+ * This helper deliberately classifies structural boundary ownership rather than visible mesh facing:
+ *   - Stair local +X is the travel/run axis after the final snap transform;
+ *   - Wall-family ACTOR SNAP ORIGIN remains authoritative (never mesh/bounds centre);
+ *   - side seams require parallel run axes and exact local +/-Y half-grid ownership;
+ *   - endpoint seams require perpendicular run axes and exact local +/-X half-grid ownership;
+ *   - the Wall-family SnapSize segment must actually overlap the Stair authored occupancy on the other
+ *     horizontal axis, including the Wood Stair's intentional 334 cm longitudinal envelope and 300 cm
+ *     width;
+ *   - centreline/interior walls, distant modules and unrelated collision remain blockers.
+ *
+ * The same predicate is consumed in both build orders and by verified hosted Window/Door inheritance,
+ * so all four 90-degree Stair rotations receive identical semantics without a global collision bypass.
+ */
+static bool ARPGIsStairWallFamilyBoundarySeam(
+    const UARPGBuildPieceDefinition* StairPiece,
+    const FTransform& StairTransform,
+    const UARPGBuildPieceDefinition* WallPiece,
+    const FTransform& WallTransform)
+{
+    if (!StairPiece || !WallPiece) return false;
+    if (StairPiece->PieceKind != EARPGBuildPieceKind::Stair || !ARPGIsWallLikeKind(WallPiece->PieceKind)) return false;
+
+    const float AxisDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(
+        StairTransform.Rotator().Yaw, WallTransform.Rotator().Yaw));
+    constexpr float AxisToleranceDegrees = 1.f;
+    const bool bParallelToStairRun =
+        AxisDelta <= AxisToleranceDegrees || FMath::Abs(AxisDelta - 180.f) <= AxisToleranceDegrees;
+    const bool bPerpendicularToStairRun =
+        FMath::Abs(AxisDelta - 90.f) <= AxisToleranceDegrees;
+    if (!bParallelToStairRun && !bPerpendicularToStairRun) return false;
+
+    const float PositionTolerance = FMath::Max(
+        1.f,
+        FMath::Max(StairPiece->PlacementCollisionClearance, WallPiece->PlacementCollisionClearance) + 0.5f);
+
+    FVector StairMin, StairMax;
+    ARPGGetBuildPieceLocalBounds(StairPiece, StairMin, StairMax);
+    const FVector StairBoundsCenterLocal = (StairMin + StairMax) * 0.5f;
+    const FVector StairCenterWorld = StairTransform.TransformPosition(StairBoundsCenterLocal);
+    const FTransform StairFrame(StairTransform.GetRotation(), StairCenterWorld);
+
+    // Wall-family structural anchors are actor origins. Never substitute transformed mesh/bounds
+    // centres here: imported wall pivots may be offset by MeshRelativeTransform while their snap
+    // origins still sit exactly on the authored 300 cm grid boundary.
+    const FVector WallAnchorInStair = StairFrame.InverseTransformPosition(WallTransform.GetLocation());
+
+    const float StairGrid = FMath::Max(1.f, StairPiece->SnapSize);
+    const float HalfGrid = StairGrid * 0.5f;
+    const float WallHalfRun = FMath::Max(
+        1.f,
+        WallPiece->SnapSize * 0.5f * FMath::Abs(WallTransform.GetScale3D().X));
+
+    // The authored Stair occupancy is the collision-semantic envelope. Its intentional endpoint art/validation overhang
+    // is preserved: X may intentionally overhang
+    // the structural cell (Wood = 167 cm vs 150 cm), while Y is the full Stair width (Wood = 150 cm).
+    const float StairHalfRun = FMath::Max(
+        1.f,
+        StairPiece->PlacementBounds.X * FMath::Abs(StairTransform.GetScale3D().X));
+    const float StairHalfWidth = FMath::Max(
+        1.f,
+        StairPiece->PlacementBounds.Y * FMath::Abs(StairTransform.GetScale3D().Y));
+
+    if (bParallelToStairRun)
+    {
+        const bool bOnSidePlane =
+            FMath::Abs(FMath::Abs(WallAnchorInStair.Y) - HalfGrid) <= PositionTolerance;
+        if (!bOnSidePlane) return false;
+
+        const float WallRunMin = WallAnchorInStair.X - WallHalfRun;
+        const float WallRunMax = WallAnchorInStair.X + WallHalfRun;
+        const float LongitudinalOverlap =
+            FMath::Min(WallRunMax, StairHalfRun) - FMath::Max(WallRunMin, -StairHalfRun);
+        return LongitudinalOverlap > PositionTolerance;
+    }
+
+    // Cardinal endpoint framing is the rotation that v2.15.52 still rejected. The wall must own the
+    // exact LOW/HIGH structural boundary plane; a perpendicular wall through the middle of the flight
+    // remains a conflict. Its structural run must also overlap the Stair width rather than merely being
+    // somewhere on the same infinite endpoint line.
+    const bool bOnEndpointPlane =
+        FMath::Abs(FMath::Abs(WallAnchorInStair.X) - HalfGrid) <= PositionTolerance;
+    if (!bOnEndpointPlane) return false;
+
+    const float WallAcrossMin = WallAnchorInStair.Y - WallHalfRun;
+    const float WallAcrossMax = WallAnchorInStair.Y + WallHalfRun;
+    const float LateralOverlap =
+        FMath::Min(WallAcrossMax, StairHalfWidth) - FMath::Max(WallAcrossMin, -StairHalfWidth);
+    return LateralOverlap > PositionTolerance;
+}
+
+/**
+ * Structural neighbours around an incoming snapped Stair. Horizontal landing cells keep their strict
+ * host-relative rules. Wall-family neighbours use the shared bidirectional boundary-seam classifier and
+ * therefore work identically whether the Stair is snapped to a flat landing OR chained from another
+ * Stair. The final Stair transform must still be one of the active host's authoritative native sockets.
  */
 static bool ARPGIsCompatibleStairHostStructuralNeighbor(
     const AARPGBuildPieceActor* Neighbor,
@@ -1214,11 +1368,29 @@ static bool ARPGIsCompatibleStairHostStructuralNeighbor(
 {
     if (!Neighbor || !Neighbor->Definition || !StairHost || !StairHost->Definition || !StairPiece) return false;
     if (!Neighbor->IsConstructionComplete() || !StairHost->IsConstructionComplete()) return false;
-    // This classifier is defined only for a Stair snapped to a flat Foundation/Floor/Ceiling host.
-    // Stair-to-Stair endpoint chains are handled by their native candidate transforms and generic
-    // snapped-neighbour validation below this helper.
-    if (!ARPGIsStairSupportSnapPair(StairHost->Definition->PieceKind, StairPiece->PieceKind)) return false;
+    if (!ARPGIsAnyStairSnapPair(StairHost->Definition->PieceKind, StairPiece->PieceKind)) return false;
     if (!ARPGTransformMatchesStairHostCandidate(StairHost, StairPiece, StairFinal)) return false;
+
+    const EARPGBuildPieceKind NeighborKind = Neighbor->Definition->PieceKind;
+    if (ARPGIsWallLikeKind(NeighborKind))
+    {
+        return ARPGIsStairWallFamilyBoundarySeam(
+            StairPiece,
+            StairFinal,
+            Neighbor->Definition,
+            Neighbor->GetActorTransform());
+    }
+
+    // Horizontal neighbour classification is meaningful only when the Stair itself is snapped to a
+    // flat Foundation/Floor/Ceiling host. Stair-chain placement is validated by its endpoint socket and
+    // must not reinterpret arbitrary deck cells using the chain Stair as a flat-cell origin.
+    if (!ARPGIsStairSupportSnapPair(StairHost->Definition->PieceKind, StairPiece->PieceKind)) return false;
+
+    const bool bNeighborFlatLanding =
+        NeighborKind == EARPGBuildPieceKind::Foundation ||
+        NeighborKind == EARPGBuildPieceKind::Floor ||
+        NeighborKind == EARPGBuildPieceKind::Ceiling;
+    if (!bNeighborFlatLanding) return false;
 
     const float PositionTolerance = FMath::Max(
         1.f,
@@ -1253,86 +1425,71 @@ static bool ARPGIsCompatibleStairHostStructuralNeighbor(
     EdgeDirectionWorld.Z = 0.f;
     if (!EdgeDirectionWorld.Normalize()) return false;
 
-    // Structural flight occupancy is one exact SnapSize cell. LOW-departure flights rise across the
-    // host cell itself; HIGH-arrival flights descend into the neighbouring outside cell. The current
-    // Wood Stair art is 334 cm long on this 300 cm structural cell, so it intentionally extends 17 cm
-    // past each structural endpoint. That visual overhang must not make the immediately adjacent deck
-    // tile a blocker, but a horizontal tile whose structural cell actually IS the flight cell must
-    // remain blocked because it closes the stairwell/travel volume.
     const FVector StairCellCenter = bLowEndOwnsHostEdge
         ? StairHost->GetActorLocation()
         : StairHost->GetActorLocation() + EdgeDirectionWorld * Grid;
 
-    const EARPGBuildPieceKind NeighborKind = Neighbor->Definition->PieceKind;
-    const bool bNeighborFlatLanding =
-        NeighborKind == EARPGBuildPieceKind::Foundation ||
-        NeighborKind == EARPGBuildPieceKind::Floor ||
-        NeighborKind == EARPGBuildPieceKind::Ceiling;
-    if (bNeighborFlatLanding)
+    float HostMinZ = 0.f, HostMaxZ = 0.f, NeighborMinZ = 0.f, NeighborMaxZ = 0.f;
+    ARPGGetDefinitionWorldZRange(StairHost->Definition, StairHost->GetActorTransform(), HostMinZ, HostMaxZ);
+    ARPGGetDefinitionWorldZRange(Neighbor->Definition, Neighbor->GetActorTransform(), NeighborMinZ, NeighborMaxZ);
+
+    const float HostStoryPlane = HostMaxZ;
+    const float NeighborStoryPlane = NeighborMaxZ;
+    if (FMath::Abs(NeighborStoryPlane - HostStoryPlane) > PositionTolerance) return false;
+
+    FVector ToNeighbor = Neighbor->GetActorLocation() - StairCellCenter;
+    ToNeighbor.Z = 0.f;
+    if (ToNeighbor.SizeSquared() <= FMath::Square(PositionTolerance))
     {
-        float HostMinZ = 0.f, HostMaxZ = 0.f, NeighborMinZ = 0.f, NeighborMaxZ = 0.f;
-        ARPGGetDefinitionWorldZRange(StairHost->Definition, StairHost->GetActorTransform(), HostMinZ, HostMaxZ);
-        ARPGGetDefinitionWorldZRange(Neighbor->Definition, Neighbor->GetActorTransform(), NeighborMinZ, NeighborMaxZ);
-
-        const float HostStoryPlane = HostMaxZ;
-        const float NeighborStoryPlane = NeighborMaxZ;
-        if (FMath::Abs(NeighborStoryPlane - HostStoryPlane) > PositionTolerance) return false;
-
-        FVector ToNeighbor = Neighbor->GetActorLocation() - StairCellCenter;
-        ToNeighbor.Z = 0.f;
-        if (ToNeighbor.SizeSquared() <= FMath::Square(PositionTolerance))
-        {
-            // A second horizontal module occupying the actual Stair flight cell is a real conflict.
-            return false;
-        }
-
-        const FTransform StairCellFrame(StairFinal.GetRotation(), StairCellCenter);
-        const FVector NeighborInCell = StairCellFrame.InverseTransformPosition(Neighbor->GetActorLocation());
-        const float AbsX = FMath::Abs(NeighborInCell.X);
-        const float AbsY = FMath::Abs(NeighborInCell.Y);
-        const bool bImmediateGridNeighbor =
-            (FMath::Abs(AbsX - Grid) <= PositionTolerance && AbsY <= PositionTolerance) ||
-            (FMath::Abs(AbsY - Grid) <= PositionTolerance && AbsX <= PositionTolerance);
-
-        // If the broad Stair profile touched one immediate same-story deck cell but that cell is not
-        // the structural flight cell, the contact is only the 17 cm art/rail overhang at a modular seam.
-        // Treat it like other decorative build seams rather than blocking a valid Stair on a tiled deck.
-        return bImmediateGridNeighbor;
+        // A second horizontal module occupying the actual Stair flight cell closes the travel volume.
+        return false;
     }
-
-    if (!ARPGIsWallLikeKind(NeighborKind)) return false;
 
     const FTransform StairCellFrame(StairFinal.GetRotation(), StairCellCenter);
     const FVector NeighborInCell = StairCellFrame.InverseTransformPosition(Neighbor->GetActorLocation());
+    const float AbsX = FMath::Abs(NeighborInCell.X);
+    const float AbsY = FMath::Abs(NeighborInCell.Y);
+    const bool bImmediateGridNeighbor =
+        (FMath::Abs(AbsX - Grid) <= PositionTolerance && AbsY <= PositionTolerance) ||
+        (FMath::Abs(AbsY - Grid) <= PositionTolerance && AbsX <= PositionTolerance);
 
-    const bool bOnSideEdge =
-        FMath::Abs(FMath::Abs(NeighborInCell.Y) - HalfGrid) <= PositionTolerance &&
-        FMath::Abs(NeighborInCell.X) <= PositionTolerance;
-    const bool bParallelToStairRun = ARPGYawAxesEquivalent(
-        StairFinal.Rotator().Yaw, Neighbor->GetActorRotation().Yaw);
-    return bOnSideEdge && bParallelToStairRun;
+    // If the broad Stair profile touched one immediate same-story deck cell but that cell is not the
+    // actual Stair flight cell, the contact is only the intentional 17 cm art/rail overhang at a
+    // modular seam. Keep the established tiled-deck acceptance unchanged.
+    return bImmediateGridNeighbor;
 }
 
 /**
- * Reverse Stair-side seam for incoming Wall-family pieces. When a Stair is already built first, an
- * incoming Wall/WindowWall/Doorway is normally snapped by the underlying Foundation/Floor rather than
- * by the Stair. The Stair profile/stringer can therefore overlap the wall even though the wall occupies
- * the correct side of the stairwell.
- *
- * v2.15.33 classified that seam by requiring the incoming actor origin to land on one of two exact
- * +/- overhang-compensation X coordinates. That is too brittle for real multi-flight chains: at a
- * shared landing, a valid grid-owned wall can be centred between those two values, or be owned by the
- * adjacent landing tile, while still lying on the exact stair corridor side plane.
- *
- * Classify the actual structural relationship instead:
- *   - Wall-family run axis must be parallel to the Stair travel axis;
- *   - the incoming logical bounds centre must lie on either +/- half-grid side plane of the Stair;
- *   - the incoming wall segment must overlap the Stair longitudinally (including intentional art
- *     overhang at LOW/HIGH endpoints).
- *
- * This accepts full-story walls/doorways beneath or beside an upper flight and remains build-order
- * symmetric. A wall through the Stair centreline or any perpendicular end wall across the travel path
- * is still rejected.
+ * Hosted Window/Door inserts inherit the exact Stair-boundary permission of their verified structural
+ * WindowWall/Doorway host. This uses the same shared seam classifier and works for flat-support and
+ * Stair-chain placement; no insert-specific collision weakening is involved.
+ */
+static bool ARPGHostedInsertAllowsStairSideNeighbor(
+    const AARPGBuildPieceActor* InsertActor,
+    const AARPGBuildPieceActor* InsertHost,
+    const AARPGBuildPieceActor* StairSnapTarget,
+    const UARPGBuildPieceDefinition* StairPiece,
+    const FTransform& StairFinal)
+{
+    if (!InsertActor || !InsertHost || !StairSnapTarget || !StairPiece) return false;
+    if (StairPiece->PieceKind != EARPGBuildPieceKind::Stair) return false;
+    if (!ARPGInsertActorMatchesHost(InsertActor, InsertHost)) return false;
+    if (!StairSnapTarget->Definition ||
+        !ARPGIsAnyStairSnapPair(StairSnapTarget->Definition->PieceKind, StairPiece->PieceKind) ||
+        !ARPGTransformMatchesStairHostCandidate(StairSnapTarget, StairPiece, StairFinal))
+        return false;
+
+    return ARPGIsStairWallFamilyBoundarySeam(
+        StairPiece,
+        StairFinal,
+        InsertHost->Definition,
+        InsertHost->GetActorTransform());
+}
+
+/**
+ * Reverse build order wrapper: an existing Stair and an incoming Wall/WindowWall/Doorway are judged by
+ * the exact same side-seam invariant as incoming Stair placement. This is intentionally a thin wrapper
+ * so future topology changes cannot diverge by build order again.
  */
 static bool ARPGIsValidExistingStairWallSideSeamNeighbor(
     const AARPGBuildPieceActor* ExistingStair,
@@ -1340,51 +1497,35 @@ static bool ARPGIsValidExistingStairWallSideSeamNeighbor(
     const FTransform& IncomingFinal)
 {
     if (!ExistingStair || !ExistingStair->Definition || !IncomingPiece || !ExistingStair->IsConstructionComplete()) return false;
-    if (ExistingStair->Definition->PieceKind != EARPGBuildPieceKind::Stair ||
-        !ARPGIsWallLikeKind(IncomingPiece->PieceKind)) return false;
+    return ARPGIsStairWallFamilyBoundarySeam(
+        ExistingStair->Definition,
+        ExistingStair->GetActorTransform(),
+        IncomingPiece,
+        IncomingFinal);
+}
 
-    // Structural occupancy uses run AXES, not visible front/back facing. A 180-degree wall reversal is
-    // still the same side wall, while a 90-degree wall is an end/travel-path blocker.
-    if (!ARPGYawAxesEquivalent(ExistingStair->GetActorRotation().Yaw, IncomingFinal.Rotator().Yaw)) return false;
+/**
+ * Incoming hosted inserts also inherit the Stair-side relationship of their WindowWall/Doorway host.
+ * This is the inverse of ARPGHostedInsertAllowsStairSideNeighbor(): when the Stair already exists and
+ * the player later installs a Window/Door, the insert's own authored bounds/collision must not veto a
+ * host seam that is already structurally legal. Host identity remains exact through the active
+ * WindowWall/Doorway SnapTarget; unrelated Stairs or free inserts are never ignored.
+ */
+static bool ARPGIsCompatibleInsertHostStairNeighbor(
+    const AARPGBuildPieceActor* ExistingStair,
+    const AARPGBuildPieceActor* InsertHost,
+    const UARPGBuildPieceDefinition* IncomingInsert)
+{
+    if (!ExistingStair || !ExistingStair->Definition || !InsertHost || !InsertHost->Definition || !IncomingInsert) return false;
+    if (!ExistingStair->IsConstructionComplete() || !InsertHost->IsConstructionComplete()) return false;
+    if (ExistingStair->Definition->PieceKind != EARPGBuildPieceKind::Stair) return false;
+    if (!ARPGIsInsertSnapPair(InsertHost->Definition->PieceKind, IncomingInsert->PieceKind)) return false;
 
-    const float PositionTolerance = FMath::Max(
-        1.f,
-        FMath::Max(IncomingPiece->PlacementCollisionClearance, ExistingStair->Definition->PlacementCollisionClearance) + 0.5f);
-
-    FVector StairMin, StairMax;
-    ARPGGetBuildPieceLocalBounds(ExistingStair->Definition, StairMin, StairMax);
-
-    const FVector StairCenter = (StairMin + StairMax) * 0.5f;
-
-    // IMPORTANT: Wall-family structural occupancy is authored around the ACTOR SNAP ORIGIN, not the
-    // rendered/logical-bounds centre. Foundation/Floor wall sockets, vertical stacking and the standard
-    // structural occupancy classifier all use IncomingFinal.GetLocation() as the wall edge anchor.
-    // v2.15.34 accidentally switched this one Stair reverse seam to the transformed Wall bounds centre;
-    // any MeshRelativeTransform/pivot offset then moved an otherwise correct +/-150 cm wall off the
-    // Stair side plane and made the Stair veto it. Keep one structural coordinate system everywhere.
-    const FVector WallAnchorInStair = ExistingStair->GetActorTransform().InverseTransformPosition(
-        IncomingFinal.GetLocation());
-
-    const float Grid = FMath::Max(1.f, ExistingStair->Definition->SnapSize);
-    const float HalfGrid = Grid * 0.5f;
-
-    // The side corridor belongs to the authored 300 cm structural grid, not the Stair art width and
-    // not the Wall mesh/pivot. A Wall/Doorway/WindowWall whose snap origin lies on +/-HalfGrid is the
-    // same side edge used by Foundation/Floor snapping, irrespective of visual mesh offsets.
-    const bool bOnSidePlane =
-        FMath::Abs(FMath::Abs(WallAnchorInStair.Y - StairCenter.Y) - HalfGrid) <= PositionTolerance;
-    if (!bOnSidePlane) return false;
-
-    // Use the incoming piece's structural SnapSize for its longitudinal edge span. This intentionally
-    // ignores decorative wall overhang/trim while preserving the v2.15.34 improvement that a shared-
-    // landing wall need not have one exact +/-17 cm actor X. Any structural wall segment that overlaps
-    // the Stair run is a legal parallel side seam; unrelated parallel walls farther away are not.
-    const float WallHalfRun = FMath::Max(1.f, IncomingPiece->SnapSize * 0.5f);
-    const float WallRunMin = WallAnchorInStair.X - WallHalfRun;
-    const float WallRunMax = WallAnchorInStair.X + WallHalfRun;
-    const float LongitudinalOverlap = FMath::Min(WallRunMax, StairMax.X) - FMath::Max(WallRunMin, StairMin.X);
-
-    return LongitudinalOverlap > PositionTolerance;
+    return ARPGIsStairWallFamilyBoundarySeam(
+        ExistingStair->Definition,
+        ExistingStair->GetActorTransform(),
+        InsertHost->Definition,
+        InsertHost->GetActorTransform());
 }
 
 /**
@@ -1698,6 +1839,7 @@ static bool ARPGFindViewDirectedInsertSnap(
     const FVector& ViewEnd,
     ECollisionChannel TraceChannel,
     const AActor* IgnoredOwner,
+    AARPGBuildPieceActor* PreferredTraceTarget,
     FTransform& OutTransform,
     AARPGBuildPieceActor*& OutSnapTarget)
 {
@@ -1707,6 +1849,21 @@ static bool ARPGFindViewDirectedInsertSnap(
     const FVector Segment = ViewEnd - ViewStart;
     const float SegmentLength = Segment.Size();
     if (SegmentLength <= KINDA_SMALL_NUMBER) return false;
+
+    // The actor hit by the ordinary placement trace is the strongest possible intent signal when it
+    // is already the compatible opening host. This handles aiming directly at a WindowWall frame.
+    if (PreferredTraceTarget && PreferredTraceTarget->Definition && PreferredTraceTarget->IsConstructionComplete() &&
+        ARPGIsInsertSnapPair(PreferredTraceTarget->Definition->PieceKind, IncomingPiece->PieceKind))
+    {
+        TArray<FTransform> PreferredCandidates;
+        PreferredTraceTarget->GetSnapTransformsFor(IncomingPiece, PreferredCandidates);
+        if (PreferredCandidates.Num() > 0)
+        {
+            OutTransform = PreferredCandidates[0];
+            OutSnapTarget = PreferredTraceTarget;
+            return true;
+        }
+    }
 
     float BestScore = TNumericLimits<float>::Max();
     for (TActorIterator<AARPGBuildPieceActor> It(World); It; ++It)
@@ -1721,30 +1878,44 @@ static bool ARPGFindViewDirectedInsertSnap(
 
         FVector LocalMin, LocalMax;
         ARPGGetBuildPieceLocalBounds(Target->Definition, LocalMin, LocalMax);
+        const FVector UnpaddedLocalCenter = (LocalMin + LocalMax) * 0.5f;
+        const FVector UnpaddedLocalExtent = (LocalMax - LocalMin) * 0.5f;
 
         // Aim padding is deliberately only a capture aid. It never changes the final structural socket.
         const float AimPadding = FMath::Clamp(IncomingPiece->SnapCaptureDistance * 0.15f, 6.f, 30.f);
-        LocalMin -= FVector(AimPadding);
-        LocalMax += FVector(AimPadding);
+        const FVector PaddedLocalMin = LocalMin - FVector(AimPadding);
+        const FVector PaddedLocalMax = LocalMax + FVector(AimPadding);
 
         const FTransform TargetTransform = Target->GetActorTransform();
         const FVector LocalStart = TargetTransform.InverseTransformPosition(ViewStart);
         const FVector LocalEnd = TargetTransform.InverseTransformPosition(ViewEnd);
         float EnterT = 0.f;
-        if (!ARPGSegmentIntersectsLocalBox(LocalStart, LocalEnd, LocalMin, LocalMax, EnterT)) continue;
+        float CenterlineErrorSq = 0.f;
+        const bool bDirectBoxAim = ARPGSegmentIntersectsLocalBox(
+            LocalStart, LocalEnd, PaddedLocalMin, PaddedLocalMax, EnterT);
+        if (!bDirectBoxAim &&
+            !ARPGSegmentPassesInsertAimCorridor(
+                ViewStart, ViewEnd, TargetTransform, UnpaddedLocalCenter, UnpaddedLocalExtent,
+                AimPadding, EnterT, CenterlineErrorSq))
+        {
+            continue;
+        }
 
         // Do not let the generic placement hit (often the foundation beneath the player) occlude the
         // opening. Validate visibility specifically toward this Doorway/WindowWall instead.
         if (!ARPGHasClearInsertAimPath(World, ViewStart, Target, TraceChannel, IgnoredOwner)) continue;
 
         const float AlongRayDistance = SegmentLength * EnterT;
-        const FVector TargetCenterWorld = TargetTransform.TransformPosition((LocalMin + LocalMax) * 0.5f);
+        const FVector TargetCenterWorld = TargetTransform.TransformPosition(UnpaddedLocalCenter);
         const FVector ClosestRayPoint = ViewStart + Segment.GetSafeNormal() * AlongRayDistance;
-        const float CenterlineErrorSq = FVector::DistSquared(TargetCenterWorld, ClosestRayPoint);
+        if (bDirectBoxAim)
+            CenterlineErrorSq = FVector::DistSquared(TargetCenterWorld, ClosestRayPoint);
 
         // Primarily choose the opening nearest along the player's view ray. Centerline error keeps
-        // neighbouring doorways deterministic when their padded envelopes overlap in screen space.
-        const float Score = FMath::Square(AlongRayDistance) + CenterlineErrorSq * 0.25f;
+        // neighbouring WindowWalls deterministic. A small fallback penalty means an actual OBB hit
+        // always wins over a corridor-only candidate at otherwise equivalent geometry.
+        const float CorridorPenalty = bDirectBoxAim ? 0.f : FMath::Square(AimPadding + 1.f);
+        const float Score = FMath::Square(AlongRayDistance) + CenterlineErrorSq * 0.25f + CorridorPenalty;
         if (Score >= BestScore) continue;
 
         BestScore = Score;
@@ -1809,9 +1980,9 @@ static bool ARPGIsValidSnappedBuildNeighbor(AARPGBuildPieceActor* Neighbor, cons
     if (ARPGIsValidWallUnderUpperHorizontalSeamNeighbor(Neighbor, IncomingPiece, IncomingFinal))
         return true;
 
-    // Reverse Stair-side seam: when a Stair already exists, a Wall/WindowWall/Doorway snapped to the
+    // Reverse Stair-boundary seam: when a Stair already exists, a Wall/WindowWall/Doorway snapped to the
     // underlying horizontal grid may intentionally share the Stair's side stringer/frame seam. Accept
-    // only the exact parallel side-edge topology; perpendicular end walls across travel remain blocked.
+    // only the exact structural side/endpoint boundary topology; interior-crossing walls remain blocked.
     if (ARPGIsValidExistingStairWallSideSeamNeighbor(Neighbor, IncomingPiece, IncomingFinal))
         return true;
 
@@ -1978,9 +2149,10 @@ void UARPGBuildingComponent::UpdatePlacementPreview()
     // generic placement trace hit: in third-person that hit is frequently the supporting floor before
     // the camera ray reaches the doorway. Each compatible opening performs its own LOS validation.
     FTransform ViewDirectedInsertTransform;
+    AARPGBuildPieceActor* PreferredInsertHost = bHit ? Cast<AARPGBuildPieceActor>(Hit.GetActor()) : nullptr;
     if (ARPGFindViewDirectedInsertSnap(
         GetWorld(), SelectedBuildPiece, ViewLocation, End, PlacementTraceChannel, GetOwner(),
-        ViewDirectedInsertTransform, SnapTarget))
+        PreferredInsertHost, ViewDirectedInsertTransform, SnapTarget))
     {
         CurrentPreviewTransform = ViewDirectedInsertTransform;
     }
@@ -2238,6 +2410,20 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
     if (!HasBuildResources(Piece)) return EARPGPlacementResult::MissingResources;
     if (Piece->bRequiresSnapTarget && !SnapTarget) return EARPGPlacementResult::Unsupported;
 
+    // Hosted inserts are singleton occupants of their semantic host socket. Do not depend on current
+    // physical collision for duplicate detection: an open Door/Window may legitimately move/disable its
+    // gameplay blocker, but its Doorway/WindowWall socket is still occupied until the insert is removed.
+    if (SnapTarget && ARPGIsInsertPieceKind(Piece->PieceKind))
+    {
+        for (TActorIterator<AARPGBuildPieceActor> It(World); It; ++It)
+        {
+            AARPGBuildPieceActor* ExistingInsert = *It;
+            if (!ExistingInsert || ExistingInsert == SnapTarget || !ExistingInsert->Definition) continue;
+            if (ExistingInsert->Definition->PieceKind != Piece->PieceKind) continue;
+            if (ARPGInsertActorMatchesHost(ExistingInsert, SnapTarget)) return EARPGPlacementResult::Blocked;
+        }
+    }
+
     const UARPGFactionComponent* Faction = Owner->FindComponentByClass<UARPGFactionComponent>();
     if (!Piece->RequiredBuilderFactionId.IsNone())
     {
@@ -2299,22 +2485,39 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
             // not a blocker when the logical placement volumes do not actually penetrate.
             if (AARPGBuildPieceActor* BuildNeighbor = Cast<AARPGBuildPieceActor>(Other))
             {
-                // Reverse hosted-insert rule: when placing a structural Wall/Floor/Ceiling/Roof, an
-                // already-built Door/Window inside a compatible Doorway/WindowWall must not veto the
-                // host's legitimate structural seam. First try the active SnapTarget (common when the
-                // player aims at the Doorway top), then the current overlap set, and only then a narrow
-                // world fallback restricted to the compatible host family. The insert is ignored only
-                // after its exact host snap and the host/incoming structural seam are both verified.
+                // Reverse hosted-insert rule: a completed Door/Window belongs semantically to its
+                // Doorway/WindowWall host. It must not become an independent blocker when that verified
+                // host participates in a legitimate structural seam. Wall/Floor/Ceiling/Roof keep the
+                // established v2.15.22 path; v2.15.49 extends the same build-order symmetry to a Stair
+                // snapped to a flat landing when the host is on one of the Stair's exact parallel side
+                // edges. The insert is ignored only after BOTH exact insert-host identity and the host's
+                // incoming structural/Stair-side relationship are proven.
                 const EARPGBuildPieceKind NeighborKind = BuildNeighbor->Definition
                     ? BuildNeighbor->Definition->PieceKind
                     : EARPGBuildPieceKind::Custom;
                 const bool bNeighborIsInsert = ARPGIsInsertPieceKind(NeighborKind);
-                const bool bIncomingIsStructural =
+                const bool bIncomingIsStandardStructural =
                     ARPGIsWallLikeKind(Piece->PieceKind) || ARPGIsHorizontalStructuralKind(Piece->PieceKind);
-                if (bNeighborIsInsert && bIncomingIsStructural)
+                const bool bIncomingIsStair = Piece->PieceKind == EARPGBuildPieceKind::Stair;
+                if (bNeighborIsInsert && (bIncomingIsStandardStructural || bIncomingIsStair))
                 {
+                    const auto InsertAllowsIncomingNeighbor = [&](const AARPGBuildPieceActor* CandidateHost)
+                    {
+                        if (!CandidateHost) return false;
+                        if (bIncomingIsStair)
+                        {
+                            return ARPGHostedInsertAllowsStairSideNeighbor(
+                                BuildNeighbor, CandidateHost, SnapTarget, Piece, Final);
+                        }
+                        return ARPGHostedInsertAllowsStructuralNeighbor(
+                            BuildNeighbor, CandidateHost, Piece, Final);
+                    };
+
                     const AARPGBuildPieceActor* ResolvedHost = nullptr;
-                    if (SnapTarget && ARPGHostedInsertAllowsStructuralNeighbor(BuildNeighbor, SnapTarget, Piece, Final))
+                    // For standard structural placement the active target may itself be the insert host.
+                    // A Stair's active target is normally its Foundation/Floor/Ceiling landing, so host
+                    // discovery proceeds through the overlap set / narrow semantic world fallback.
+                    if (!bIncomingIsStair && SnapTarget && InsertAllowsIncomingNeighbor(SnapTarget))
                     {
                         ResolvedHost = SnapTarget;
                     }
@@ -2327,7 +2530,9 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
                             const AARPGBuildPieceActor* CandidateHost = Cast<AARPGBuildPieceActor>(HostOverlap.GetActor());
                             if (!CandidateHost || CandidateHost == BuildNeighbor || CheckedHosts.Contains(CandidateHost)) continue;
                             CheckedHosts.Add(CandidateHost);
-                            if (ARPGHostedInsertAllowsStructuralNeighbor(BuildNeighbor, CandidateHost, Piece, Final))
+                            if (!CandidateHost->Definition ||
+                                !ARPGIsInsertSnapPair(CandidateHost->Definition->PieceKind, NeighborKind)) continue;
+                            if (InsertAllowsIncomingNeighbor(CandidateHost))
                             {
                                 ResolvedHost = CandidateHost;
                                 break;
@@ -2336,15 +2541,16 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
 
                         if (!ResolvedHost)
                         {
-                            // Hollow/complex Doorway collision can keep the host out of the broad box
-                            // overlap. This fallback runs only after an actual insert overlapped the
-                            // incoming structural piece, and only tests semantically compatible hosts.
+                            // Hollow/complex Doorway/WindowWall collision can keep the host out of the
+                            // broad occupancy overlap. This fallback runs only after an actual hosted
+                            // insert overlapped the incoming piece and only tests the compatible host
+                            // family, so unrelated structures can never be silently ignored.
                             for (TActorIterator<AARPGBuildPieceActor> It(World); It; ++It)
                             {
                                 const AARPGBuildPieceActor* CandidateHost = *It;
                                 if (!CandidateHost || CandidateHost == BuildNeighbor || CheckedHosts.Contains(CandidateHost) || !CandidateHost->Definition) continue;
                                 if (!ARPGIsInsertSnapPair(CandidateHost->Definition->PieceKind, NeighborKind)) continue;
-                                if (ARPGHostedInsertAllowsStructuralNeighbor(BuildNeighbor, CandidateHost, Piece, Final))
+                                if (InsertAllowsIncomingNeighbor(CandidateHost))
                                 {
                                     ResolvedHost = CandidateHost;
                                     break;
@@ -2368,6 +2574,17 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
                 // blockers for the insert. This keeps upper-story doors usable without disabling
                 // collision against duplicate inserts or genuinely conflicting structural slots.
                 if (SnapTarget && ARPGIsCompatibleInsertHostStructuralNeighbor(BuildNeighbor, SnapTarget, Piece))
+                {
+                    if (bRequireSnapTargetModificationAccess && !BuildNeighbor->CanActorModify(Owner))
+                        return EARPGPlacementResult::Restricted;
+                    continue;
+                }
+
+                // A Window/Door installed after a Stair inherits its verified WindowWall/Doorway
+                // host's legal Stair-boundary seam. This is the exact reverse of the hosted-insert rule
+                // above and closes the remaining build-order asymmetry without weakening duplicate
+                // insert or travel-volume collision checks.
+                if (SnapTarget && ARPGIsCompatibleInsertHostStairNeighbor(BuildNeighbor, SnapTarget, Piece))
                 {
                     if (bRequireSnapTargetModificationAccess && !BuildNeighbor->CanActorModify(Owner))
                         return EARPGPlacementResult::Restricted;
@@ -2479,6 +2696,7 @@ UClass* UARPGBuildingComponent::ResolveNativeBuildActorClass(const UARPGBuildPie
     switch (Piece->PieceKind)
     {
         case EARPGBuildPieceKind::Door: return AARPGBuildDoorActor::StaticClass();
+        case EARPGBuildPieceKind::Window: return AARPGBuildWindowActor::StaticClass();
         case EARPGBuildPieceKind::Storage: return AARPGStorageActor::StaticClass();
         case EARPGBuildPieceKind::Production: return AARPGCraftingStationActor::StaticClass();
         default: return AARPGBuildPieceActor::StaticClass();

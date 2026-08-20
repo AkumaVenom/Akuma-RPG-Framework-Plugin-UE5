@@ -16,6 +16,8 @@ preview_h=read(Path('Public/Building/ARPGBuildPreviewActor.h'))
 preview_cpp=read(Path('Private/Building/ARPGBuildPreviewActor.cpp'))
 door_h=read(Path('Public/Building/ARPGBuildDoorActor.h'))
 door_cpp=read(Path('Private/Building/ARPGBuildDoorActor.cpp'))
+window_h=read(Path('Public/Building/ARPGBuildWindowActor.h'))
+window_cpp=read(Path('Private/Building/ARPGBuildWindowActor.cpp'))
 ui_comp_h=read(Path('Public/Components/ARPGBuildingUIComponent.h'))
 ui_comp_cpp=read(Path('Private/Components/ARPGBuildingUIComponent.cpp'))
 ui_h=read(Path('Public/UI/ARPGBuildingWidgets.h'))
@@ -38,7 +40,7 @@ types_h=read(Path('Public/ARPGTypes.h'))
 # Complete data-driven kit types and utility definitions.
 for kind in ('Foundation','Wall','WindowWall','Window','Doorway','Door','Floor','Ceiling','Roof','Stair','Pillar','Storage','Production','Decoration','Custom'):
     assert kind in piece_h
-require(piece_h, 'BuildMesh', 'PreviewMesh', 'BuildCost', 'ConstructionSeconds', 'ConstructionStartScaleZ',
+require(piece_h, 'BuildMesh', 'BuildSkeletalMesh', 'PreviewMesh', 'PreviewSkeletalMesh', 'BuildCost', 'ConstructionSeconds', 'ConstructionStartScaleZ',
         'ConstructionProgressMaterialParameter', 'SnapSize', 'StandardWallHeight', 'CustomSnapPoints',
         'StorageSlots', 'StationDefinition', 'DemolishRefundFraction', 'MeshRelativeTransform')
 
@@ -62,6 +64,33 @@ require(preview_h, 'USceneComponent', 'PreviewRoot')
 require(preview_cpp, 'PreviewMesh->SetupAttachment(PreviewRoot)',
         'PreviewMesh->SetRelativeTransform(Piece->MeshRelativeTransform)')
 require(piece_h, 'FTransform MeshRelativeTransform = FTransform::Identity')
+# v2.15.44 additive Skeletal Mesh build visuals: existing BuildMesh remains intact, skeletal assets
+# are opt-in and drive the same transformed bounds, construction path and local ghost. A native
+# Window actor supplies bounds-driven collision so skeletal Windows do not require a Physics Asset
+# merely for authoritative occupancy/duplicate-insert detection.
+require(actor_h, 'USkeletalMeshComponent', 'BuildSkeletalMesh', 'GetActiveBuildMeshComponent',
+        'GetActiveBuildVisualLocalBounds', 'GetActiveBuildVisualRawBounds')
+require(actor_cpp, 'Components/SkeletalMeshComponent.h', 'Engine/SkeletalMesh.h',
+        'Definition->BuildSkeletalMesh', 'BuildSkeletalMesh->SetSkeletalMesh', 'BuildSkeletalMesh->SetComponentTickEnabled(false)',
+        'GetActiveBuildMeshComponent()', 'ActiveMesh->SetScalarParameterValueOnMaterials',
+        'USkeletalMesh* Mesh = Piece->BuildSkeletalMesh.LoadSynchronous()')
+require(build_cpp, 'USkeletalMesh* Mesh = Piece->BuildSkeletalMesh.LoadSynchronous()',
+        'same transformed bounds here keeps pivot-aware ground placement, structural snapping, hosted')
+require(preview_h, 'USkeletalMeshComponent', 'PreviewSkeletalMesh')
+require(preview_cpp, 'Piece->PreviewSkeletalMesh', 'Piece->BuildSkeletalMesh',
+        'PreviewSkeletalMesh->SetSkeletalMesh', 'PreviewSkeletalMesh->SetComponentTickEnabled(false)', 'GetActivePreviewMeshComponent')
+# v2.15.46 Skeletal ghost material compatibility is prepared by the framework rather than requiring
+# per-piece preview materials or silently accepting Unreal's grey/default fallback.
+require(preview_cpp, 'ARPGPrepareSkeletalPreviewMaterial', 'CheckMaterialUsage(MATUSAGE_SkeletalMesh)',
+        'EnsureIsComplete()', 'MarkRenderStateDirty()', 'ValidPreviewMaterial.Get()', 'InvalidPreviewMaterial.Get()')
+require(build_cpp, 'EARPGBuildPieceKind::Window: return AARPGBuildWindowActor::StaticClass()')
+require(window_h, 'AARPGBuildWindowActor', 'WindowCollision')
+require(window_cpp, 'GetActiveBuildVisualLocalBounds', 'SetBoxExtent',
+        'IsConstructionComplete() || Definition->bCollisionDuringConstruction')
+# Door remains backward-compatible but can also move an active skeletal visual beneath DoorPivot.
+require(door_cpp, 'BuildSkeletalMesh->SetupAttachment(DoorPivot)', 'GetActiveBuildVisualLocalBounds')
+assert 'Build Mesh (Static)' not in piece_h  # do not rename the established editor field
+assert 'Preview Mesh (Static)' not in piece_h
 assert 'Hit.ImpactNormal * FMath::Max(0.f, SelectedBuildPiece->PlacementBounds.Z)' not in build_cpp
 
 # Mathematical regression: bottom-pivot and center-pivot 150 cm foundations both land their visible bottom at Z=0.
@@ -106,6 +135,7 @@ assert 'BuildCatalog.ContainsByPredicate' in build_cpp and 'SnapTarget->CanActor
 require(build_cpp, 'ARPGAggregateBuildCosts', 'HasUnequippedItem', 'RemoveUnequippedItem', 'RefundBuildResources')
 # Native actor fallback makes common pieces usable without actor Blueprints.
 require(build_cpp, 'EARPGBuildPieceKind::Door: return AARPGBuildDoorActor::StaticClass()',
+        'EARPGBuildPieceKind::Window: return AARPGBuildWindowActor::StaticClass()',
         'EARPGBuildPieceKind::Storage: return AARPGStorageActor::StaticClass()',
         'EARPGBuildPieceKind::Production: return AARPGCraftingStationActor::StaticClass()')
 
@@ -117,11 +147,38 @@ require(preview_cpp, 'bReplicates = false', 'SetActorEnableCollision(false)', 'E
 require(actor_cpp, 'Foundation', 'WindowWall', 'Doorway', 'Ceiling', 'Roof',
         'TargetKind == EARPGBuildPieceKind::Doorway && IncomingKind == EARPGBuildPieceKind::Door',
         'TargetKind == EARPGBuildPieceKind::WindowWall && IncomingKind == EARPGBuildPieceKind::Window')
-# v2.15.7 insert regression: Door/Window sockets align visible geometry rather than actor pivots,
-# and acquisition measures aim distance to the supporting opening bounds rather than the generated
-# incoming actor location. Non-insert structural snapping keeps legacy candidate-distance capture.
-require(actor_cpp, 'ARPGGetCenteredInsertTranslation', 'TargetCenter.X - IncomingCenter.X',
-        'TargetCenter.Y - IncomingCenter.Y', 'TargetMin.Z - IncomingMin.Z')
+# v2.15.7/v2.15.45 hosted-insert regression: both insert families remain pivot-aware, but they no
+# longer share an incorrect vertical rule. Doors are floor-standing and remain bottom-aligned exactly
+# as before. Windows are suspended inserts and center their transformed visible bounds in X/Y/Z, then
+# apply the WindowWall host's optional local Window Insert Offset.
+require(actor_cpp, 'ARPGGetBottomAlignedInsertTranslation', 'ARPGGetCenteredInsertTranslation',
+        'TargetCenter.X - IncomingCenter.X', 'TargetCenter.Y - IncomingCenter.Y',
+        'TargetMin.Z - IncomingMin.Z', 'return TargetCenter - IncomingCenter + HostLocalOffset',
+        'Definition->WindowInsertOffset')
+# v2.15.46 WindowWall hosting is intrinsic even if generic standard structural snaps are disabled.
+require(actor_cpp, '!Definition->bGenerateStandardSnapPoints',
+        'Definition->PieceKind == EARPGBuildPieceKind::WindowWall',
+        'IncomingPiece->PieceKind == EARPGBuildPieceKind::Window')
+require(piece_h, 'WindowInsertOffset', 'DisplayName="Window Insert Offset"',
+        'PieceKind==EARPGBuildPieceKind::WindowWall')
+
+def bottom_aligned_insert(target_min, target_max, incoming_min, incoming_max):
+    tc = tuple((a+b)*0.5 for a,b in zip(target_min,target_max))
+    ic = tuple((a+b)*0.5 for a,b in zip(incoming_min,incoming_max))
+    return (tc[0]-ic[0], tc[1]-ic[1], target_min[2]-incoming_min[2])
+
+def centered_window_insert(target_min, target_max, incoming_min, incoming_max, host_offset=(0.0,0.0,0.0)):
+    tc = tuple((a+b)*0.5 for a,b in zip(target_min,target_max))
+    ic = tuple((a+b)*0.5 for a,b in zip(incoming_min,incoming_max))
+    return tuple(tc[i]-ic[i]+host_offset[i] for i in range(3))
+
+# Current Wood example: a 95 cm-high Window inside a 271 cm-high WindowWall is centered vertically
+# by default (88 cm above a shared bottom plane), while the Door contract remains bottom-aligned.
+wood_wall_min=(0.0,0.0,0.0); wood_wall_max=(301.0,31.0,271.0)
+wood_window_min=(0.0,0.0,0.0); wood_window_max=(143.0,95.0,95.0)
+assert abs(bottom_aligned_insert(wood_wall_min,wood_wall_max,wood_window_min,wood_window_max)[2]) < 1e-6
+assert abs(centered_window_insert(wood_wall_min,wood_wall_max,wood_window_min,wood_window_max)[2] - 88.0) < 1e-6
+assert abs(centered_window_insert(wood_wall_min,wood_wall_max,wood_window_min,wood_window_max,(0,0,12))[2] - 100.0) < 1e-6
 require(build_cpp, 'ARPGIsInsertSnapPair', 'ARPGDistanceSquaredToBuildPieceBounds',
         'InsertAimDistSq', 'CaptureMetricSq', 'SemanticTieBreak')
 # v2.15.9 insert acquisition is independent from the ordinary placement trace's first hit.
@@ -134,6 +191,9 @@ require(build_cpp, 'ARPGSegmentIntersectsLocalBox', 'ARPGFindViewDirectedInsertS
         'TActorIterator<AARPGBuildPieceActor>', 'LineTraceSingleByChannel',
         'FMath::Min(InsertAimDistSq, CandidateDistSq)',
         'restricted to Door/Window pieces')
+# v2.15.46 hardens local third-person acquisition without changing authority or the final native socket.
+require(build_cpp, 'ARPGSegmentPassesInsertAimCorridor', 'PreferredTraceTarget', 'PreferredInsertHost',
+        'UnpaddedLocalExtent', 'CorridorPenalty', 'WorldExtent.GetMax()')
 assert 'BlockingHitDistance' not in build_cpp
 assert 'VisibleDistanceLimit' not in build_cpp
 # v2.15.19 upper-story insert occupancy: a snapped Door/Window is hosted by its Doorway/WindowWall.
@@ -150,7 +210,7 @@ require(build_cpp,
         'ARPGInsertActorMatchesHost',
         'ARPGHostedInsertAllowsStructuralNeighbor',
         'Reverse hosted-insert rule',
-        'bNeighborIsInsert && bIncomingIsStructural',
+        'bNeighborIsInsert && (bIncomingIsStandardStructural || bIncomingIsStair)',
         'ARPGIsInsertSnapPair(CandidateHost->Definition->PieceKind, NeighborKind)',
         '!BuildNeighbor->CanActorModify(Owner) || !ResolvedHost->CanActorModify(Owner)')
 
@@ -159,6 +219,22 @@ def reverse_hosted_insert_allows(insert_matches_host, host_seam_relation):
 assert reverse_hosted_insert_allows(True, 'compatible')       # Doorway -> Door -> upper Floor
 assert not reverse_hosted_insert_allows(False, 'compatible') # unrelated Door cannot be ignored
 assert not reverse_hosted_insert_allows(True, 'conflict')    # real host conflict still blocks
+
+# v2.15.49 hosted-insert/Stair-side seam regression: a verified Door/Window inherits its exact
+# Doorway/WindowWall host's established legal Stair-side seam. This fixes a closed skeletal Window
+# independently blocking a Stair even though its WindowWall is already accepted on the parallel side edge.
+require(build_cpp, 'ARPGHostedInsertAllowsStairSideNeighbor',
+        'ARPGInsertActorMatchesHost(InsertActor, InsertHost)',
+        'const bool bIncomingIsStair = Piece->PieceKind == EARPGBuildPieceKind::Stair;',
+        'bNeighborIsInsert && (bIncomingIsStandardStructural || bIncomingIsStair)',
+        'InsertAllowsIncomingNeighbor')
+
+def hosted_insert_allows_stair_side(insert_matches_host, host_is_valid_stair_side, has_flat_stair_snap=True):
+    return insert_matches_host and host_is_valid_stair_side and has_flat_stair_snap
+assert hosted_insert_allows_stair_side(True, True)
+assert not hosted_insert_allows_stair_side(False, True)
+assert not hosted_insert_allows_stair_side(True, False)
+assert not hosted_insert_allows_stair_side(True, True, False)
 
 
 def segment_intersects_box(start, end, bmin, bmax):
@@ -183,6 +259,14 @@ assert not segment_intersects_box((0.0,-500.0,120.0),(0.0,-120.0,120.0),(-151.0,
 assert segment_intersects_box((0.0,-500.0,120.0),(0.0,1200.0,120.0),(-151.0,-15.5,0.0),(151.0,15.5,271.0))
 # A clearly off-to-the-side ray is not semantically captured.
 assert not segment_intersects_box((250.0,-500.0,120.0),(250.0,500.0,120.0),(-151.0,-15.5,0.0),(151.0,15.5,271.0))
+
+# v2.15.46 bounded aim-corridor model: a small third-person camera offset may miss the exact host OBB
+# while still passing within the WindowWall's visible module radius; a clearly unrelated ray remains out.
+def insert_aim_corridor(centerline_error, max_half_extent, padding):
+    return abs(centerline_error) <= max_half_extent + max(0.0, padding)
+assert not segment_intersects_box((170.0,-500.0,120.0),(170.0,500.0,120.0),(-151.0,-15.5,0.0),(151.0,15.5,271.0))
+assert insert_aim_corridor(170.0,151.0,30.0)
+assert not insert_aim_corridor(250.0,151.0,30.0)
 def centered_insert_translation(target_min, target_max, incoming_min, incoming_max):
     tc=tuple((a+b)*0.5 for a,b in zip(target_min,target_max))
     ic=tuple((a+b)*0.5 for a,b in zip(incoming_min,incoming_max))
@@ -253,7 +337,9 @@ require(build_cpp, 'ARPGIsStairSupportSnapPair', 'ARPGIsStairChainSnapPair', 'AR
         'bStairSupportSnapPair', 'bStairChainSnapPair', 'bAnyStairSnapPair', 'StairTargetAimDistSq',
         'CandidateAffinitySq', 'ARPGIsCompatibleStairHostStructuralNeighbor',
         'ARPGTransformMatchesStairHostCandidate', 'bLowEndOwnsHostEdge', 'StairCellCenter',
-        'bOnSideEdge', 'bParallelToStairRun', 'ARPGGatherPlacementOverlaps',
+        'ARPGIsStairWallFamilyBoundarySeam', 'StairBoundsCenterLocal', 'StairFrame', 'WallAnchorInStair',
+        'bOnSidePlane', 'bParallelToStairRun', 'StairPiece->PlacementBounds.X', 'WallHalfRun', 'LongitudinalOverlap',
+        'ARPGIsCompatibleInsertHostStairNeighbor', 'ARPGGatherPlacementOverlaps',
         'ARPGBuildPlacementOccupancyOBBs', 'StairProfileSliceCount', 'ARPGIsLandscapeTerrainActor',
         'ALandscapeProxy', 'ARPGIsValidStairWorldSupportContact', 'SurfaceAboveSliceBottom',
         'bFoundSupportingSurface', 'SideOffsets')
@@ -269,9 +355,9 @@ require(actor_cpp, 'IncomingKind == EARPGBuildPieceKind::Stair && TargetKind != 
 # Up-flights must start on the current walking surface; never high-align them to the next story.
 assert 'const float StairLowDepartureAlignedZ = TargetStoryPlaneZ - IncomingMin.Z;' in actor_cpp
 assert 'TargetStoryPlaneZ + WallHeight - IncomingMax.Z' not in actor_cpp
-require(build_cpp, 'ARPGIsValidExistingStairWallSideSeamNeighbor', 'bOnSidePlane',
-        'WallHalfRun', 'LongitudinalOverlap', 'WallAnchorInStair',
-        'IncomingFinal.GetLocation()', 'Reverse Stair-side seam', 'ARPGYawAxesEquivalent(ExistingStair->GetActorRotation().Yaw, IncomingFinal.Rotator().Yaw)')
+require(build_cpp, 'ARPGIsValidExistingStairWallSideSeamNeighbor', 'ARPGIsStairWallFamilyBoundarySeam',
+        'WallAnchorInStair', 'WallTransform.GetLocation()', 'StairPiece->PlacementBounds.X',
+        'LongitudinalOverlap', 'Reverse build order wrapper')
 
 # v2.15.27 occupancy regression remains required: the final build-vs-build blocker check must consume
 # the SAME Stair profile primitives as the broad overlap query.
@@ -452,7 +538,32 @@ assert stair_horizontal_neighbor_compatible(outside_flight_cell,(300.0,300.0))
 require(build_cpp, 'bNeighborFlatLanding', 'HostStoryPlane', 'NeighborStoryPlane',
         'bImmediateGridNeighbor', 'actual Stair flight cell', '17 cm art/rail overhang')
 
-# Stair-first Wall-family reverse seam. v2.15.34 classifies the actual side-plane relationship
+# v2.15.52 shared bidirectional Stair <-> Wall-family seam symmetry. Structural topology still owns the
+# +/-150 side plane and parallel run axis, but collision-seam longitudinal overlap is compared against
+# the Stair's authored 334 cm placement run. This allows the intentional 17 cm endpoint overhang to
+# touch the immediately adjacent side-wall module without turning the Stair red.
+def incoming_stair_wall_side_compatible(anchor_x, anchor_y, wall_yaw, stair_yaw=0.0, tol=2.5, wall_snap_size=300.0, stair_art_half=167.0):
+    d=abs(((wall_yaw-stair_yaw+180.0)%360.0)-180.0)
+    parallel=d <= 1.0 or abs(d-180.0) <= 1.0
+    on_side_plane=abs(abs(anchor_y)-150.0) <= tol
+    wall_half=max(1.0, wall_snap_size*0.5)
+    wall_min=anchor_x-wall_half
+    wall_max=anchor_x+wall_half
+    overlap=min(wall_max,stair_art_half)-max(wall_min,-stair_art_half)
+    return parallel and on_side_plane and overlap > tol
+
+assert incoming_stair_wall_side_compatible(0.0,150.0,0.0)
+assert incoming_stair_wall_side_compatible(140.0,150.0,0.0)
+assert incoming_stair_wall_side_compatible(-140.0,-150.0,180.0)
+# Current 334 cm Stair touches a side-wall continuation centred one 300 cm cell away by exactly 17 cm.
+assert incoming_stair_wall_side_compatible(300.0,150.0,0.0)
+assert incoming_stair_wall_side_compatible(-300.0,-150.0,180.0)
+assert not incoming_stair_wall_side_compatible(0.0,150.0,90.0)
+assert not incoming_stair_wall_side_compatible(0.0,0.0,0.0)
+assert not incoming_stair_wall_side_compatible(320.0,150.0,0.0)
+assert not incoming_stair_wall_side_compatible(600.0,150.0,0.0)
+
+# Stair-first Wall-family reverse seam consumes the same v2.15.52 shared side-plane relationship
 # rather than requiring an exact +/-17 cm actor-centre offset. This is important below an upper flight:
 # a valid grid-owned wall can be centred at X=0 at a shared landing and must still be accepted when it
 # runs parallel to the Stair and overlaps the flight longitudinally. Perpendicular end walls and walls
@@ -865,9 +976,9 @@ require(inv_h, 'TransferItemInstanceTo')
 require(inv_cpp, 'bool UARPGInventoryComponent::TransferItemInstanceTo', 'SourceEntry.bEquipped', 'FARPGInventoryEntry Moved = SourceEntry', 'Destination->Items.Append(MovedEntries)')
 
 # Storage/furnace interactions are routed through the player-owned Interaction component/RPCs.
-require(inter_h, 'DepositToStorageInstance', 'WithdrawFromStorageInstance', 'WithdrawStationOutputInstance', 'ToggleBuiltDoor', 'DemolishBuilding', 'QueueCraft')
+require(inter_h, 'DepositToStorageInstance', 'WithdrawFromStorageInstance', 'WithdrawStationOutputInstance', 'ToggleBuiltDoor', 'ToggleBuiltWindow', 'DemolishBuilding', 'QueueCraft')
 require(inter_cpp, 'ServerDepositToStorageInstance_Implementation', 'ServerWithdrawFromStorageInstance_Implementation',
-        'ServerWithdrawStationOutputInstance_Implementation', 'ServerToggleBuiltDoor_Implementation', 'ServerDemolishBuilding_Implementation', 'ServerQueueCraft_Implementation')
+        'ServerWithdrawStationOutputInstance_Implementation', 'ServerToggleBuiltDoor_Implementation', 'ServerToggleBuiltWindow_Implementation', 'ServerDemolishBuilding_Implementation', 'ServerQueueCraft_Implementation')
 
 # Production station/furnace: data-driven station, wood-style tagged fuel, ore inputs, outputs and transactional safeguards.
 require(station_h, 'ApplyStationDefinition', 'CanQueueRecipe', 'OutputInventory')
@@ -879,10 +990,10 @@ canuse=station_cpp[station_cpp.index('bool AARPGCraftingStationActor::CanUseReci
 assert '!StationDefinition || !StationDefinition->StationTag.IsValid()' in canuse
 
 # Persistent construction + door state and existing container/furnace inventories/queues.
-require(types_h, 'bConstructionComplete', 'ConstructionRemainingSeconds', 'bDoorOpen')
-assert save_h.count('SaveVersion = 5') >= 2
+require(types_h, 'bConstructionComplete', 'ConstructionRemainingSeconds', 'bDoorOpen', 'bWindowOpen')
+assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 6' in save_h
 require(save_cpp, 'R.bConstructionComplete=B->IsConstructionComplete()', 'R.ConstructionRemainingSeconds=B->GetConstructionRemainingSeconds()',
-        'R.bDoorOpen=Door->IsDoorOpen()', 'RestoreConstructionState', 'RestoreDoorOpenState', 'CraftQueue', 'OutputItems',
+        'R.bDoorOpen=Door->IsDoorOpen()', 'R.bWindowOpen=Window->IsWindowOpen()', 'RestoreConstructionState', 'RestoreDoorOpenState', 'RestoreWindowOpenState', 'CraftQueue', 'OutputItems',
         'ProcessOfflineElapsed()', 'SetActorTickEnabled(C->CraftQueue.Num()>0)')
 
 # v2.15.12 persistent build ownership reload regression. Guest/no-login play must keep a stable

@@ -3,6 +3,7 @@
 #include "Components/ARPGInventoryComponent.h"
 #include "Crafting/ARPGStorageActor.h"
 #include "Building/ARPGBuildDoorActor.h"
+#include "Building/ARPGBuildWindowActor.h"
 #include "Building/ARPGBuildPieceActor.h"
 #include "Crafting/ARPGCraftingStationActor.h"
 #include "Data/ARPGRecipeDefinition.h"
@@ -75,6 +76,12 @@ void UARPGInteractionComponent::ToggleBuiltDoor(AARPGBuildDoorActor* Door)
 {
     if (!GetOwner() || !Door) return;
     if (GetOwner()->HasAuthority()) ServerToggleBuiltDoor_Implementation(Door); else ServerToggleBuiltDoor(Door);
+}
+
+void UARPGInteractionComponent::ToggleBuiltWindow(AARPGBuildWindowActor* Window)
+{
+    if (!GetOwner() || !Window) return;
+    if (GetOwner()->HasAuthority()) ServerToggleBuiltWindow_Implementation(Window); else ServerToggleBuiltWindow(Window);
 }
 
 void UARPGInteractionComponent::DemolishBuilding(AARPGBuildPieceActor* Building)
@@ -178,6 +185,12 @@ void UARPGInteractionComponent::ServerToggleBuiltDoor_Implementation(AARPGBuildD
 {
     const bool bSuccess = Door && IsActorInRange(Door) && Door->ToggleDoor(GetOwner());
     ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Door toggled.") : TEXT("Door cannot be used.")));
+}
+
+void UARPGInteractionComponent::ServerToggleBuiltWindow_Implementation(AARPGBuildWindowActor* Window)
+{
+    const bool bSuccess = Window && IsActorInRange(Window) && Window->ToggleWindow(GetOwner());
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Window toggled.") : TEXT("Window cannot be used.")));
 }
 
 void UARPGInteractionComponent::ServerDemolishBuilding_Implementation(AARPGBuildPieceActor* Building)
