@@ -1,3 +1,34 @@
+# Source Validation — Akuma's RPG Framework v2.17.3-alpha
+
+Package: **Akuma's RPG Framework — v2.17.3-alpha**  
+Target: **Unreal Engine 5.8 / 5.8.1**
+
+## Important limitation
+
+The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 buildable Lights remain confirmed as an additive non-blocking layer. v2.16.0 adds settlement Beds/Hubs through a separate horizontal-surface contract and leaves the protected Stair/Wall-family boundary functions unchanged. v2.16.11 adds Settlement Paths through a separate non-structural continuous spline-placement contract. v2.16.12 fixes the project-observed turn tangent foldover while retaining that architecture. Runtime PIE confirmation is still required for this release.
+
+
+## v2.17.3 fresh-character persistence bootstrap acceptance
+
+- With `Auto Load on Begin Play`, automatic state save and `Save on End Play` enabled, delete the resolved **character** save slot and start PIE. `Initial Character Persistence State` must become `Fresh Character - No Save`; Starting Items, auto-equip and authored Quick Access assignments must appear, and `Initial Resolved Character Save Slot` must identify the new slot.
+- Restart PIE without deleting that slot. State must become `Loaded Existing Save`; exact Inventory/Quick Access must restore and Starting Items must not be granted again.
+- Save an intentionally empty Inventory/hotbar and restart. Empty state must remain empty.
+- A proven existing slot that cannot deserialize must resolve `Existing Save - Load Failed`, grant no defaults and suppress automatic writes.
+- A playable project pawn that inherits from `AARPGAICharacter` but is player-controlled must not deadlock initial persistence; genuinely AI-controlled actors remain outside account-character saves.
+
+## v2.17.2 automatic Inventory + Quick Access persistence acceptance
+
+1. Use the normal player with `Persistence -> Save Inventory And Quick Access Changes Automatically = true` and a short test debounce (the default 1.5 seconds is fine). Begin with a known Starting Items + Quick Access layout.
+2. Change Inventory after BeginPlay: transfer starter items into persistent Storage, add/remove mined resources, change equipment/durability and rearrange quantities. Wait past the debounce and verify `Automatic Character State Save Count` increments.
+3. Rearrange Quick Access slots and change the active slot without otherwise touching Inventory. Wait past the debounce and verify another automatic character snapshot is committed.
+4. Stop PIE and restart. Inventory must restore the exact saved runtime entries and Quick Access must restore the saved slot assignments + active slot; neither may return to Starting Items defaults.
+5. Empty the entire player Inventory into persistent Storage, wait for the automatic save, restart PIE and confirm the Inventory remains empty and the hotbar repairs appropriately without regranting Starting Items.
+6. Make several rapid inventory/hotbar mutations inside one 1.5-second window and confirm they coalesce into one pending save rather than one disk write per event.
+7. Stop PIE immediately after a mutation (before the debounce fires). The final guarded EndPlay commit must still restore that latest state on the next BeginPlay, including when the player pawn receives an explicit `Destroyed` EndPlay reason.
+8. Confirm load-time `ReplaceInventory` / `ReplaceQuickAccessState` broadcasts do not increment the automatic save counter before initial persistence resolves; loading must never write a partial/default snapshot over the source save.
+9. Confirm a detected unreadable existing character save still sets automatic-save suppression and is not overwritten by mutation, periodic or EndPlay saves.
+10. Character save schema must remain v5; world save remains v9. Run `Tools/test_inventory_automatic_persistence_model.py` and the complete regression suite.
+
 ## v2.17.0 Mining / Mineable Rock acceptance
 
 Source/model validation protects the new Mining contract: ready-character component ownership, RuneScape-style 1–99 model with authored-curve priority, replicated random rock mesh/scale/yaw, tick-free node runtime, exact equipped pickaxe instance validation, per-strike/depletion/bonus rewards, free context-sensitive Basic Attack interception, repeated Interact mining, renewable-resource building suppression and unchanged save schemas.
@@ -17,23 +48,6 @@ Project-side UE5.8 PIE acceptance should additionally verify:
 11. Test an Actor Foliage-derived Mineable Rock population at project target density and profile server/replication cost; non-harvestable background rocks should remain ISM/HISM foliage.
 
 See `Docs/MINING.md` for full authoring details.
-
-# Source Validation — Akuma's RPG Framework v2.16.12-alpha
-
-Package: **Akuma's RPG Framework — v2.16.12-alpha**  
-Target: **Unreal Engine 5.8 / 5.8.1**
-
-## Important limitation
-
-The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 buildable Lights remain confirmed as an additive non-blocking layer. v2.16.0 adds settlement Beds/Hubs through a separate horizontal-surface contract and leaves the protected Stair/Wall-family boundary functions unchanged. v2.16.11 adds Settlement Paths through a separate non-structural continuous spline-placement contract. v2.16.12 fixes the project-observed turn tangent foldover while retaining that architecture. Runtime PIE confirmation is still required for this release.
-
-
-
-
-
-
-
-
 
 ## v2.16.12 Settlement Path turn-stability acceptance
 
@@ -601,8 +615,6 @@ This generation environment does not contain Epic's UE 5.8.1 build toolchain, so
 All previous real-build fixes through v1.4.1 are retained, including the explicit `Navigation/PathFollowingComponent.h` dependency used by the AI spline component.
 
 
-
-
 ## v2.2.1 Quick Access duplicate-instance regression
 
 1. Start with one owned Stone Axe runtime entry (quantity 1) assigned to slot 1. Drag/assign that exact `InstanceId` to slots 4, 7 and 2 in succession. After every assignment, exactly one slot may contain that runtime GUID and the newest target slot must win.
@@ -882,3 +894,18 @@ Movement-ownership checks require the entrance to stop AIController pathing, dis
 Recommended UE 5.8/5.8.1 PIE acceptance: test initial spawn, Individual + Whole Group respawn, distance unload/reload and Day/Night swaps with both Free Roam and Spline movement. Observe that the mesh rises smoothly, the capsule never travels underground, no NPC translates during the entrance, and normal locomotion begins immediately after completion. Repeat in multiplayer PIE.
 
 These checks are repository/model validation only and do not claim an Unreal Engine compile.
+
+## v2.17.1 automatic Inventory persistence acceptance
+
+Source/model validation requires explicit persistence-to-Inventory startup coordination, no fixed next-tick starter-load heuristic, synchronous EndPlay character saving, existing-save load-failure overwrite protection, and unchanged character save schema v5. `Tools/test_inventory_automatic_persistence_model.py` guards these contracts.
+
+Recommended PIE acceptance test:
+
+1. Use a fresh Guest/local character with `Inventory -> Starting Items` configured. Begin PIE and confirm the defaults are granted once.
+2. Change the runtime Inventory substantially: consume or transfer starter items, add mined Stone/Ore, equip a different tool, and alter durable-item condition. Wait past the state-save debounce (or call `Flush Pending Character State Save`), then stop PIE normally.
+3. Begin PIE again. Confirm the exact saved quantities/equipped state/durability return automatically and **no Starting Item is re-added**.
+4. Move **every** player Inventory item into a persistent Storage container so the player Inventory is intentionally empty. Stop PIE, restart, and confirm the player Inventory stays empty while the Storage contents remain intact. This is the critical regression case: empty saved Inventory must not mean “fresh character.”
+5. Put items back into the player Inventory, stop/restart again, and confirm the latest state round-trips without requiring a manual `LoadNow`.
+6. During PIE inspect the inherited Persistence component runtime fields: `Initial Auto Load Resolved` should become true; on an existing save `Loaded Existing Character Save` and `Initial Character Save Found` should both be true.
+7. Optional failure-safety test on a disposable copy of the save: make the expected character slot unreadable/corrupt. Confirm `Initial Character Save Found=true`, `Loaded Existing Character Save=false`, `Automatic Save Suppressed After Load Failure=true`, Starting Items are not injected, and stopping PIE does not overwrite the detected file.
+8. Repeat on listen server + client. Only authority mutates/saves Inventory; owner replication should present the restored runtime state on the owning client.

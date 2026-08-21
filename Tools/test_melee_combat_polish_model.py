@@ -92,16 +92,13 @@ assert not can_damage(0, False, False, False)
 assert can_damage(-100, False, False, False)
 
 
-# v2.15.40 relog root fix: account character persistence must never run on AARPGAICharacter.
-# AARPGAICharacter inherits AARPGCharacter and therefore owns Persistence by default; without this
-# scope boundary, every enemy can consume Accounts->GetLastCharacterId() after relog and load the
-# player's character save (including player faction), making enemies untargetable/undamageable.
+# v2.15.40 relog root fix, retained through v2.17.3: account character persistence must never run
+# on an actually AI-controlled AARPGAICharacter. A project may, however, derive a playable pawn from
+# that class and possess it with a PlayerController; runtime ownership, not inheritance alone, is authoritative.
 required_player_only_persistence = [
     (persistence, 'ARPGIsAccountCharacterPersistenceOwner'),
-    (persistence, '!Character->IsA<AARPGAICharacter>()'),
-    (persistence, 'if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return;'),
-    (persistence, 'if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return false;'),
-    (save, 'Character->IsA<AARPGAICharacter>()'),
+    (persistence, '!Character->IsA<AARPGAICharacter>() || Character->IsPlayerControlled()'),
+    (save, 'Character->IsA<AARPGAICharacter>() && !Character->IsPlayerControlled()'),
     (ai_character, 'Persistence->bAutoLoadOnBeginPlay = false;'),
     (ai_character, 'Persistence->bAutoSave = false;'),
     (ai_character, 'Persistence->bSaveOnEndPlay = false;'),
@@ -109,10 +106,12 @@ required_player_only_persistence = [
 for source, token in required_player_only_persistence:
     assert token in source, f"missing v2.15.40 player-only persistence guard: {token}"
 
-def account_character_persistence_allowed(character_kind):
-    return character_kind == "player"
+def account_character_persistence_allowed(character_kind, player_controlled=False):
+    return character_kind == "player" or (character_kind == "ai_subclass" and player_controlled)
 
 assert account_character_persistence_allowed("player")
+assert account_character_persistence_allowed("ai_subclass", player_controlled=True)
+assert not account_character_persistence_allowed("ai_subclass", player_controlled=False)
 assert not account_character_persistence_allowed("ai")
 
 print("melee combat polish model: PASS")

@@ -1,6 +1,7 @@
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGEquipmentComponent.h"
 #include "Components/ARPGQuickAccessComponent.h"
+#include "Components/ARPGPersistenceComponent.h"
 #include "Data/ARPGItemDefinition.h"
 #include "Utilities/ARPGAssetLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -69,25 +70,47 @@ void UARPGInventoryComponent::BackfillDefinitionReference(FARPGInventoryEntry& E
 void UARPGInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
-    if (GetOwner() && GetOwner()->HasAuthority() && bGrantStartingItemsOnBeginPlay && GetWorld())
-        GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UARPGInventoryComponent::ApplyStartingItemsDeferred);
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !bGrantStartingItemsOnBeginPlay) return;
+
+    // Character persistence, when present and configured for automatic load, owns the decision of
+    // whether this is an existing character or a brand-new one. Do not race it with an arbitrary
+    // number of next-tick delays: a loaded save with an intentionally empty Inventory must stay
+    // empty, and legacy Guest identity recovery can legitimately take more than one deferred pass.
+    if (UARPGPersistenceComponent* Persistence = GetOwner()->FindComponentByClass<UARPGPersistenceComponent>())
+    {
+        if (Persistence->bAutoLoadOnBeginPlay)
+        {
+            if (Persistence->HasInitialAutoLoadResolved())
+                ResolveStartingItemsAfterInitialPersistence(Persistence->DidInitialCharacterSaveExist());
+            return;
+        }
+    }
+
+    // NPCs/custom actors without account-character auto-load retain the normal designer-authored
+    // starter-loadout behavior. One deferred frame keeps component initialization deterministic.
+    if (GetWorld()) GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UARPGInventoryComponent::ApplyStartingItemsDeferred);
 }
 
 void UARPGInventoryComponent::ApplyStartingItemsDeferred()
 {
-    // Persistence also performs its automatic load on the next tick. Give that load one full
-    // deferred pass before seeding designer-authored defaults so an existing save never
-    // briefly spawns/equips starter gear before its saved inventory is restored.
-    if (!bStartingItemsDelayPrimed)
-    {
-        bStartingItemsDelayPrimed = true;
-        if (GetWorld())
-        {
-            GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UARPGInventoryComponent::ApplyStartingItemsDeferred);
-            return;
-        }
-    }
     ApplyStartingItems(false);
+}
+
+void UARPGInventoryComponent::ResolveStartingItemsAfterInitialPersistence(bool bExistingCharacterSave)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    if (bExistingCharacterSave)
+    {
+        // Starting Items are creation defaults, not a refill policy. Mark them resolved even when
+        // the loaded runtime Inventory has zero entries so a deliberately emptied saved character
+        // never receives the default loadout again on BeginPlay. bForce remains an explicit escape
+        // hatch for projects that intentionally want to grant the defaults later.
+        bStartingItemsApplied = true;
+        return;
+    }
+
+    if (bGrantStartingItemsOnBeginPlay) ApplyStartingItems(false);
 }
 
 bool UARPGInventoryComponent::ApplyStartingItems(bool bForce)

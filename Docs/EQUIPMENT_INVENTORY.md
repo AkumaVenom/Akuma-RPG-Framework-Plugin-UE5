@@ -30,42 +30,17 @@ Equip On Spawn = true
 Quick Access Slot (0 = None) = 1
 ```
 
-`Grant Starting Items On Begin Play` is enabled by default. `Only When Inventory Is Empty` is also enabled by default, preventing the starter list from being stacked repeatedly onto an existing runtime inventory. The authority converts each Item Definition into normal `FARPGInventoryEntry` instances with fresh GUIDs and uses the normal Equipment component for optional auto-equip.
+`Grant Starting Items On Begin Play` is enabled by default. `Only When Inventory Is Empty` still protects explicit/manual starter grants from stacking onto a populated runtime Inventory. The authority converts each Item Definition into normal `FARPGInventoryEntry` instances with fresh GUIDs and uses the normal Equipment component for optional auto-equip.
 
-Existing saved inventories still load through the normal save system and replace runtime state. Starting Items are authoring defaults, not a second inventory format. Automatic starter seeding is deliberately deferred until after the normal Begin Play persistence-load pass, preventing saved characters from briefly receiving/equipping starter gear before their saved inventory is restored.
+### Automatic save/load ownership — v2.17.3
 
-When `Quick Access Slot` is greater than zero, the framework first creates the normal runtime Inventory entry and then pins that **owned instance** to the inherited Quick Access component. If the same starting item also has `Equip On Spawn`, that hotbar slot becomes the initial active slot. See `Docs/QUICK_ACCESS.md` for switching and consumables.
+Starting Items are **character-creation defaults**, not a refill policy. Persistence first resolves the stable account/Guest CharacterId and whether an existing character save is present. Existing saved state is authoritative even when the saved Inventory contains zero entries. A genuinely fresh character receives Starting Items once; a detected existing save that fails to load suppresses both starter seeding and automatic overwrite for that session.
 
-## Create `DA_StoneAxe`
+From v2.17.3 the decision is an explicit bootstrap state rather than a timing inference. `Fresh Character - No Save` grants the authored Starting Items, auto-equip and Quick Access assignments and immediately establishes the first snapshot when automatic persistence is enabled. `Loaded Existing Save` never grants defaults, including when the saved Inventory is intentionally empty. `Existing Save - Load Failed` grants nothing and blocks automatic overwrite. Runtime `Initial Resolved Character Id` and `Initial Resolved Character Save Slot` show exactly which identity/slot was used.
 
-Create **Miscellaneous > Data Asset > ARPGItemDefinition** and configure the normal identity/item fields, then:
+The write side is state-driven from v2.17.2. On the inherited **Persistence** component, `Save Inventory And Quick Access Changes Automatically` defaults to **true**. Authoritative Inventory changes (including equipment flags/durability/quantities/transfers) and Quick Access edits restart a single debounce timer; after the default 1.5-second quiet period one complete character snapshot is committed. This means the player does not need to wait for the 120-second periodic autosave or rely on PIE shutdown for an Inventory change to become persistent.
 
-```text
-Equipment
-  Equippable = true
-  Equipment Slot = Equipment.Weapon.MainHand   (or your project's slot tag)
-
-Gathering
-  Gathering Tool Tags = Item.Tool.Axe
-  Gathering Tool Tier = 1
-  Gathering Power = 1.0
-
-Equipment > Visual
-  Attach Socket = your right-hand/weapon socket
-  Equipped Static Mesh = SM_Stoneaxe
-  Equipped Skeletal Mesh = none
-  Equipped Relative Transform = tune location/rotation/scale if needed
-
-Equipment > Audio
-  Equip Sound = optional
-  Unequip Sound = optional
-  Combat Swing Sound = optional ordinary melee swing
-  Gathering Swing Sound = optional Woodcutting/Mining swing; falls back to Combat Swing Sound
-  Gathering Hit Sound = optional axe/tree or pickaxe/rock impact
-  Equipment Audio Volume = 1.0
-```
-
-A static axe asset does not require another Blueprint. Assign it directly to **Equipped Static Mesh**. If the weapon has a skeletal mesh, use **Equipped Skeletal Mesh** instead.
+Character snapshots are serialized synchronously so an older async write cannot finish after a newer Inventory state. `SaveNow`, periodic character autosave, debounced state saves and `Save On EndPlay` share that serialized path. EndPlay commits for every player-character teardown reason, including explicit destruction. World saving remains a separate asynchronous system. `Flush Pending Character State Save` can be called from a project save-point/menu when an immediate checkpoint is desired. Character save schema remains v5.
 
 ### Pickaxes use the same gathering contract
 

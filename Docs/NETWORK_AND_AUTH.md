@@ -1,5 +1,15 @@
 # Networking, Login and Authority
 
+## Automatic character persistence — v2.17.3
+
+Character Inventory/equipment/Quick Access state remains server-authoritative and save-backed. v2.17.3 resolves startup through an explicit state machine: **Fresh Character - No Save**, **Loaded Existing Save**, or **Existing Save - Load Failed**. Fresh state seeds authored defaults and can immediately establish the first snapshot; loaded state is authoritative even when Inventory/Quick Access are intentionally empty; load-failure state suppresses defaults and automatic overwrite. Runtime diagnostics expose the resolved CharacterId and exact slot.
+
+The v2.17.2 write path is mutation-driven. On authority, Persistence subscribes to Inventory, Quick Access layout and active-slot events. After the configured debounce quiet period it writes one complete character snapshot. These listeners ignore load-time broadcasts until the initial load decision has resolved, so restore order remains `Inventory -> Quick Access -> remaining character systems` without a partial-save race.
+
+Automatic character saves are serialized synchronously. This is deliberate: allowing multiple `AsyncSaveGameToSlot` character snapshots to overlap can make an older snapshot complete after the latest Inventory/hotbar state. World saves remain asynchronous and independent. `Save On EndPlay` is still a final guard but no longer carries sole responsibility for normal Inventory persistence and now covers explicit player-pawn destruction as well.
+
+This changes no replication trust boundary and requires no save migration: character save remains v5, world save remains v9.
+
 ## Mining authority — v2.17.0
 
 Mining intent may originate from Basic Attack, `Start Mining From View`, `Mine Rock Once` or `InteractWorld`, but mutation remains server-owned. Authority revalidates `AARPGMineableRock` availability/build suppression, distance, Mining level, exact equipped runtime pickaxe instance, durability, required tag/tool tier, Mining Power, node health, XP, normal/bonus reward rolls, Inventory adds, durability loss, depletion and respawn.

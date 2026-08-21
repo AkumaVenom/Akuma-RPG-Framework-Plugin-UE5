@@ -367,9 +367,11 @@ Create an `ARPGMountDefinition` with its mount pawn class and movement/usage set
 
 ## 16. Saving
 
-For single-player, enable auto-load/auto-save in Project Settings. The ready character's persistence component resolves account/character slots and the GameMode can load/save runtime player-built world state.
+The ready `ARPGCharacter` has automatic character persistence enabled by default. On BeginPlay it resolves the stable account/Guest CharacterId, loads the existing character save when present, and only then allows Inventory creation defaults to seed. Existing saved Inventory is authoritative even when intentionally empty; `Starting Items` are granted automatically only to a genuinely fresh character.
 
-Always provide an explicit menu/save-point save before a controlled application exit. Periodic autosave remains useful as crash-loss protection.
+From v2.17.2, Inventory/equipment-backed Inventory mutations and Quick Access changes also trigger a debounced automatic character snapshot during gameplay (`Persistence -> Automatic State Save`). Character saves are serialized synchronously, so the player does not need to wait for the long periodic autosave or rely on EndPlay to retain a changed backpack/hotbar. `Save On EndPlay` remains a final guard, while `ARPGGameMode` independently handles runtime player-built world state. `Flush Pending Character State Save` is available for explicit save-point/menu checkpoints.
+
+From v2.17.3, enabling `Auto Load on Begin Play` also guarantees a deterministic fresh-character branch: if the resolved character slot does not exist, Starting Items and their initial Quick Access assignments are granted once and the first snapshot is established automatically. In PIE, inspect `Persistence -> Runtime -> Initial Character Persistence State`, `Initial Resolved Character Id`, and `Initial Resolved Character Save Slot` when diagnosing save identity.
 
 ## 17. Login and direct IP
 

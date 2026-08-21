@@ -156,18 +156,36 @@ FString UARPGSaveSubsystem::MakeWorldSlotName(FString WorldId) const
     return FString::Printf(TEXT("ARPG_World_%s"), *WorldId.Left(64));
 }
 
-bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverride)
+AARPGCharacter* UARPGSaveSubsystem::ResolveSaveableCharacter(AActor* CharacterActor) const
 {
     AARPGCharacter* Character = Cast<AARPGCharacter>(CharacterActor);
-    // Account character slots are strictly player-character persistence. AI inherits AARPGCharacter for
-    // shared RPG systems, but saving an NPC here can overwrite/alias the active player's account slot.
-    if (!Character || Character->IsA<AARPGAICharacter>() || (Character->GetNetMode() == NM_Client && !Character->HasAuthority())) return false;
+    // Account character slots are player-character persistence. Native AI actors remain excluded, but
+    // projects may legitimately derive a playable pawn from AARPGAICharacter and possess it with a
+    // PlayerController; class inheritance alone must not disable that player's persistence.
+    if (!Character) return nullptr;
+    if (Character->IsA<AARPGAICharacter>() && !Character->IsPlayerControlled()) return nullptr;
+    if (Character->GetNetMode() == NM_Client && !Character->HasAuthority()) return nullptr;
+    return Character;
+}
+
+UARPGSaveGame* UARPGSaveSubsystem::BuildCharacterSave(AARPGCharacter* Character)
+{
+    if (!Character) return nullptr;
     Character->EnsureCharacterId();
-    UARPGSaveGame* Save = Cast<UARPGSaveGame>(UGameplayStatics::CreateSaveGameObject(UARPGSaveGame::StaticClass())); if (!Save) return false;
+    UARPGSaveGame* Save = Cast<UARPGSaveGame>(UGameplayStatics::CreateSaveGameObject(UARPGSaveGame::StaticClass()));
+    if (!Save) return nullptr;
+
     if (UARPGAccountSubsystem* Accounts = GetGameInstance() ? GetGameInstance()->GetSubsystem<UARPGAccountSubsystem>() : nullptr)
-    { Save->AccountId = Accounts->CurrentAccountId; Accounts->RegisterCharacterId(Character->CharacterId); }
+    {
+        Save->AccountId = Accounts->CurrentAccountId;
+        Accounts->RegisterCharacterId(Character->CharacterId);
+    }
+
     FARPGCharacterSaveData& D = Save->Character;
-    D.CharacterId = Character->CharacterId; D.CharacterName = Character->RPGCharacterName; D.Location = Character->GetActorLocation(); D.Rotation = Character->GetActorRotation();
+    D.CharacterId = Character->CharacterId;
+    D.CharacterName = Character->RPGCharacterName;
+    D.Location = Character->GetActorLocation();
+    D.Rotation = Character->GetActorRotation();
     if (Character->ClassComponent) D.ClassId = Character->ClassComponent->GetClassId();
     if (Character->Faction) { D.PrimaryFactionId = Character->Faction->GetPrimaryFactionId(); D.Reputation = Character->Faction->Reputation; }
     if (Character->Stats) { D.Health=Character->Stats->Health; D.Mana=Character->Stats->Mana; D.Stamina=Character->Stats->Stamina; D.StatProgression=Character->Stats->MakeStatProgressionSaveState(); }
@@ -183,15 +201,42 @@ bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverr
     if (Character->Mounts) D.Mounts = Character->Mounts->MakeMountSaveState();
     if (Character->Group) { D.GroupMembership = Character->Group->Membership; D.GuildId = Character->Group->GuildId; }
     Save->SavedAtUtc = FDateTime::UtcNow();
+    return Save;
+}
+
+bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverride)
+{
+    AARPGCharacter* Character = ResolveSaveableCharacter(CharacterActor);
+    UARPGSaveGame* Save = BuildCharacterSave(Character);
+    if (!Character || !Save) return false;
+
+    // Character snapshots are intentionally serialized synchronously. Inventory/QuickAccess can mutate
+    // frequently and a previous AsyncSaveGameToSlot completion is allowed to finish after a newer write,
+    // which can resurrect an older/default loadout. World saves remain async; character saves are small
+    // and are debounced by UARPGPersistenceComponent for normal automatic gameplay writes.
     const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotName(Character->CharacterId) : SlotOverride;
-    FAsyncSaveGameToSlotDelegate Delegate; Delegate.BindUObject(this, &UARPGSaveSubsystem::HandleAsyncSaveComplete);
-    UGameplayStatics::AsyncSaveGameToSlot(Save, Slot, 0, Delegate); return true;
+    const bool bSuccess = UGameplayStatics::SaveGameToSlot(Save, Slot, 0);
+    OnSaveComplete.Broadcast(Slot, bSuccess);
+    return bSuccess;
+}
+
+bool UARPGSaveSubsystem::SaveCharacterImmediate(AActor* CharacterActor, FString SlotOverride)
+{
+    AARPGCharacter* Character = ResolveSaveableCharacter(CharacterActor);
+    UARPGSaveGame* Save = BuildCharacterSave(Character);
+    if (!Character || !Save) return false;
+
+    const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotName(Character->CharacterId) : SlotOverride;
+    const bool bSuccess = UGameplayStatics::SaveGameToSlot(Save, Slot, 0);
+    OnSaveComplete.Broadcast(Slot, bSuccess);
+    return bSuccess;
 }
 
 bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverride)
 {
     AARPGCharacter* Character = Cast<AARPGCharacter>(CharacterActor);
-    if (!Character || Character->IsA<AARPGAICharacter>()) return false;
+    if (!Character) return false;
+    if (Character->IsA<AARPGAICharacter>() && !Character->IsPlayerControlled()) return false;
     if (!Character->CharacterId.IsValid() && SlotOverride.IsEmpty()) return false;
     if (Character->GetNetMode() == NM_Client && !Character->HasAuthority()) return false;
     const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotName(Character->CharacterId) : SlotOverride;

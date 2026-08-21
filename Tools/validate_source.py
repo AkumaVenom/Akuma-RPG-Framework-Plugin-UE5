@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21700 or descriptor.get("VersionName") != "2.17.0-alpha":
-        issues.append("package descriptor must identify v2.17.0-alpha")
+    if descriptor.get("Version") != 21703 or descriptor.get("VersionName") != "2.17.3-alpha":
+        issues.append("package descriptor must identify v2.17.3-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -2819,11 +2819,17 @@ if readme_2150.exists():
     if not release_documented("v2.16.11-alpha — Player-Built Settlement Spline Paths"): issues.append("README or Docs/CHANGELOG.md must document v2.16.11 player-built Settlement spline paths")
     if not release_documented("v2.16.12-alpha — Settlement Path Turn Tangent Stability Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.16.12 Settlement Path turn tangent stability root fix")
     if not release_documented("v2.17.0-alpha — First-Class 1–99 Mining & Mineable Resource Nodes"): issues.append("README or Docs/CHANGELOG.md must document v2.17.0 first-class Mining")
+    if not release_documented("v2.17.1-alpha — Automatic Player Inventory Persistence Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.17.1 automatic player Inventory persistence root fix")
+    if not release_documented("v2.17.2-alpha — Transactional Automatic Inventory + Quick Access Persistence Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.17.2 transactional automatic Inventory + Quick Access persistence root fix")
+    if not release_documented("v2.17.3-alpha — Deterministic Fresh-Character Persistence Bootstrap Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.17.3 deterministic fresh-character persistence bootstrap root fix")
 
     persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
     ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")
-    for required in ("ARPGIsAccountCharacterPersistenceOwner", "!Character->IsA<AARPGAICharacter>()", "if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return;"):
-        if required not in persistence_cpp: issues.append(f"v2.15.40 player-only persistence guard missing: {required}")
+    for required in ("ARPGIsAccountCharacterPersistenceOwner", "!Character->IsA<AARPGAICharacter>()", "Character->IsPlayerControlled()"):
+        if required not in persistence_cpp: issues.append(f"v2.15.40/v2.17.3 player-only persistence guard missing: {required}")
+    beginplay_slice = persistence_cpp[persistence_cpp.index("void UARPGPersistenceComponent::BeginPlay"):persistence_cpp.index("void UARPGPersistenceComponent::AttemptAutoLoad")] if "void UARPGPersistenceComponent::BeginPlay" in persistence_cpp and "void UARPGPersistenceComponent::AttemptAutoLoad" in persistence_cpp else ""
+    if "if (!ARPGIsAccountCharacterPersistenceOwner(GetOwner())) return;" in beginplay_slice:
+        issues.append("v2.17.3 Persistence BeginPlay must not deadlock Starting Items behind a class-only owner early return")
     for required in ("Persistence->bAutoLoadOnBeginPlay = false;", "Persistence->bAutoSave = false;", "Persistence->bSaveOnEndPlay = false;"):
         if required not in ai_character_cpp_v21540: issues.append(f"v2.15.40 AI persistence default guard missing: {required}")
     if save_cpp.count("Character->IsA<AARPGAICharacter>()") < 2:
@@ -2832,6 +2838,111 @@ if readme_2150.exists():
     if not release_documented("v2.15.22-alpha — Hosted Insert Structural Transparency + Wall Facing Continuity Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.22 hosted-insert structural transparency and wall-facing continuity fix")
     splash = '<img width="1672" height="941" alt="AumaRPGFWSplash"'
     if splash not in rt215[:500]: issues.append("README GitHub splash must remain at the top of the document")
+
+# v2.17.1 automatic character Inventory persistence / Starting Items ownership.
+inv_h_persist = root / "Public" / "Components" / "ARPGInventoryComponent.h"
+inv_cpp_persist = root / "Private" / "Components" / "ARPGInventoryComponent.cpp"
+persist_h_v2171 = root / "Public" / "Components" / "ARPGPersistenceComponent.h"
+persist_cpp_v2171 = root / "Private" / "Components" / "ARPGPersistenceComponent.cpp"
+save_h_v2171 = root / "Public" / "Subsystems" / "ARPGSaveSubsystem.h"
+save_cpp_v2171 = root / "Private" / "Subsystems" / "ARPGSaveSubsystem.cpp"
+if inv_h_persist.exists() and inv_cpp_persist.exists() and persist_cpp_v2171.exists():
+    inv_h_text = inv_h_persist.read_text(errors="replace")
+    inv_cpp_text = inv_cpp_persist.read_text(errors="replace")
+    persist_text = persist_cpp_v2171.read_text(errors="replace")
+    if "ResolveStartingItemsAfterInitialPersistence" not in inv_h_text or "ResolveStartingItemsAfterInitialPersistence" not in inv_cpp_text:
+        issues.append("v2.17.1 Inventory must coordinate Starting Items with initial character persistence")
+    if "bStartingItemsDelayPrimed" in inv_h_text or "bStartingItemsDelayPrimed" in inv_cpp_text:
+        issues.append("v2.17.1 Starting Items must not rely on fixed BeginPlay tick-delay ordering")
+    for required in ("DoesCharacterSaveExist(", "ResolveInitialAutoLoad", "bAutomaticSaveSuppressedAfterLoadFailure", "SaveNowImmediate()"):
+        if required not in persist_text:
+            issues.append(f"v2.17.1 automatic persistence missing required safety path: {required}")
+if save_h_v2171.exists() and save_cpp_v2171.exists():
+    save_h_text = save_h_v2171.read_text(errors="replace")
+    save_cpp_text = save_cpp_v2171.read_text(errors="replace")
+    if "SaveCharacterImmediate" not in save_h_text or "SaveCharacterImmediate" not in save_cpp_text:
+        issues.append("v2.17.1 controlled character shutdown must expose a synchronous save path")
+    elif "UGameplayStatics::SaveGameToSlot" not in save_cpp_text[save_cpp_text.index("SaveCharacterImmediate"):save_cpp_text.index("LoadCharacter", save_cpp_text.index("SaveCharacterImmediate"))]:
+        issues.append("v2.17.1 SaveCharacterImmediate must synchronously commit through SaveGameToSlot")
+
+
+# v2.17.2 transactional automatic Inventory + Quick Access persistence.
+persist_h_v2172 = root / "Public" / "Components" / "ARPGPersistenceComponent.h"
+persist_cpp_v2172 = root / "Private" / "Components" / "ARPGPersistenceComponent.cpp"
+quick_h_v2172 = root / "Public" / "Components" / "ARPGQuickAccessComponent.h"
+if persist_h_v2172.exists() and persist_cpp_v2172.exists() and quick_h_v2172.exists():
+    persist_h_text = persist_h_v2172.read_text(errors="replace")
+    persist_cpp_text = persist_cpp_v2172.read_text(errors="replace")
+    quick_h_text = quick_h_v2172.read_text(errors="replace")
+    for required in (
+        "bAutoSaveCharacterStateChanges = true",
+        "CharacterStateSaveDebounceSeconds = 1.5f",
+        "FlushPendingCharacterStateSave",
+        "AutomaticCharacterStateSaveCount",
+    ):
+        if required not in persist_h_text and required not in persist_cpp_text:
+            issues.append(f"v2.17.2 automatic character-state persistence missing: {required}")
+    for required in (
+        "OnInventoryChanged.AddDynamic(this, &UARPGPersistenceComponent::HandleInventoryChangedForPersistence)",
+        "OnQuickAccessChanged.AddDynamic(this, &UARPGPersistenceComponent::HandleQuickAccessChangedForPersistence)",
+        "OnActiveQuickAccessSlotChanged.AddDynamic(this, &UARPGPersistenceComponent::HandleActiveQuickAccessChangedForPersistence)",
+        "if (bAutoLoadOnBeginPlay && !bInitialAutoLoadResolved) return;",
+        "SetTimer(CharacterStateSaveTimer",
+    ):
+        if required not in persist_cpp_text:
+            issues.append(f"v2.17.2 mutation-driven persistence missing required path: {required}")
+    endplay_slice = persist_cpp_text[persist_cpp_text.index("void UARPGPersistenceComponent::EndPlay"):] if "void UARPGPersistenceComponent::EndPlay" in persist_cpp_text else ""
+    if "EndPlayReason != EEndPlayReason::Destroyed" in endplay_slice:
+        issues.append("v2.17.2 EndPlay persistence must not exclude explicitly destroyed player pawns")
+    if "FARPGActiveQuickAccessSlotChanged OnActiveQuickAccessSlotChanged" not in quick_h_text:
+        issues.append("v2.17.2 Quick Access active-slot persistence trigger delegate missing")
+
+if save_cpp_v2171.exists():
+    save_cpp_text = save_cpp_v2171.read_text(errors="replace")
+    try:
+        char_start = save_cpp_text.index("bool UARPGSaveSubsystem::SaveCharacter(AActor*")
+        char_end = save_cpp_text.index("bool UARPGSaveSubsystem::SaveCharacterImmediate", char_start)
+        char_save_slice = save_cpp_text[char_start:char_end]
+        if "UGameplayStatics::SaveGameToSlot" not in char_save_slice or "UGameplayStatics::AsyncSaveGameToSlot(" in char_save_slice:
+            issues.append("v2.17.2 SaveCharacter must serialize character snapshots synchronously")
+        world_start = save_cpp_text.index("bool UARPGSaveSubsystem::SaveWorld")
+        world_end = save_cpp_text.index("bool UARPGSaveSubsystem::LoadWorld", world_start)
+        if "AsyncSaveGameToSlot" not in save_cpp_text[world_start:world_end]:
+            issues.append("v2.17.2 world saves should remain asynchronous")
+    except ValueError:
+        issues.append("v2.17.2 character/world save functions could not be located for serialization validation")
+
+
+# v2.17.3 deterministic fresh-character persistence bootstrap.
+if persist_h_v2172.exists() and persist_cpp_v2172.exists():
+    persist_h_text = persist_h_v2172.read_text(errors="replace")
+    persist_cpp_text = persist_cpp_v2172.read_text(errors="replace")
+    for required in (
+        "EARPGInitialCharacterPersistenceState",
+        "FreshCharacterNoSave",
+        "LoadedExistingSave",
+        "ExistingSaveLoadFailed",
+        "InitialResolvedCharacterId",
+        "InitialResolvedCharacterSaveSlot",
+    ):
+        if required not in persist_h_text and required not in persist_cpp_text:
+            issues.append(f"v2.17.3 persistence bootstrap missing: {required}")
+    try:
+        attempt_start = persist_cpp_text.index("void UARPGPersistenceComponent::AttemptAutoLoad")
+        attempt_end = persist_cpp_text.index("void UARPGPersistenceComponent::ResolveInitialAutoLoad", attempt_start)
+        attempt_slice = persist_cpp_text[attempt_start:attempt_end]
+        for required in (
+            "const bool bExistingSaveFound",
+            "if (!bExistingSaveFound)",
+            "ResolveInitialAutoLoad(EARPGInitialCharacterPersistenceState::FreshCharacterNoSave)",
+            "SaveNowImmediate();",
+            "if (LoadNow())",
+            "ExistingSaveLoadFailed",
+        ):
+            if required not in attempt_slice:
+                issues.append(f"v2.17.3 deterministic startup path missing: {required}")
+    except ValueError:
+        issues.append("v2.17.3 persistence bootstrap functions could not be located")
 
 markers = []
 for p in source_files:
@@ -2851,4 +2962,3 @@ result = {
 }
 print(json.dumps(result, indent=2))
 sys.exit(1 if issues else 0)
-

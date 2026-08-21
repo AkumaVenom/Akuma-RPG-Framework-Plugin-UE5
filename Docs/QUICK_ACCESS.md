@@ -251,7 +251,11 @@ Quick Access Slots
 Active Quick Access Slot Number
 ```
 
-Inventory is restored first. Quick Access is restored second and repairs each saved assignment against the loaded runtime inventory instances.
+Inventory is restored first. Quick Access is restored second and repairs each saved assignment against the loaded runtime inventory instances. From v2.17.2, Quick Access is also a first-class automatic persistence trigger: assignment/clear/swap changes and active-slot changes dirty the owning character snapshot, sharing the same debounced save with Inventory mutations. Load-time repair broadcasts occur before initial persistence is marked resolved and therefore cannot accidentally save a partial load.
+
+For a **fresh character with no save**, v2.17.3 applies Starting Item Quick Access Slot assignments as part of the explicit fresh-character bootstrap and immediately establishes the first snapshot when automatic persistence is enabled. Existing saved hotbars remain authoritative, including a deliberately empty hotbar.
+
+The inherited Persistence component exposes `Save Inventory And Quick Access Changes Automatically` (default true) and `Character State Save Debounce Seconds` (default 1.5). Character writes are serialized synchronously; world saves remain independent. This prevents a stale older character snapshot from racing a newer hotbar/Inventory state.
 
 This is important because hotbar assignment remains a view/control layer over the real inventory rather than a second source of item ownership.
 

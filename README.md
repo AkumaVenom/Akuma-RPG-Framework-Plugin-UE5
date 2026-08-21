@@ -8,9 +8,9 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.17.0-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.17.3-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest release:** v2.17.0 adds first-class **1–99 Mining**. The ready character now owns a replicated Mining component; Blueprintable `ARPGMineableRock` nodes support authority-selected random mesh/scale/yaw variation, level and pickaxe-tier gates, repeated strike health, per-strike Stone/Ore rewards, final depletion payloads, level/tool-scaled bonus Gem finds, FX/audio, timed respawn and build-aware regeneration suppression. Mining can be driven by the existing Basic Attack as a free context-sensitive strike or by contextual Interact for automatic repeated mining. Generic Skill Definitions gain an optional RuneScape-style 1–99 XP model while existing curves remain authoritative. Character save remains v5 and world save remains v9. See [`Docs/MINING.md`](Docs/MINING.md), [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
+> **Latest release:** v2.17.3 fixes the fresh-character side of automatic persistence with a deterministic **BeginPlay persistence bootstrap**. Auto-load now explicitly resolves `Fresh Character - No Save`, `Loaded Existing Save`, or `Existing Save - Load Failed` before Inventory initialization can finish. A proven no-save character receives authored Starting Items and their initial Quick Access assignments, then immediately establishes its first character snapshot when automatic persistence is enabled; a loaded save remains authoritative even when intentionally empty, while a proven existing-but-unreadable save still suppresses defaults and overwrite. The bootstrap can no longer deadlock behind a class-only player-persistence guard, and runtime Details expose the resolved CharacterId and exact save slot for diagnosis. Character save remains v5 and world save remains v9. See [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md), [`Docs/QUICK_ACCESS.md`](Docs/QUICK_ACCESS.md), [`Docs/NETWORK_AND_AUTH.md`](Docs/NETWORK_AND_AUTH.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
 
 ## Start here
 
@@ -306,7 +306,27 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.17.0-alpha
+## Current release — v2.17.3-alpha
+
+v2.17.3 replaces the ambiguous fresh-character startup path with an explicit persistence bootstrap state machine. `Persistence -> Runtime -> Initial Character Persistence State` leaves `Unresolved` on authority and resolves to **Fresh Character - No Save**, **Loaded Existing Save**, or **Existing Save - Load Failed** whenever Auto Load is enabled. The exact `Initial Resolved Character Id` and `Initial Resolved Character Save Slot` are exposed at runtime so editor PIE can verify which identity/slot was actually used.
+
+A fresh/no-save result now applies `Inventory -> Starting Items` synchronously through the existing creation-default path, including authored auto-equip and Quick Access Slot assignments, and immediately commits that initialized snapshot when any automatic persistence mode is enabled. Existing saved state remains authoritative even when Inventory/Quick Access are empty. A detected existing slot that fails to load still suppresses Starting Items and automatic writes to protect the save. Persistence BeginPlay no longer returns solely because of native AI-class inheritance; a player-controlled subclass can own account-character persistence, while genuinely AI-controlled actors remain excluded and keep the existing AI persistence defaults.
+
+The v2.17.2 mutation-driven debounce, synchronous character snapshots and EndPlay guard remain intact. Character save remains v5 and world save remains v9.
+
+## Previous release — v2.17.2-alpha
+
+v2.17.2 fixes the remaining real-project Inventory/Quick Access reset path by moving automatic character persistence from a timer/teardown-only policy to **state-driven persistence**. The authoritative `UARPGPersistenceComponent` now listens to Inventory changes, Quick Access assignment changes and active-slot changes. After a short configurable quiet period (`Persistence | Automatic State Save -> Character State Save Debounce Seconds`, 1.5 seconds by default), it commits one complete character snapshot. Rapid drag/drop, storage transfers, Mining rewards, consumable use and hotbar edits therefore collapse into one write rather than producing a disk operation for every mutation.
+
+Automatic character writes are now serialized synchronously. `SaveNow`, periodic character autosave, debounced Inventory/Quick Access commits and `Save On EndPlay` all use the same synchronous character-save path; the lower-level `SaveCharacter` API is also serialized. This removes the stale-write race where an older `AsyncSaveGameToSlot` snapshot could complete after a newer teardown save and restore an earlier/default Inventory on the following BeginPlay. World saving remains independently asynchronous.
+
+`Save Inventory And Quick Access Changes Automatically` is enabled by default and is independent of the long periodic autosave interval. A fresh character still receives Starting Items only after persistence has resolved that no save exists; that first loadout becomes dirty state and is saved automatically. Existing saves remain authoritative even with an empty Inventory. Detected-but-unreadable saves still suppress automatic writes. EndPlay no longer excludes the `Destroyed` reason, because PIE/respawn/project-owned teardown can legitimately destroy the player pawn before world shutdown. Character save remains **v5** and world save remains **v9**; no migration is required.
+
+## Previous release — v2.17.1-alpha
+
+v2.17.1 introduced explicit initial-load ownership between Persistence and Starting Items: persistence resolves the stable CharacterId and whether a character save exists before Inventory may seed creation defaults. Existing saved characters—including intentionally empty Inventories—suppress Starting Items, while detected load failures suppress destructive automatic overwrite. v2.17.2 retains that startup contract and adds the missing state-driven save guarantee.
+
+## Previous release — v2.17.0-alpha
 
 v2.17.0 promotes Mining into a first-class gathering profession beside Woodcutting. `AARPGCharacter` now creates a replicated `ARPGMiningComponent` with native Mining level/XP/progress queries, exact equipped runtime-pickaxe resolution, power/tier/durability handling, camera targeting, single-strike and automatic repeated Mining, replicated montage/audio presentation and Blueprint events. The existing Basic Attack checks a Mineable Rock before ordinary combat resource spending, so a valid pickaxe strike is a free context-sensitive gathering action; the new `InteractWorld` convenience wrapper tries Mineable Rock -> Tree -> built structure while all dedicated legacy interaction functions remain available.
 

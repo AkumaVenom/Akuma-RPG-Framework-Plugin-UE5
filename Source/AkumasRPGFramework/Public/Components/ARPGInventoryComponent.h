@@ -61,6 +61,13 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory", meta=(BlueprintAuthorityOnly)) void ReplaceInventory(const TArray<FARPGInventoryEntry>& NewItems);
     UFUNCTION(BlueprintCallable, Category="ARPG|Inventory|Starting Items", meta=(BlueprintAuthorityOnly)) bool ApplyStartingItems(bool bForce=false);
 
+    /**
+     * Resolves automatic starter seeding after the owning character's initial persistence attempt.
+     * Existing character saves are authoritative even when their saved Inventory is intentionally empty.
+     * Fresh characters seed the authored Starting Items exactly once.
+     */
+    void ResolveStartingItemsAfterInitialPersistence(bool bExistingCharacterSave);
+
     // Resolve the exact definition owned by a runtime inventory entry. New entries carry a soft asset reference;
     // older ID-only saves fall back to the framework resolver. Runtime ownership/equipment is never inferred
     // merely because a Data Asset exists in the project.
@@ -86,5 +93,4 @@ protected:
     void BackfillDefinitionReference(FARPGInventoryEntry& Entry);
     void ApplyStartingItemsDeferred();
     bool bStartingItemsApplied = false;
-    bool bStartingItemsDelayPrimed = false;
 };
