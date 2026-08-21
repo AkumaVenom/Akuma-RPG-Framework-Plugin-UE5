@@ -162,7 +162,11 @@ enum class EARPGCraftingStationState : uint8 { Idle, Crafting, Paused, Blocked }
 UENUM(BlueprintType)
 enum class EARPGPlacementResult : uint8
 {
-    Valid, NoPiece, TooFar, Blocked, Unsupported, MissingResources, Restricted, InvalidSurface
+    Valid, NoPiece, TooFar, Blocked, Unsupported, MissingResources, Restricted, InvalidSurface,
+    /** Settlement Path point is closer than the authored minimum segment length. Appended for enum stability. */
+    PathSegmentTooShort,
+    /** Settlement Path point exceeds the authored maximum segment length. Appended for enum stability. */
+    PathSegmentTooLong
 };
 
 UENUM(BlueprintType)
@@ -436,6 +440,12 @@ struct AKUMASRPGFRAMEWORK_API FARPGPlacedBuildingSave
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bDoorOpen = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bWindowOpen = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bLightOn = false;
+    /** v9 Settlement Path segment geometry in actor-local space. Ignored by non-Path pieces. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FVector SettlementPathStartLocal = FVector::ZeroVector;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FVector SettlementPathEndLocal = FVector::ZeroVector;
+    /** Optional v9 endpoint tangent overrides used to keep consecutive spline segments visually C1-aligned at turns. Zero means auto tangent. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FVector SettlementPathStartTangentLocal = FVector::ZeroVector;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FVector SettlementPathEndTangentLocal = FVector::ZeroVector;
     /** v8 settlement Bed role/assignment. Ignored by non-Bed pieces. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) EARPGBedRole BedRole = EARPGBedRole::Unassigned;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid BedAssignedResidentId;

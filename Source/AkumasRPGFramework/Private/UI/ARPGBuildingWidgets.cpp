@@ -80,6 +80,8 @@ namespace
             case EARPGPlacementResult::MissingResources: return NSLOCTEXT("AkumasRPGFramework", "BuildMissing", "Missing required materials");
             case EARPGPlacementResult::Restricted: return NSLOCTEXT("AkumasRPGFramework", "BuildRestricted", "Building is restricted here");
             case EARPGPlacementResult::InvalidSurface: return NSLOCTEXT("AkumasRPGFramework", "BuildInvalidSurface", "Invalid surface");
+            case EARPGPlacementResult::PathSegmentTooShort: return NSLOCTEXT("AkumasRPGFramework", "BuildPathTooShort", "Path point is too close to the previous point");
+            case EARPGPlacementResult::PathSegmentTooLong: return NSLOCTEXT("AkumasRPGFramework", "BuildPathTooLong", "Path point is too far from the previous point");
             default: return NSLOCTEXT("AkumasRPGFramework", "BuildNoPiece", "Select a build piece");
         }
     }
@@ -255,6 +257,16 @@ void UARPGBuildPlacementHUDWidget::RefreshPlacementHUD()
     if(PlacementPieceNameText)PlacementPieceNameText->SetText(Piece?DefinitionName(Piece,Piece->DefinitionId):FText::GetEmpty());
     if(PlacementCostText)PlacementCostText->SetText(Piece?BuildAmountList(Piece->BuildCost):FText::GetEmpty());
     if(PlacementStatusText){const EARPGPlacementResult R=Character->Building->GetCurrentPreviewResult();PlacementStatusText->SetText(PlacementResultText(R));PlacementStatusText->SetColorAndOpacity(FSlateColor(R==EARPGPlacementResult::Valid?FLinearColor(0.34f,0.94f,0.44f,1.f):FLinearColor(0.96f,0.36f,0.28f,1.f)));}
+    if(PlacementControlsText)
+    {
+        if(Piece&&Piece->PieceKind==EARPGBuildPieceKind::SettlementPath)
+        {
+            PlacementControlsText->SetText(Character->Building->HasSettlementPathStartPoint()
+                ? NSLOCTEXT("AkumasRPGFramework","SettlementPathControlsContinue","Place next path point • Continue until Cancel • Previous / Next Piece")
+                : NSLOCTEXT("AkumasRPGFramework","SettlementPathControlsStart","Place first path point • Then continue placing points until Cancel"));
+        }
+        else PlacementControlsText->SetText(NSLOCTEXT("AkumasRPGFramework","PlacementControls","Place • Rotate • Previous / Next Piece • Cancel • Reopen Build Menu"));
+    }
     BP_OnBuildPlacementHUDUpdated();
 }
 

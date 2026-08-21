@@ -1,11 +1,11 @@
-# Source Validation — Akuma's RPG Framework v2.16.10-alpha
+# Source Validation — Akuma's RPG Framework v2.16.12-alpha
 
-Package: **Akuma's RPG Framework — v2.16.10-alpha**  
+Package: **Akuma's RPG Framework — v2.16.12-alpha**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
 
-The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 buildable Lights remain confirmed as an additive non-blocking layer. v2.16.0 adds settlement Beds/Hubs through a separate horizontal-surface contract and leaves the protected Stair/Wall-family boundary functions unchanged. Runtime PIE confirmation is still required for this release.
+The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 buildable Lights remain confirmed as an additive non-blocking layer. v2.16.0 adds settlement Beds/Hubs through a separate horizontal-surface contract and leaves the protected Stair/Wall-family boundary functions unchanged. v2.16.11 adds Settlement Paths through a separate non-structural continuous spline-placement contract. v2.16.12 fixes the project-observed turn tangent foldover while retaining that architecture. Runtime PIE confirmation is still required for this release.
 
 
 
@@ -13,6 +13,34 @@ The automated checks below are source/model validation. They are not a substitut
 
 
 
+
+
+## v2.16.12 Settlement Path turn-stability acceptance
+
+Project-side PIE must specifically verify the root-fix case that failed under v2.16.11:
+
+1. Use the same known-good Settlement Path Data Asset and road mesh; do not compensate by changing Forward Axis or terrain sampling.
+2. Place a straight segment and confirm it remains visually unchanged.
+3. Add 30°, 45°, 60° and 90° turns at ordinary 300-1200 cm point distances. No section may spike upward, fold under itself, invert into dark triangles or overshoot past the confirmed joint.
+4. While aiming the next point, confirm the pooled preview bends from the previous travel direction without the old corner explosion.
+5. Test a very sharp near-reversal. The road may form a visually tight/hard join, but geometry must remain bounded and must not fold back catastrophically.
+6. Load a world saved by v2.16.11 containing path tangent overrides; verify the restored road is bounded and a subsequent save/load remains stable. World schema must remain v9.
+7. Repeat in listen-server plus remote client PIE to confirm the replicated tangent-direction state produces the same final geometry.
+
+## v2.16.11 player-built Settlement spline-path acceptance
+
+- Create an `ARPGBuildPieceDefinition` with `Piece Kind = SettlementPath`, `Actor Class = None`, a subdivided Static Build Mesh and `Allow Ground Placement = true`.
+- Confirm the first point: it must establish the path anchor only, consume no Build Cost and spawn no segment actor.
+- Move the cursor and verify a connected valid/invalid Spline Mesh preview updates from the last confirmed point and follows terrain between endpoints.
+- Confirm a second point: exactly one `AARPGBuildPathActor` must spawn, exactly one Build Cost must be consumed, and the preview origin must advance to the authoritative endpoint.
+- Continue several points around a bend and verify adjacent segments share a smooth visual tangent rather than appearing as disconnected hard-angle strips.
+- Confirm `PathSegmentTooShort` / `PathSegmentTooLong` feedback leaves the last endpoint and resources unchanged.
+- Press Cancel / End Build Mode and verify the continuous session ends immediately; selecting the Path again starts from a fresh first point.
+- Enable optional Path collision and verify subsequent path surface sampling pierces existing Path actors rather than stacking the new road on top of an old one.
+- Build Foundations/Walls/Stairs over/beside a Path and verify the Path does not become a structural blocker. Cover an `ARPGTree` with a Path and verify the Path alone does not suppress Tree respawn.
+- Save/reload a curved multi-segment road and verify segment endpoints plus turn smoothing are restored under world SaveVersion v9.
+- In multiplayer PIE, spam confirm while a path request is pending and verify client state advances only on the server result. A direct generic one-shot path placement request must be rejected.
+- `Tools/test_settlement_player_path_spline_model.py` and every previous regression must pass.
 
 ## v2.16.10 contextual villager woodcutting-tool acceptance
 
@@ -31,7 +59,7 @@ The automated checks below are source/model validation. They are not a substitut
 - A suppressed Tree cannot naturally or forcibly respawn while any logical build occupancy remains. Multiple blockers are independent.
 - Removing the final blocker resumes the original remaining respawn delay, or permits prompt respawn when the natural eligibility time already elapsed.
 - Settlement villagers abandon build-suppressed work targets without generating a false stockpile deposit.
-- Suppression rebuilds from persisted building occupancy; world SaveVersion remains v8.
+- Suppression rebuilds from persisted structural building occupancy; world SaveVersion remains v9 in v2.16.12 and Settlement Paths are explicitly excluded from suppression.
 - `Tools/test_tree_build_suppression_model.py` passes alongside every previous framework regression.
 
 ## v2.16.8 native Dynamic Recast Stair navigation acceptance
@@ -64,7 +92,7 @@ Real PIE testing of v2.16.4 confirmed resident deduplication and state changes b
 - recruitment never uses `AlwaysSpawn`, retries collision-safe same-story locations and rejects any collision adjustment that changes story;
 - if no safe interior NavMesh point exists, recruitment is deferred instead of creating a stuck resident;
 - roaming, Return Home and combat leash reuse the same semantic interior anchor;
-- world-load restore can fall back to that anchor and repairs previous roof-position residents without changing world save v8;
+- world-load restore can fall back to that anchor and repairs previous roof-position residents; that v2.16.5 fix added no schema field (the current v2.16.12 world schema remains v9 for Settlement Paths);
 - v2.16.3 housing geometry, v2.16.4 registry/work routing and protected building topology remain unchanged.
 
 ## v2.16.4 settlement resident identity / locomotion acceptance

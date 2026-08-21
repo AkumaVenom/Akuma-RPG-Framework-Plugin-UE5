@@ -1,10 +1,28 @@
-# Settlement Building, Storage, Production, Buildable Lighting & Villager Settlements — v2.16.0
+# Settlement Building, Spline Paths, Storage, Production, Lighting & Villager Settlements — v2.16.12
 
 ## v2.16.0 settlement layer
 
 v2.16.0 adds `Bed` and `SettlementHub` as additive non-structural utility pieces. A completed Hub is the explicit settlement boundary; buildings without a Hub remain normal structures. Beds/Hubs use their own horizontal-surface placement path and do not alter the confirmed Stair/Wall-family snap/collision graph. Resident housing is validated semantically from the completed modular structure. Full setup is in [`SETTLEMENTS.md`](SETTLEMENTS.md).
 
 The default home contract is a complete **2x2+ Foundation** rectangle with full overhead Floor/Ceiling/(optional Roof) cover, complete Wall/WindowWall/Doorway perimeter, a Doorway with a completed hosted Door, and a Villager Bed managed by the Hub. The Hub owns a persistent stockpile and can recruit persistent faction-owned `AARPGSettlementVillagerCharacter` residents who roam and can use the existing tree woodcutting path.
+
+## v2.16.12 Settlement Path turn tangent stability root fix
+
+Real PIE testing confirmed that straight Settlement Path sections were correct but turns could fold or spike. v2.16.11 supplied a shared bisector direction at the joint, then incorrectly scaled that endpoint tangent by the entire player-authored segment length. Since each completed segment is internally terrain-sampled (125 cm by default), Unreal could receive a several-hundred-centimetre Hermite tangent on a ~125 cm endpoint interval and overshoot the spline dramatically.
+
+v2.16.12 keeps the existing authoring surface unchanged. Endpoint tangent overrides now store direction only; `AARPGBuildPathActor` derives a stable magnitude from the adjacent sampled span and rejects backward/near-reversal foldover through a forward-direction guard. The live preview mirrors the same start-turn bound. Existing v9 saves normalize v2.16.11 tangent payloads on restore, so there is no schema or Data Asset migration. **Do not change the road mesh, Forward Axis or Terrain Sample Spacing merely to work around the old corner spikes.**
+
+## v2.16.11 continuous player-built Settlement Paths
+
+`SettlementPath` is appended after `SettlementHub` and uses a dedicated continuous placement contract rather than the structural snap graph. The first valid confirmation establishes the authoritative start anchor; later confirmations create one `AARPGBuildPathActor` between the previous server-confirmed point and the new point. Placement remains active until **Cancel / End Build Mode**, regardless of the ordinary `Keep Build Mode After Placement` setting.
+
+A path definition uses its Static `Build Mesh` as the `USplineMeshComponent` deformation source. `Actor Class = None` selects the native path actor. Authoring controls are grouped under `Building | Settlement | Path` and cover mesh forward axis/cross-section scale, ground offset, terrain sample/trace range, minimum/maximum point distance, tangent scale, optional collision and shadow casting. The source mesh should contain enough subdivisions along its selected forward axis to deform cleanly.
+
+After the first anchor, the local ghost becomes a pooled live spline-mesh preview from the last confirmed point to the cursor. Preview and final presentation use the same terrain-sampling contract. Existing Path actors are pierced during surface sampling even when collision is enabled, preventing a new path from projecting onto an older path. Authority reprojects every submitted endpoint, revalidates catalogue/range/resources/surface/segment length and advances the chain only after successful segment creation. The first anchor costs nothing; **each actual segment consumes one normal Build Cost**.
+
+Consecutive segment actors stay independent for ownership, health, construction, demolition/refunds, replication and persistence. At a turn, the previous and new segment receive a shared direction-bisector tangent so the visible road remains smooth across the actor boundary. v2.16.11 world save **v9** persists each segment's local endpoints and endpoint tangent overrides.
+
+Settlement Paths are visual/non-structural by design. They are ignored by structural build-overlap semantics, semantic Wall/Floor/Stair slots and Tree-respawn suppression; they also skip structural Dynamic Recast dirtying. Optional path collision is therefore a presentation/gameplay choice, not a structural occupancy claim. Full setup, player flow and Blueprint API are in [`SETTLEMENTS.md`](SETTLEMENTS.md).
 
 ## Current canonical story + Stair contract — v2.15.43
 
@@ -862,14 +880,15 @@ Authority/server:
 - owns storage transfers
 - owns furnace inputs/fuel/output/queue
 - owns demolition/refund
+- owns Settlement Path first-anchor/next-point session state and every path segment resource charge
 
-The server does not trust the preview's green/red result or an arbitrary client transform.
+The server does not trust the preview's green/red result or an arbitrary client transform. `SettlementPath` additionally rejects the generic one-shot placement path: its server-owned previous endpoint must be established through the dedicated continuous session.
 
 ---
 
 ## 15. Persistence
 
-World save schema v5 stores:
+World save schema **v9** stores the current build state (character save remains v5). The building record includes:
 
 - stable Building ID
 - definition ID / actor class
@@ -878,6 +897,10 @@ World save schema v5 stores:
 - owner account/character/faction
 - construction complete state / remaining build seconds
 - door open state
+- window open state
+- buildable Light on/off state
+- Settlement Path local start/end endpoints and saved tangent overrides
+- Bed role/assignment state and settlement resident links through the settlement save records
 - storage contents
 - furnace/station input contents
 - output contents

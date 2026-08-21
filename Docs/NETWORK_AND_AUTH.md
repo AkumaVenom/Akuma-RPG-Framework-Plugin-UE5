@@ -77,10 +77,15 @@ The same `FARPGChatMessage` format is used for player and game-generated message
 - combat/event messages
 
 
-## Settlement authority — v2.16.0
+## Settlement authority — v2.16.12
+
+**v2.16.12 turn fix:** Settlement Path endpoint tangent replication/save fields are unchanged, but their runtime semantics are now bounded directional overrides. Oversized v2.16.11 v9 tangent vectors are normalized on restore; no new RPC, schema field or client-authoritative geometry state is introduced.
+
 
 Settlement mutation is server-authoritative. Hub placement uses the normal build catalogue/range/resources/faction/territory checks and additionally validates settlement-area overlap when enabled. Bed role changes travel through the existing player-owned `ARPGInteractionComponent` RPC and call `CanActorModify` on authority. Hub recruitment, Bed assignment, resident activity selection, tree reservation/chopping and resource deposit run on the server.
 
+`SettlementPath` uses an additional server-owned continuous placement session. `ServerBeginSettlementPath` establishes the first reprojected anchor without consuming resources. `ServerPlaceSettlementPathPoint` always evaluates from the server's `AuthoritySettlementPathLastPoint`, reprojects the requested endpoint to the configured surface trace, validates catalogue/range/resources/minimum/maximum segment length, charges one Build Cost only for an actual segment, spawns one replicated `AARPGBuildPathActor`, and advances the stored endpoint only after success. `ServerCancelSettlementPath` discards session state. Generic one-shot `RequestPlacePiece`/`ServerPlacePiece` explicitly reject `SettlementPath`, so a client cannot provide an arbitrary independent path transform or skip the previous-point chain.
+
 Settlement villagers copy the Hub's owner account, owner character and faction identity into the framework's existing ownership/faction components. They do not use a parallel settlement-only allegiance table. The local Settlement UI is presentation only: proximity HUD discovery checks Hub access, and Hub/Bed/Stockpile requests are revalidated by the normal authoritative gameplay path.
 
-World save v8 persists resident/Bed/Hub identity links after buildings and containers are restored. This keeps Hub stockpile and resident assignment consistent while retaining the older v6 Window and v7 Light migration paths.
+World save **v9** persists resident/Bed/Hub identity links plus Settlement Path local endpoints and tangent overrides after buildings are restored. Path Spline Mesh components are derived presentation and are reconstructed rather than replicated/saved individually. This keeps payloads bounded while retaining the older v6 Window, v7 Light and v8 settlement migration paths.

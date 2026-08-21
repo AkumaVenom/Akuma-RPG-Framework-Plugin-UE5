@@ -39,11 +39,21 @@ enum class EARPGBuildPieceKind : uint8
     /** Assignable settlement/player bed. Appended so every pre-settlement enum value remains stable. */
     Bed,
     /** Palbox-style settlement control core. Settlement simulation exists only around this explicit Hub. */
-    SettlementHub
+    SettlementHub,
+    /** Player-authored terrain-conforming visual path. Appended to preserve every existing enum value. */
+    SettlementPath
 };
 
 
-/** Native placement contract for buildable light fixtures. */
+/** Forward axis used when deforming the Settlement Path Build Mesh through spline sections. */
+UENUM(BlueprintType)
+enum class EARPGSettlementPathForwardAxis : uint8
+{
+    X UMETA(DisplayName="X (Forward)"),
+    Y UMETA(DisplayName="Y (Forward)"),
+    Z UMETA(DisplayName="Z (Forward)")
+};
+
 UENUM(BlueprintType)
 enum class EARPGBuildLightPlacementMode : uint8
 {
@@ -260,6 +270,40 @@ public:
     /** Semantic view-acquisition radius for opening the Settlement panel. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Hub", meta=(ClampMin="10.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementHub", EditConditionHides))
     float SettlementHubInteractionRadius = 140.f;
+
+    /** Spline-mesh forward axis for Settlement Path pieces. Most road/track meshes are authored along local X. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Mesh", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    EARPGSettlementPathForwardAxis SettlementPathForwardAxis = EARPGSettlementPathForwardAxis::X;
+    /** Width/height multiplier applied to every generated Spline Mesh cross-section. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Mesh", meta=(DisplayName="Path Mesh Scale", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    FVector2D SettlementPathMeshScale = FVector2D(1.f, 1.f);
+    /** Small world-up lift used after terrain projection to prevent road/decal-style meshes from z-fighting with Landscape. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Terrain", meta=(ClampMin="0.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    float SettlementPathGroundOffset = 2.f;
+    /** Distance between terrain samples used to bend the visual spline over uneven ground. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Terrain", meta=(ClampMin="25.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    float SettlementPathTerrainSampleSpacing = 125.f;
+    /** Vertical distance sampled above each interpolated path point when conforming the spline to terrain. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Terrain", meta=(ClampMin="25.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    float SettlementPathTerrainTraceHeight = 250.f;
+    /** Vertical distance sampled below each interpolated path point when conforming the spline to terrain. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Terrain", meta=(ClampMin="25.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    float SettlementPathTerrainTraceDepth = 500.f;
+    /** Minimum accepted distance between two confirmed path points. Prevents accidental zero-length spline segments. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Placement", meta=(ClampMin="1.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    float SettlementPathMinimumSegmentLength = 75.f;
+    /** Maximum accepted distance between consecutive confirmed path points. Keeps terrain sampling, authority validation and mesh deformation bounded. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Placement", meta=(ClampMin="25.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    float SettlementPathMaximumSegmentLength = 1200.f;
+    /** Tangent magnitude multiplier. 1.0 gives a natural smooth terrain-following curve; lower values tighten bends around sampled points. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Mesh", meta=(ClampMin="0.05", ClampMax="4.0", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    float SettlementPathTangentScale = 1.f;
+    /** Optional physical collision on generated path Spline Mesh components. Off by default so cosmetic settlement roads cannot snag characters or block structural construction. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Mesh", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    bool bSettlementPathCollisionEnabled = false;
+    /** Shadow policy for final path spline meshes. Disable for very large decorative road networks when shadows are unnecessary. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Path|Mesh", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::SettlementPath", EditConditionHides))
+    bool bSettlementPathCastShadow = true;
 
     /**
      * Stair navigation uses the Stair mesh's real Dynamic Recast surface. Automatic off-mesh

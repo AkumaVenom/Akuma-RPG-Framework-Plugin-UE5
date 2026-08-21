@@ -1,6 +1,7 @@
 #include "Building/ARPGBuildingComponent.h"
 #include "Building/ARPGBuildDoorActor.h"
 #include "Building/ARPGBuildLightActor.h"
+#include "Building/ARPGBuildPathActor.h"
 #include "Building/ARPGBuildPieceActor.h"
 #include "Building/ARPGBuildPreviewActor.h"
 #include "Building/ARPGBuildWindowActor.h"
@@ -2387,6 +2388,7 @@ void UARPGBuildingComponent::BeginPlay()
 
 void UARPGBuildingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (GetOwner() && GetOwner()->HasAuthority()) ResetAuthoritySettlementPathSession();
     DestroyPreviewActor();
     Super::EndPlay(EndPlayReason);
 }
@@ -2403,6 +2405,7 @@ bool UARPGBuildingComponent::BeginBuildMode(UARPGBuildPieceDefinition* Piece)
     if (Piece) SelectedBuildPiece = Piece;
     if (!SelectedBuildPiece && BuildCatalog.Num() > 0) SelectedBuildPiece = BuildCatalog[0];
     if (!SelectedBuildPiece) return false;
+    ResetLocalSettlementPathSession(false);
     bBuildModeActive = true;
     PreviewYawOffset = 0.f;
     CurrentPreviewResult = EARPGPlacementResult::NoPiece;
@@ -2410,18 +2413,27 @@ bool UARPGBuildingComponent::BeginBuildMode(UARPGBuildPieceDefinition* Piece)
     SetComponentTickEnabled(true);
     UpdatePlacementPreview();
     OnBuildModeChanged.Broadcast(true, SelectedBuildPiece);
+    if (SelectedBuildPiece->PieceKind == EARPGBuildPieceKind::SettlementPath) BroadcastSettlementPathSessionState();
     return true;
 }
 
 void UARPGBuildingComponent::EndBuildMode()
 {
     if (!bBuildModeActive && !ActivePreviewActor) return;
+    const bool bWasSettlementPath = IsSettlementPathPlacementActive() || bSettlementPathHasConfirmedStart;
+    if (bWasSettlementPath)
+    {
+        if (GetOwner() && GetOwner()->HasAuthority()) ResetAuthoritySettlementPathSession();
+        else if (IsLocalBuildController()) ServerCancelSettlementPath();
+    }
     bBuildModeActive = false;
     CurrentPreviewResult = EARPGPlacementResult::NoPiece;
     CurrentSnapTarget.Reset();
+    ResetLocalSettlementPathSession(false);
     SetComponentTickEnabled(false);
     DestroyPreviewActor();
     OnBuildModeChanged.Broadcast(false, SelectedBuildPiece);
+    if (bWasSettlementPath) BroadcastSettlementPathSessionState();
 }
 
 bool UARPGBuildingComponent::ToggleBuildMode(UARPGBuildPieceDefinition* OptionalPiece)
@@ -2430,9 +2442,49 @@ bool UARPGBuildingComponent::ToggleBuildMode(UARPGBuildPieceDefinition* Optional
     return BeginBuildMode(OptionalPiece);
 }
 
+bool UARPGBuildingComponent::IsSettlementPathPlacementActive() const
+{
+    return bBuildModeActive && SelectedBuildPiece && SelectedBuildPiece->PieceKind == EARPGBuildPieceKind::SettlementPath;
+}
+
+void UARPGBuildingComponent::CancelSettlementPathPlacement()
+{
+    if (IsSettlementPathPlacementActive() || bSettlementPathHasConfirmedStart) EndBuildMode();
+}
+
+void UARPGBuildingComponent::ResetLocalSettlementPathSession(bool bBroadcast)
+{
+    bSettlementPathHasConfirmedStart = false;
+    bSettlementPathRequestPending = false;
+    SettlementPathLastConfirmedPoint = FVector::ZeroVector;
+    SettlementPathLastPlacedSegment.Reset();
+    if (ActivePreviewActor) ActivePreviewActor->ClearSettlementPathSegmentPreview();
+    if (bBroadcast) BroadcastSettlementPathSessionState();
+}
+
+void UARPGBuildingComponent::ResetAuthoritySettlementPathSession()
+{
+    bAuthoritySettlementPathActive = false;
+    AuthoritySettlementPathLastPoint = FVector::ZeroVector;
+    AuthoritySettlementPathPiece.Reset();
+    AuthoritySettlementPathLastSegment.Reset();
+}
+
+void UARPGBuildingComponent::BroadcastSettlementPathSessionState()
+{
+    OnSettlementPathSessionChanged.Broadcast(IsSettlementPathPlacementActive(), bSettlementPathHasConfirmedStart, SettlementPathLastConfirmedPoint);
+}
+
 bool UARPGBuildingComponent::SelectBuildPiece(UARPGBuildPieceDefinition* Piece)
 {
     if (!Piece) return false;
+    const bool bWasSettlementPath = IsSettlementPathPlacementActive() || bSettlementPathHasConfirmedStart;
+    if (bWasSettlementPath)
+    {
+        if (GetOwner() && GetOwner()->HasAuthority()) ResetAuthoritySettlementPathSession();
+        else if (IsLocalBuildController()) ServerCancelSettlementPath();
+        ResetLocalSettlementPathSession(false);
+    }
     SelectedBuildPiece = Piece;
     PreviewYawOffset = 0.f;
     if (bBuildModeActive)
@@ -2441,6 +2493,7 @@ bool UARPGBuildingComponent::SelectBuildPiece(UARPGBuildPieceDefinition* Piece)
         EnsurePreviewActor();
         UpdatePlacementPreview();
         OnBuildModeChanged.Broadcast(true, SelectedBuildPiece);
+        if (bWasSettlementPath || SelectedBuildPiece->PieceKind == EARPGBuildPieceKind::SettlementPath) BroadcastSettlementPathSessionState();
     }
     return true;
 }
@@ -2529,7 +2582,48 @@ void UARPGBuildingComponent::UpdatePlacementPreview()
     FTransform Desired(DesiredRotation, Location);
     AARPGBuildPieceActor* SnapTarget = nullptr;
 
-    if (SelectedBuildPiece->PieceKind == EARPGBuildPieceKind::Light)
+    if (SelectedBuildPiece->PieceKind == EARPGBuildPieceKind::SettlementPath)
+    {
+        FVector ProjectedPoint = Location;
+        const bool bProjected = bHit && ResolveSettlementPathSurfacePoint(SelectedBuildPiece, Hit.ImpactPoint, ProjectedPoint);
+        float PathYaw = ViewRotation.Yaw;
+        if (bSettlementPathHasConfirmedStart && FVector::DistSquared2D(SettlementPathLastConfirmedPoint, ProjectedPoint) > 1.f)
+            PathYaw = (ProjectedPoint - SettlementPathLastConfirmedPoint).Rotation().Yaw;
+        CurrentPreviewTransform = FTransform(FRotator(0.f, PathYaw, 0.f), ProjectedPoint);
+        const FVector* PreviousPoint = bSettlementPathHasConfirmedStart ? &SettlementPathLastConfirmedPoint : nullptr;
+        CurrentPreviewResult = bProjected ? EvaluateSettlementPathPoint(SelectedBuildPiece, ProjectedPoint, PreviousPoint) : EARPGPlacementResult::InvalidSurface;
+        CurrentSnapTarget.Reset();
+
+        if (ActivePreviewActor)
+        {
+            if (bSettlementPathHasConfirmedStart)
+            {
+                FVector PreviewStartTangentWorld = FVector::ZeroVector;
+                if (SettlementPathLastPlacedSegment.IsValid())
+                {
+                    const FVector PreviousDirection =
+                        (SettlementPathLastConfirmedPoint - SettlementPathLastPlacedSegment->GetPathStartWorld()).GetSafeNormal();
+                    const FVector NewDirection = (ProjectedPoint - SettlementPathLastConfirmedPoint).GetSafeNormal();
+                    if (!PreviousDirection.IsNearlyZero() && !NewDirection.IsNearlyZero())
+                    {
+                        PreviewStartTangentWorld = (PreviousDirection + NewDirection).GetSafeNormal();
+                        if (PreviewStartTangentWorld.IsNearlyZero()) PreviewStartTangentWorld = NewDirection;
+                    }
+                }
+                ActivePreviewActor->SetSettlementPathSegmentPreview(
+                    SelectedBuildPiece, SettlementPathLastConfirmedPoint, ProjectedPoint, CurrentPreviewResult, PreviewStartTangentWorld);
+            }
+            else
+            {
+                ActivePreviewActor->ClearSettlementPathSegmentPreview();
+                ActivePreviewActor->SetActorTransform(CurrentPreviewTransform, false, nullptr, ETeleportType::TeleportPhysics);
+                ActivePreviewActor->SetPlacementResult(CurrentPreviewResult);
+            }
+        }
+        OnBuildPreviewUpdated.Broadcast(CurrentPreviewResult, CurrentPreviewTransform);
+        return;
+    }
+    else if (SelectedBuildPiece->PieceKind == EARPGBuildPieceKind::Light)
     {
         // Buildable lights use surface placement rather than the structural grid/snap graph. A wall
         // fixture follows the actually aimed wall face; a stick/floor light seats its visible bottom
@@ -2873,6 +2967,12 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
     if (!HasBuildResources(Piece)) return EARPGPlacementResult::MissingResources;
     if (Piece->bRequiresSnapTarget && !SnapTarget) return EARPGPlacementResult::Unsupported;
 
+    // Settlement Paths use point-to-point authority and spline terrain sampling rather than the rigid
+    // PlacementBounds structural occupancy graph. Direct placement is blocked elsewhere; this keeps
+    // generic Blueprint evaluation meaningful without allowing a path to become a box-shaped blocker.
+    if (Piece->PieceKind == EARPGBuildPieceKind::SettlementPath)
+        return Piece->BuildMesh.IsNull() ? EARPGPlacementResult::NoPiece : EARPGPlacementResult::Valid;
+
     if (Piece->PieceKind == EARPGBuildPieceKind::Light)
     {
         if (Piece->LightPlacementMode == EARPGBuildLightPlacementMode::WallSurface)
@@ -3031,6 +3131,12 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
             // not a blocker when the logical placement volumes do not actually penetrate.
             if (AARPGBuildPieceActor* BuildNeighbor = Cast<AARPGBuildPieceActor>(Other))
             {
+                // Settlement Paths are visual ground dressing. Even when a project opts into physical
+                // path collision for footsteps/vehicles, they never claim structural occupancy or veto
+                // later Foundations, Walls, Beds, Hubs or Stairs.
+                if (BuildNeighbor->Definition && BuildNeighbor->Definition->PieceKind == EARPGBuildPieceKind::SettlementPath)
+                    continue;
+
                 // Reverse hosted-insert rule: a completed Door/Window belongs semantically to its
                 // Doorway/WindowWall host. It must not become an independent blocker when that verified
                 // host participates in a legitimate structural seam. Wall/Floor/Ceiling/Roof keep the
@@ -3206,6 +3312,13 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
 
 EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacement(const UARPGBuildPieceDefinition* Piece, const FTransform& DesiredTransform) const
 {
+    if (Piece && Piece->PieceKind == EARPGBuildPieceKind::SettlementPath)
+    {
+        FVector ProjectedPoint;
+        if (!ResolveSettlementPathSurfacePoint(Piece, DesiredTransform.GetLocation(), ProjectedPoint)) return EARPGPlacementResult::InvalidSurface;
+        const FVector* PreviousPoint = bSettlementPathHasConfirmedStart ? &SettlementPathLastConfirmedPoint : nullptr;
+        return EvaluateSettlementPathPoint(Piece, ProjectedPoint, PreviousPoint);
+    }
     AARPGBuildPieceActor* SnapTarget = nullptr;
     const FTransform Final = ResolvePlacementTransform(Piece, DesiredTransform, SnapTarget);
     return EvaluatePlacementInternal(Piece, Final, SnapTarget);
@@ -3214,6 +3327,57 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacement(const UARPGBuildP
 bool UARPGBuildingComponent::ConfirmPreviewPlacement()
 {
     if (!bBuildModeActive || !SelectedBuildPiece || CurrentPreviewResult != EARPGPlacementResult::Valid) return false;
+
+    if (SelectedBuildPiece->PieceKind == EARPGBuildPieceKind::SettlementPath)
+    {
+        if (bSettlementPathRequestPending) return false;
+        bSettlementPathRequestPending = true;
+
+        if (!bSettlementPathHasConfirmedStart)
+        {
+            if (GetOwner() && GetOwner()->HasAuthority())
+            {
+                FVector AuthoritativeStart;
+                const EARPGPlacementResult Result = BeginSettlementPathAuthority(SelectedBuildPiece, CurrentPreviewTransform.GetLocation(), AuthoritativeStart);
+                bSettlementPathRequestPending = false;
+                if (Result == EARPGPlacementResult::Valid)
+                {
+                    bSettlementPathHasConfirmedStart = true;
+                    SettlementPathLastConfirmedPoint = AuthoritativeStart;
+                    BroadcastSettlementPathSessionState();
+                    UpdatePlacementPreview();
+                    return true;
+                }
+                OnPlacementResult.Broadcast(Result, nullptr);
+                OnSettlementPathSegmentPlaced.Broadcast(Result, nullptr);
+                return false;
+            }
+            ServerBeginSettlementPath(SelectedBuildPiece, CurrentPreviewTransform.GetLocation());
+            return true;
+        }
+
+        if (GetOwner() && GetOwner()->HasAuthority())
+        {
+            FVector AuthoritativeEnd;
+            AARPGBuildPathActor* PlacedSegment = nullptr;
+            const EARPGPlacementResult Result = PlaceSettlementPathPointAuthority(SelectedBuildPiece, CurrentPreviewTransform.GetLocation(), AuthoritativeEnd, PlacedSegment);
+            bSettlementPathRequestPending = false;
+            OnSettlementPathSegmentPlaced.Broadcast(Result, PlacedSegment);
+            if (Result == EARPGPlacementResult::Valid)
+            {
+                SettlementPathLastConfirmedPoint = AuthoritativeEnd;
+                SettlementPathLastPlacedSegment = PlacedSegment;
+                BroadcastSettlementPathSessionState();
+                UpdatePlacementPreview();
+                return true;
+            }
+            return false;
+        }
+
+        ServerPlaceSettlementPathPoint(SelectedBuildPiece, CurrentPreviewTransform.GetLocation());
+        return true;
+    }
+
     const bool bRequested = RequestPlacePiece(SelectedBuildPiece, CurrentPreviewTransform);
     if (bRequested && !bKeepBuildModeAfterPlacement) EndBuildMode();
     return bRequested;
@@ -3221,7 +3385,7 @@ bool UARPGBuildingComponent::ConfirmPreviewPlacement()
 
 bool UARPGBuildingComponent::RequestPlacePiece(UARPGBuildPieceDefinition* Piece, const FTransform& DesiredTransform)
 {
-    if (!GetOwner() || !Piece) return false;
+    if (!GetOwner() || !Piece || Piece->PieceKind == EARPGBuildPieceKind::SettlementPath) return false;
     if (!GetOwner()->HasAuthority())
     {
         ServerPlacePiece(Piece, DesiredTransform);
@@ -3232,7 +3396,218 @@ bool UARPGBuildingComponent::RequestPlacePiece(UARPGBuildPieceDefinition* Piece,
 
 void UARPGBuildingComponent::ServerPlacePiece_Implementation(UARPGBuildPieceDefinition* Piece, FTransform DesiredTransform)
 {
+    if (!Piece || Piece->PieceKind == EARPGBuildPieceKind::SettlementPath) return;
     PlacePieceAuthority(Piece, DesiredTransform);
+}
+
+bool UARPGBuildingComponent::ResolveSettlementPathSurfacePoint(const UARPGBuildPieceDefinition* Piece, const FVector& DesiredPoint, FVector& OutProjectedPoint) const
+{
+    if (!Piece || Piece->PieceKind != EARPGBuildPieceKind::SettlementPath || !Piece->bAllowGroundPlacement || !GetWorld()) return false;
+
+    const float TraceUp = FMath::Max(25.f, Piece->SettlementPathTerrainTraceHeight);
+    const float TraceDown = FMath::Max(25.f, Piece->SettlementPathTerrainTraceDepth);
+    const FVector Start = DesiredPoint + FVector::UpVector * TraceUp;
+    const FVector End = DesiredPoint - FVector::UpVector * TraceDown;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(ARPGSettlementPathSurface), false, GetOwner());
+
+    // Existing paths are visual settlement dressing, not terrain. Even projects that intentionally
+    // enable path collision should always project a new point to the underlying world/support surface.
+    constexpr int32 MaxPathPierceCount = 32;
+    FHitResult Hit;
+    bool bFoundSurface = false;
+    for (int32 Attempt = 0; Attempt < MaxPathPierceCount; ++Attempt)
+    {
+        if (!GetWorld()->LineTraceSingleByChannel(Hit, Start, End, PlacementTraceChannel, Params)) return false;
+        if (AARPGBuildPathActor* ExistingPath = Cast<AARPGBuildPathActor>(Hit.GetActor()))
+        {
+            Params.AddIgnoredActor(ExistingPath);
+            continue;
+        }
+        bFoundSurface = true;
+        break;
+    }
+    if (!bFoundSurface) return false;
+
+    if (Piece->bRequireMostlyFlatGround)
+    {
+        const FVector Normal = Hit.ImpactNormal.GetSafeNormal();
+        if (Normal.IsNearlyZero()) return false;
+        const float Slope = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Normal.Z, -1.f, 1.f)));
+        if (Slope > FMath::Clamp(Piece->MaxGroundSlopeDegrees, 0.f, 89.f)) return false;
+    }
+
+    OutProjectedPoint = Hit.ImpactPoint + FVector::UpVector * FMath::Max(0.f, Piece->SettlementPathGroundOffset);
+    return true;
+}
+
+EARPGPlacementResult UARPGBuildingComponent::EvaluateSettlementPathPoint(
+    const UARPGBuildPieceDefinition* Piece,
+    const FVector& ProjectedPoint,
+    const FVector* PreviousPoint) const
+{
+    if (!Piece || Piece->PieceKind != EARPGBuildPieceKind::SettlementPath) return EARPGPlacementResult::NoPiece;
+    AActor* Owner = GetOwner();
+    if (!Owner || !GetWorld()) return EARPGPlacementResult::Restricted;
+    if (!bAllowUnlistedBuildRequests && !BuildCatalog.ContainsByPredicate([&](const TObjectPtr<UARPGBuildPieceDefinition>& CatalogPiece){ return CatalogPiece.Get() == Piece; }))
+        return EARPGPlacementResult::Restricted;
+    if (Piece->BuildMesh.IsNull()) return EARPGPlacementResult::NoPiece;
+    if (!Piece->bAllowGroundPlacement) return EARPGPlacementResult::Unsupported;
+    if (FVector::DistSquared(Owner->GetActorLocation(), ProjectedPoint) > FMath::Square(MaxPlacementDistance))
+        return EARPGPlacementResult::TooFar;
+    if (!HasBuildResources(Piece)) return EARPGPlacementResult::MissingResources;
+
+    if (PreviousPoint)
+    {
+        const float SegmentLength = FVector::Dist2D(*PreviousPoint, ProjectedPoint);
+        const float MinLength = FMath::Max(1.f, Piece->SettlementPathMinimumSegmentLength);
+        const float MaxLength = FMath::Max(MinLength, Piece->SettlementPathMaximumSegmentLength);
+        if (SegmentLength < MinLength) return EARPGPlacementResult::PathSegmentTooShort;
+        if (SegmentLength > MaxLength) return EARPGPlacementResult::PathSegmentTooLong;
+    }
+    return EARPGPlacementResult::Valid;
+}
+
+EARPGPlacementResult UARPGBuildingComponent::BeginSettlementPathAuthority(
+    UARPGBuildPieceDefinition* Piece,
+    const FVector& DesiredStartPoint,
+    FVector& OutAuthoritativeStartPoint)
+{
+    OutAuthoritativeStartPoint = DesiredStartPoint;
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return EARPGPlacementResult::Restricted;
+
+    FVector Projected;
+    if (!ResolveSettlementPathSurfacePoint(Piece, DesiredStartPoint, Projected)) return EARPGPlacementResult::InvalidSurface;
+    const EARPGPlacementResult Result = EvaluateSettlementPathPoint(Piece, Projected, nullptr);
+    if (Result != EARPGPlacementResult::Valid) return Result;
+
+    ResetAuthoritySettlementPathSession();
+    bAuthoritySettlementPathActive = true;
+    AuthoritySettlementPathPiece = Piece;
+    AuthoritySettlementPathLastPoint = Projected;
+    OutAuthoritativeStartPoint = Projected;
+    return EARPGPlacementResult::Valid;
+}
+
+EARPGPlacementResult UARPGBuildingComponent::PlaceSettlementPathPointAuthority(
+    UARPGBuildPieceDefinition* Piece,
+    const FVector& DesiredEndPoint,
+    FVector& OutAuthoritativeEndPoint,
+    AARPGBuildPathActor*& OutPlacedSegment)
+{
+    OutAuthoritativeEndPoint = DesiredEndPoint;
+    OutPlacedSegment = nullptr;
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !GetWorld()) return EARPGPlacementResult::Restricted;
+    if (!bAuthoritySettlementPathActive || !AuthoritySettlementPathPiece.IsValid() || AuthoritySettlementPathPiece.Get() != Piece)
+        return EARPGPlacementResult::Restricted;
+
+    FVector ProjectedEnd;
+    if (!ResolveSettlementPathSurfacePoint(Piece, DesiredEndPoint, ProjectedEnd)) return EARPGPlacementResult::InvalidSurface;
+    const EARPGPlacementResult Check = EvaluateSettlementPathPoint(Piece, ProjectedEnd, &AuthoritySettlementPathLastPoint);
+    if (Check != EARPGPlacementResult::Valid) return Check;
+
+    UClass* LoadedClass = ResolveNativeBuildActorClass(Piece);
+    if (!LoadedClass || !LoadedClass->IsChildOf(AARPGBuildPathActor::StaticClass())) return EARPGPlacementResult::NoPiece;
+    if (!ConsumeBuildResources(Piece)) return EARPGPlacementResult::MissingResources;
+
+    const FVector StartPoint = AuthoritySettlementPathLastPoint;
+    const FVector Direction = ProjectedEnd - StartPoint;
+    const FTransform SpawnTransform(FRotator(0.f, Direction.Rotation().Yaw, 0.f), StartPoint);
+    FActorSpawnParameters Params;
+    Params.Owner = GetOwner();
+    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    AARPGBuildPathActor* Spawned = GetWorld()->SpawnActor<AARPGBuildPathActor>(LoadedClass, SpawnTransform, Params);
+    if (!Spawned || !Spawned->InitializePathSegment(Piece, GetOwner(), StartPoint, ProjectedEnd))
+    {
+        if (Spawned) Spawned->Destroy();
+        RefundBuildResources(Piece);
+        return EARPGPlacementResult::Blocked;
+    }
+
+    // Consecutive segment actors still share one visual spline contract. When a new turn is confirmed,
+    // align both sides of the joint to the same bisector tangent so wide road meshes meet cleanly
+    // instead of producing a hard orientation discontinuity at every player-authored point.
+    if (AuthoritySettlementPathLastSegment.IsValid())
+    {
+        AARPGBuildPathActor* PreviousSegment = AuthoritySettlementPathLastSegment.Get();
+        const FVector PreviousDirection = (StartPoint - PreviousSegment->GetPathStartWorld()).GetSafeNormal();
+        const FVector NewDirection = (ProjectedEnd - StartPoint).GetSafeNormal();
+        FVector JoinDirection = (PreviousDirection + NewDirection).GetSafeNormal();
+        if (JoinDirection.IsNearlyZero()) JoinDirection = NewDirection;
+        // Endpoint tangent overrides carry direction only. Each path actor derives the actual
+        // magnitude from its adjacent terrain-sampled span, preventing a long player-authored
+        // segment from injecting a 600-1200 cm Hermite tangent into a ~125 cm spline interval.
+        const FVector PreviousJoinTangent = JoinDirection;
+        const FVector NewJoinTangent = JoinDirection;
+        const FVector PreviousStartTangentWorld = PreviousSegment->PathStartTangentLocal.IsNearlyZero()
+            ? FVector::ZeroVector
+            : PreviousSegment->GetActorTransform().TransformVectorNoScale(PreviousSegment->PathStartTangentLocal);
+        PreviousSegment->SetPathEndpointTangentsWorld(PreviousStartTangentWorld, PreviousJoinTangent);
+        Spawned->SetPathEndpointTangentsWorld(NewJoinTangent, FVector::ZeroVector);
+    }
+
+    AuthoritySettlementPathLastSegment = Spawned;
+    AuthoritySettlementPathLastPoint = ProjectedEnd;
+    OutAuthoritativeEndPoint = ProjectedEnd;
+    OutPlacedSegment = Spawned;
+    if (UARPGEventRouterComponent* Router = GetOwner()->FindComponentByClass<UARPGEventRouterComponent>()) Router->ReportBuilt(Piece->DefinitionId, 1);
+    OnPlacementResult.Broadcast(EARPGPlacementResult::Valid, Spawned);
+    return EARPGPlacementResult::Valid;
+}
+
+void UARPGBuildingComponent::ServerBeginSettlementPath_Implementation(UARPGBuildPieceDefinition* Piece, FVector DesiredStartPoint)
+{
+    FVector AuthoritativeStart;
+    const EARPGPlacementResult Result = BeginSettlementPathAuthority(Piece, DesiredStartPoint, AuthoritativeStart);
+    ClientSettlementPathAnchorResult(Result, AuthoritativeStart);
+}
+
+void UARPGBuildingComponent::ServerPlaceSettlementPathPoint_Implementation(UARPGBuildPieceDefinition* Piece, FVector DesiredEndPoint)
+{
+    FVector AuthoritativeEnd;
+    AARPGBuildPathActor* PlacedSegment = nullptr;
+    const EARPGPlacementResult Result = PlaceSettlementPathPointAuthority(Piece, DesiredEndPoint, AuthoritativeEnd, PlacedSegment);
+    if (Result != EARPGPlacementResult::Valid) OnPlacementResult.Broadcast(Result, nullptr);
+    ClientSettlementPathSegmentResult(Result, AuthoritativeEnd, PlacedSegment);
+}
+
+void UARPGBuildingComponent::ServerCancelSettlementPath_Implementation()
+{
+    ResetAuthoritySettlementPathSession();
+}
+
+void UARPGBuildingComponent::ClientSettlementPathAnchorResult_Implementation(EARPGPlacementResult Result, FVector AuthoritativeStartPoint)
+{
+    bSettlementPathRequestPending = false;
+    if (Result == EARPGPlacementResult::Valid && IsSettlementPathPlacementActive())
+    {
+        bSettlementPathHasConfirmedStart = true;
+        SettlementPathLastConfirmedPoint = AuthoritativeStartPoint;
+        BroadcastSettlementPathSessionState();
+        UpdatePlacementPreview();
+    }
+    else
+    {
+        OnPlacementResult.Broadcast(Result, nullptr);
+        OnSettlementPathSegmentPlaced.Broadcast(Result, nullptr);
+    }
+}
+
+void UARPGBuildingComponent::ClientSettlementPathSegmentResult_Implementation(
+    EARPGPlacementResult Result,
+    FVector AuthoritativeEndPoint,
+    AARPGBuildPathActor* PlacedSegment)
+{
+    bSettlementPathRequestPending = false;
+    OnPlacementResult.Broadcast(Result, PlacedSegment);
+    OnSettlementPathSegmentPlaced.Broadcast(Result, PlacedSegment);
+    if (Result == EARPGPlacementResult::Valid && IsSettlementPathPlacementActive())
+    {
+        bSettlementPathHasConfirmedStart = true;
+        SettlementPathLastConfirmedPoint = AuthoritativeEndPoint;
+        SettlementPathLastPlacedSegment = PlacedSegment;
+        BroadcastSettlementPathSessionState();
+        UpdatePlacementPreview();
+    }
 }
 
 UClass* UARPGBuildingComponent::ResolveNativeBuildActorClass(const UARPGBuildPieceDefinition* Piece) const
@@ -3247,6 +3622,7 @@ UClass* UARPGBuildingComponent::ResolveNativeBuildActorClass(const UARPGBuildPie
         case EARPGBuildPieceKind::Light: return AARPGBuildLightActor::StaticClass();
         case EARPGBuildPieceKind::Bed: return AARPGBuildBedActor::StaticClass();
         case EARPGBuildPieceKind::SettlementHub: return AARPGSettlementHubActor::StaticClass();
+        case EARPGBuildPieceKind::SettlementPath: return AARPGBuildPathActor::StaticClass();
         case EARPGBuildPieceKind::Storage: return AARPGStorageActor::StaticClass();
         case EARPGBuildPieceKind::Production: return AARPGCraftingStationActor::StaticClass();
         default: return AARPGBuildPieceActor::StaticClass();
@@ -3255,7 +3631,7 @@ UClass* UARPGBuildingComponent::ResolveNativeBuildActorClass(const UARPGBuildPie
 
 bool UARPGBuildingComponent::PlacePieceAuthority(UARPGBuildPieceDefinition* Piece, const FTransform& DesiredTransform)
 {
-    if (!GetOwner() || !GetOwner()->HasAuthority() || !Piece || !GetWorld()) return false;
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !Piece || !GetWorld() || Piece->PieceKind == EARPGBuildPieceKind::SettlementPath) return false;
     AARPGBuildPieceActor* SnapTarget = nullptr;
     const FTransform Final = ResolvePlacementTransform(Piece, DesiredTransform, SnapTarget);
     const EARPGPlacementResult Check = EvaluatePlacementInternal(Piece, Final, SnapTarget);

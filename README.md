@@ -1,6 +1,6 @@
 # Akuma's RPG Framework — UE 5.8
 
-<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/cee99ca5-b1a1-456d-a549-b747bf11933c" />
+<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/046f6018-b205-4f0a-82f7-5950b2e7877d" />
 
 **Akuma's RPG Framework** is a Blueprint-first, data-driven Unreal Engine 5.8 gameplay framework for building large single-player and multiplayer RPGs without rebuilding the same core systems for every project.
 
@@ -8,16 +8,16 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.16.10-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.16.12-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest release:** v2.16.10 adds contextual settlement-worker tool presentation. Assign an Axe `ARPGItemDefinition` to the Settlement Definition and villagers automatically hold its existing equipped mesh/socket/transform while `Going To Work` / `Woodcutting`, then remove it as soon as they return to roaming/home states. The visual is reconstructed from replicated work state and never grants an item, mutates Inventory/equipment slots or consumes durability. v2.16.9 build-aware Tree replacement/respawn suppression, the confirmed **2x2+** settlement loop, native Dynamic Recast stairs, world save v8, Lights and protected v2.15.53 Stair/Wall-family placement semantics remain intact. See [`Docs/WOODCUTTING.md`](Docs/WOODCUTTING.md), [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
+> **Latest release:** v2.16.12 fixes Settlement Path turn deformation exposed by real PIE testing. v2.16.11 correctly shared a bisector direction across independently persistent road segments, but incorrectly scaled the endpoint tangent by the whole player-authored segment length; on short terrain-sampled spans that could overshoot the spline and fold wide road meshes into spikes at bends. Endpoint overrides are now direction-only, runtime magnitude is bounded to the adjacent sampled span, sharp reversals fail safe, existing v9 tangent saves self-sanitize on restore, and the live preview uses the same bounded turn rule. No Settlement Path Data Asset or save-schema migration is required. See [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md), [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
 
 ## Start here
 
 - **New to the framework?** Read [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 - **Setting up items/equipment?** Read [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md).
 - **Setting up crafting/durability/repair?** Read [`Docs/CRAFTING_DURABILITY_REPAIR.md`](Docs/CRAFTING_DURABILITY_REPAIR.md).
-- **Setting up Settlement Hubs, homes, Beds or villagers?** Read [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md).
+- **Setting up Settlement Hubs, homes, Beds, villagers or player-built paths?** Read [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md).
 - **Setting up structural building, buildable lights, storage or furnaces?** Read [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md).
 - **Want the full system status?** Read [`Docs/FEATURE_MATRIX.md`](Docs/FEATURE_MATRIX.md).
 - **Want release history?** Read [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
@@ -72,23 +72,24 @@ v2.15 promotes the earlier building backend into a complete player-facing settle
 | System | Status | Highlights |
 |---|---|---|
 | Build Catalogue | **Implemented** | Character `Build Catalog`, categories, material costs, buildable counts and ready native menu. |
-| Placement Preview | **Implemented** | Local ghost mesh, valid/invalid materials, live status, rotation, next/previous pieces and placement HUD. |
+| Placement Preview | **Implemented** | Local ghost mesh, valid/invalid materials, live status, rotation, next/previous pieces and placement HUD; Settlement Paths use a pooled live spline-mesh preview from the last confirmed point. |
 | Pivot-Aware Ground Placement | **Implemented** | Real mesh bounds anchor bottom/center/corner-pivot modular pieces correctly to landscape/support surfaces. |
 | Structural Snapping | **Implemented** | Foundations, wall/window/door families, upper floors/ceilings/roofs, stairs/pillars and custom snaps, with logical structural occupancy, multi-storey build-order symmetry and multi-cell-aware facing. |
 | Authoritative Placement | **Implemented** | Server revalidates catalogue membership, snap access, transform, range, support, collision, resources, factions and territory. |
 | Construction | **Implemented** | Instant or timed builds, synchronized progress, mesh reveal/growth, material progress parameters and construction audio. |
 | Buildable Lighting | **Implemented** | Ground/floor stick torches and Wall-family surface lights, replicated/persistent button toggles, smooth light/emissive fades, Point/Spot sources, Niagara/Cascade FX and non-blocking fixture semantics. |
+| Settlement Paths | **Implemented** | Continuous first-point/next-point authoring until Cancel, terrain-conforming spline meshes, pooled live preview, configurable mesh axis/scale/sampling/length limits, server-authoritative segment creation and smooth connected turns. |
 | Doors | **Implemented** | Replicated smooth open/close, ownership/faction access, persistent state, moving slab collision, data-driven left/right hinge side and hosted-insert structural transparency. |
 | Demolition | **Implemented** | Authoritative modification checks and configurable build-cost refund. |
 | Storage | **Implemented** | Persistent containers, ready transfer UI and exact runtime-instance transfer for durable items. |
 | Production / Furnaces | **Implemented** | Input/fuel/output inventories, recipe queues, tagged fuel, transaction-safe processing and ready production UI. |
-| Building Persistence | **Implemented** | Structure identity, transform, health, construction progress, Door/Window/Light state, storage contents and station state. |
+| Building Persistence | **Implemented** | Structure identity, transform, health, construction progress, Door/Window/Light state, Settlement Path endpoints/tangent joins, storage contents and station state. World save v9 retains older migration behavior. |
 
 Supported standard build-piece kinds:
 
-`Foundation` · `Wall` · `WindowWall` · `Window` · `Doorway` · `Door` · `Floor` · `Ceiling` · `Roof` · `Stair` · `Pillar` · `Storage` · `Production` · `Decoration` · `Custom` · `Light`
+`Foundation` · `Wall` · `WindowWall` · `Window` · `Doorway` · `Door` · `Floor` · `Ceiling` · `Roof` · `Stair` · `Pillar` · `Storage` · `Production` · `Decoration` · `Custom` · `Light` · `Bed` · `SettlementHub` · `SettlementPath`
 
-Common structural pieces can be authored with an **`ARPGBuildPieceDefinition` + Static Mesh** without creating an Actor Blueprint. Door, Window, Light, Storage and Production pieces automatically use their specialised native actors when no custom Actor Class is supplied.
+Common structural pieces can be authored with an **`ARPGBuildPieceDefinition` + Static Mesh** without creating an Actor Blueprint. Door, Window, Light, Bed, Settlement Hub, Settlement Path, Storage and Production pieces automatically use their specialised native actors when no custom Actor Class is supplied.
 
 See [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md) for the complete Wood/Stone/Metal, snapping, storage and furnace workflow.
 
@@ -301,17 +302,33 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.16.10-alpha
+## Current release — v2.16.12-alpha
 
-v2.16.10 polishes autonomous settlement workers with a contextual held-tool layer. `ARPGSettlementDefinition -> Settlement | Woodcutting | Tool Presentation` can reference the project's existing Axe Item Definition. Residents reconstruct a local `AARPGEquipmentVisualActor` from that Item's normal equipped static/skeletal mesh, socket and relative transform while `Going To Work` or `Woodcutting`; it is removed immediately when the resident returns to `Roaming`, `At Home`, `Returning Home` or `Homeless`. Optional Item equip/unequip montage and audio can be reused. This presentation never creates an Inventory entry, changes an equipment slot, applies equipment stats/effects or wears durability, and is not saved because replicated resident work state is the source of truth.
+v2.16.12 is a focused root fix for the first real-world Settlement Path turn test. Straight path sections already proved the mesh-axis and terrain-conforming pipeline; the failure occurred only after a second segment established a bend. v2.16.11 multiplied the shared corner tangent by each entire player-authored segment length even though Unreal applies that endpoint tangent to the adjacent terrain-sampled spline interval. The mismatch could produce severe Hermite overshoot, folded triangles and raised/inverted road geometry at ordinary angles.
 
-v2.16.9 integrates gatherable `AARPGTree` resources with runtime construction. Foundation preview/support traces pierce only encountered ARPG Tree actors and Foundation occupancy ignores Tree collision, so a trunk or stump can no longer prevent a legitimate terrain/grid snap. Once any ARPG Build Piece occupies the tree's configurable trunk-root regeneration volume, the authority suppresses that resource location: tree and stump visuals/collision are disabled, no harvest rewards are fabricated, and regeneration is deferred while one or more blockers remain. Removing the final build piece resumes the original respawn clock; if the natural respawn time already elapsed, the tree returns on the next bounded recheck. Suppression is replicated and Blueprint-readable/callable, while normal standing trees keep zero permanent polling cost. World save remains v8 because suppression is derived from persisted building occupancy rather than serialized as duplicate state.
+`AARPGBuildPathActor` now stores/replicates/persists endpoint tangent **direction** while deriving a safe runtime magnitude from the actual adjacent sampled span. A forward-direction guard prevents near-reversal tangents from folding back into the segment. World save remains **v9**: older v2.16.11 path tangent vectors are normalized as they restore, automatically repairing their magnitude without changing endpoint geometry or requiring a migration field. The pooled live preview also applies the same bounded start-turn rule using the last confirmed segment.
+
+There is **no Data Asset setup change** for existing Settlement Paths. Keep the confirmed Build Mesh, Forward Axis, Mesh Scale, Ground Offset, Terrain Sample Spacing and other authoring values, compile v2.16.12, then retest fresh turns. All structural building, Settlement, Tree-suppression, Dynamic Recast, faction, resource, replication and persistence contracts remain unchanged.
+
+## Previous release — v2.16.11-alpha
+
+v2.16.11 adds a native player-built Settlement Path workflow on top of the existing building authority. A Data Asset with `Piece Kind = SettlementPath` uses its Static **Build Mesh** as a deformable spline source. The first confirmation establishes the server-approved path start point without spawning or charging a segment; every following confirmation creates one connected `AARPGBuildPathActor`, advances the confirmed endpoint only after authority succeeds, and keeps placement active until the player presses **Cancel** or exits Build Mode.
+
+The local preview is not a row of disconnected markers. After the first anchor it renders a pooled spline-mesh strip from the last confirmed point to the cursor, samples the underlying terrain with the same spacing/ground-offset rules as the finished segment, and reports explicit too-short/too-long placement feedback. Finished segments remain independent normal build actors for ownership, health, construction, demolition/refunds, replication and saves, while adjacent turns share a bisected tangent direction so the visible road flows through corners instead of producing hard disconnected joints.
+
+Path authoring is exposed under `Building | Settlement | Path`: forward axis, cross-section mesh scale, ground offset, terrain sample spacing/trace range, minimum and maximum point distance, tangent scale, optional path collision and shadow control. Existing paths are pierced by terrain projection even when collision is enabled, and Settlement Paths intentionally do **not** participate in structural `PlacementBounds`, tree-respawn suppression or runtime Recast structural dirtying. World save advances to **v9** to retain segment-local endpoints and tangent overrides; character save remains v5 and previous world-save migration behavior is retained. See [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md) and [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md).
+
+### Settlement worker presentation retained — v2.16.10
+
+v2.16.10's contextual held-tool layer remains unchanged. `ARPGSettlementDefinition -> Settlement | Woodcutting | Tool Presentation` can reference the project's existing Axe Item Definition, and residents reconstruct a local transient equipment visual while `Going To Work` or `Woodcutting` without mutating Inventory/equipment state or durability.
+
+### Settlement runtime baseline
 
 A `UARPGSettlementDefinition` drives settlement radius/HUD range, deterministic non-overlap policy, configurable housing requirements (2x2 Foundations by default), recruitment/population, villager class/names/wander cadence, woodcutting policy and Hub stockpile size. `AARPGSettlementHubActor` validates homes semantically from completed Foundations, full overhead cover, Wall-family perimeter, Doorway and an installed Door. `AARPGBuildBedActor` supports Unassigned/Player/Villager roles through the existing authoritative Interact path.
 
 Residents are real `AARPGSettlementVillagerCharacter` pawns derived from the existing AI character. They inherit Hub owner/faction identity, persist by resident/Hub/Bed IDs, roam through the existing AI wander system, reserve existing `ARPGTree` actors, chop through the normal tree durability/reward path and can deposit harvested resources into the Hub's native persistent stockpile.
 
-`UARPGSettlementUIComponent` supplies a ready proximity Settlement HUD plus Hub, Bed and resident UI with exposed Widget Classes and Blueprint refresh hooks. The Hub panel can open its stockpile through the existing Storage UI. World save advances to v8 while retaining v6 Window and v7 Light migration behavior. See [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md).
+`UARPGSettlementUIComponent` supplies a ready proximity Settlement HUD plus Hub, Bed and resident UI with exposed Widget Classes and Blueprint refresh hooks. The Hub panel can open its stockpile through the existing Storage UI.
 
 ## Current release — v2.15.54-alpha
 

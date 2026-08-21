@@ -361,7 +361,7 @@ Play Tool Equip / Unequip Presentation = true
 
 The referenced Item Definition supplies its `Equipped Static Mesh` or `Equipped Skeletal Mesh`, `Attach Socket`, `Equipped Relative Transform`, optional visual-actor subclass, and optional equip/unequip montage/sounds. `Going To Work` and `Woodcutting` display the tool by default; `Roaming`, `At Home`, `Returning Home` and `Homeless` remove it.
 
-This visual does not call Inventory `EquipItem`, does not create/remove an item instance, does not apply equipment Gameplay Effects/stat modifiers and does not spend durability. It is a local presentation actor rebuilt from replicated settlement work state, so world SaveVersion remains v8.
+This visual does not call Inventory `EquipItem`, does not create/remove an item instance, does not apply equipment Gameplay Effects/stat modifiers and does not spend durability. It is a local presentation actor rebuilt from replicated settlement work state, so the woodcutting-tool visual still adds no save payload; the current world SaveVersion remains v9; v2.16.11 introduced Settlement Path geometry persistence and v2.16.12 changes only tangent runtime semantics.
 
 ## Building occupancy and tree respawn — v2.16.9
 

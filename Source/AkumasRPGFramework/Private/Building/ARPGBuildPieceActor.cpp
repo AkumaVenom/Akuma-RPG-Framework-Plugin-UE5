@@ -215,7 +215,7 @@ void AARPGBuildPieceActor::InitializeBuilding(UARPGBuildPieceDefinition* InDefin
 
 void AARPGBuildPieceActor::RefreshRuntimeNavigation()
 {
-    if (!HasAuthority() || !GetWorld() || !Definition) return;
+    if (!HasAuthority() || !GetWorld() || !Definition || Definition->PieceKind == EARPGBuildPieceKind::SettlementPath) return;
 
     UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
     if (!Nav) return;
@@ -255,7 +255,7 @@ void AARPGBuildPieceActor::RefreshRuntimeNavigation()
 
 bool AARPGBuildPieceActor::DoesLogicalPlacementOverlapWorldCylinder(FVector WorldCenter, float HorizontalRadius, float WorldMinZ, float WorldMaxZ) const
 {
-    if (!Definition) return false;
+    if (!Definition || Definition->PieceKind == EARPGBuildPieceKind::SettlementPath) return false;
 
     FVector LocalMin, LocalMax;
     ARPGGetBuildDefinitionLocalBounds(Definition, LocalMin, LocalMax);
@@ -290,7 +290,9 @@ bool AARPGBuildPieceActor::DoesLogicalPlacementOverlapWorldCylinder(FVector Worl
 
 void AARPGBuildPieceActor::NotifyNearbyTreesOfOccupancy(bool bPresent)
 {
-    if (!HasAuthority() || !GetWorld() || !Definition) return;
+    // Settlement Paths are visual settlement dressing, not structural occupancy. Skipping this scan
+    // also keeps long road networks from adding O(path segments x trees) authority work on creation.
+    if (!HasAuthority() || !GetWorld() || !Definition || Definition->PieceKind == EARPGBuildPieceKind::SettlementPath) return;
     for (TActorIterator<AARPGTree> It(GetWorld()); It; ++It)
     {
         AARPGTree* Tree = *It;

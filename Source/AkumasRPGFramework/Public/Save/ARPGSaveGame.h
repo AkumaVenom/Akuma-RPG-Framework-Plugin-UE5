@@ -22,8 +22,8 @@ class AKUMASRPGFRAMEWORK_API UARPGWorldSaveGame : public USaveGame
 {
     GENERATED_BODY()
 public:
-    // v8 adds Settlement Bed role/assignment + resident persistence; v7 Light, v6 Window and v5 construction/Door fields remain unchanged.
-    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 8;
+    // v9 adds persistent Settlement Path local endpoints; v8 Bed/residents, v7 Light, v6 Window and v5 construction/Door fields remain unchanged.
+    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 9;
     UPROPERTY(SaveGame, BlueprintReadWrite) FARPGWorldSaveData World;
 };
 

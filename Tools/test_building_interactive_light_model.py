@@ -28,7 +28,7 @@ entries = [re.sub(r"/\*.*?\*/", "", x, flags=re.S).strip().split()[0].rstrip(","
            for x in enum_body.group(1).splitlines() if x.strip() and not x.strip().startswith("/**")]
 entries = [x for x in entries if x]
 assert entries.index("Light") == entries.index("Custom") + 1, f"Light must remain immediately after Custom, got tail={entries[-6:]}"
-assert entries[-2:] == ["Bed", "SettlementHub"], f"Settlement kinds must append after Light, got tail={entries[-6:]}"
+assert entries[-3:] == ["Bed", "SettlementHub", "SettlementPath"], f"Settlement kinds must append after Light without reordering existing values, got tail={entries[-7:]}"
 
 for token in (
     "EARPGBuildLightPlacementMode",
@@ -151,7 +151,7 @@ for token in (
 
 # World save v7 adds only Light state and preserves v6 Window migration behavior.
 assert "bool bLightOn = false;" in TYPES
-assert "SaveVersion = 8" in SAVE_H
+assert "SaveVersion = 9" in SAVE_H
 assert "Save->SaveVersion>=7 ? R.bLightOn" in SAVE_CPP
 for token in (
     "R.bLightOn=Light->IsLightOn()",

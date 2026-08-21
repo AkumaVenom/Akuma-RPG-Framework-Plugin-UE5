@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21610 or descriptor.get("VersionName") != "2.16.10-alpha":
-        issues.append("package descriptor must identify v2.16.10-alpha")
+    if descriptor.get("Version") != 21612 or descriptor.get("VersionName") != "2.16.12-alpha":
+        issues.append("package descriptor must identify v2.16.12-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1994,6 +1994,124 @@ if all(p.exists() for p in paths_2150):
             for forbidden in ("SetEquipped(", "EquipAuthority(", "UnequipAuthority(", "AddItem(", "RemoveItem("):
                 if forbidden in transient_body: issues.append(f"v2.16.10 contextual tool visual must not mutate Inventory/equipment state: {forbidden}")
 
+    # v2.16.11 player-built Settlement spline paths. The first confirmation establishes a server-owned
+    # anchor; each later confirmation creates one independently persistent segment and advances only
+    # after authoritative success. Generated path art remains non-structural settlement dressing.
+    path_actor_h_21611 = root / "Public" / "Building" / "ARPGBuildPathActor.h"
+    path_actor_cpp_21611 = root / "Private" / "Building" / "ARPGBuildPathActor.cpp"
+    path_preview_h_21611 = root / "Public" / "Building" / "ARPGBuildPreviewActor.h"
+    path_preview_cpp_21611 = root / "Private" / "Building" / "ARPGBuildPreviewActor.cpp"
+    building_h_21611 = root / "Public" / "Building" / "ARPGBuildingComponent.h"
+    building_cpp_21611 = root / "Private" / "Building" / "ARPGBuildingComponent.cpp"
+    build_piece_h_21611 = root / "Public" / "Data" / "ARPGBuildPieceDefinition.h"
+    build_actor_cpp_21611 = root / "Private" / "Building" / "ARPGBuildPieceActor.cpp"
+    types_h_21611 = root / "Public" / "ARPGTypes.h"
+    widgets_cpp_21611 = root / "Private" / "UI" / "ARPGBuildingWidgets.cpp"
+    save_h_21611 = root / "Public" / "Save" / "ARPGSaveGame.h"
+    save_cpp_21611 = root / "Private" / "Subsystems" / "ARPGSaveSubsystem.cpp"
+    if not all(path.exists() for path in (path_actor_h_21611, path_actor_cpp_21611, path_preview_h_21611, path_preview_cpp_21611, building_h_21611, building_cpp_21611, build_piece_h_21611, build_actor_cpp_21611, types_h_21611, widgets_cpp_21611, save_h_21611, save_cpp_21611)):
+        issues.append("v2.16.11 Settlement spline-path source set is incomplete")
+    else:
+        pah21611 = path_actor_h_21611.read_text(errors="replace")
+        pac21611 = path_actor_cpp_21611.read_text(errors="replace")
+        pvh21611 = path_preview_h_21611.read_text(errors="replace")
+        pvc21611 = path_preview_cpp_21611.read_text(errors="replace")
+        bh21611 = building_h_21611.read_text(errors="replace")
+        bc21611 = building_cpp_21611.read_text(errors="replace")
+        bph21611 = build_piece_h_21611.read_text(errors="replace")
+        bac21611 = build_actor_cpp_21611.read_text(errors="replace")
+        th21611 = types_h_21611.read_text(errors="replace")
+        bwc21611 = widgets_cpp_21611.read_text(errors="replace")
+        svh21611 = save_h_21611.read_text(errors="replace")
+        svc21611 = save_cpp_21611.read_text(errors="replace")
+        enum_start = bph21611.find("enum class EARPGBuildPieceKind")
+        enum_end = bph21611.find("};", enum_start) if enum_start >= 0 else -1
+        enum_body = bph21611[enum_start:enum_end] if enum_start >= 0 and enum_end > enum_start else ""
+        if "SettlementHub" not in enum_body or "SettlementPath" not in enum_body or enum_body.find("SettlementHub") > enum_body.find("SettlementPath") or not enum_body.rstrip().endswith("SettlementPath"):
+            issues.append("v2.16.11 SettlementPath Piece Kind must remain appended after SettlementHub for enum stability")
+        for required in (
+            "enum class EARPGSettlementPathForwardAxis",
+            "SettlementPathTerrainSampleSpacing = 125.f",
+            "SettlementPathTerrainTraceHeight = 250.f",
+            "SettlementPathTerrainTraceDepth = 500.f",
+            "SettlementPathMinimumSegmentLength = 75.f",
+            "SettlementPathMaximumSegmentLength = 1200.f",
+            "SettlementPathTangentScale = 1.f",
+            "bSettlementPathCollisionEnabled = false",
+            "bSettlementPathCastShadow = true",
+        ):
+            if required not in bph21611: issues.append(f"v2.16.11 Settlement Path authoring contract missing: {required}")
+        for required in (
+            "ServerBeginSettlementPath", "ServerPlaceSettlementPathPoint", "ServerCancelSettlementPath",
+            "ClientSettlementPathAnchorResult", "ClientSettlementPathSegmentResult",
+            "bAuthoritySettlementPathActive", "AuthoritySettlementPathLastPoint", "AuthoritySettlementPathLastSegment",
+            "CancelSettlementPathPlacement", "OnSettlementPathSessionChanged", "OnSettlementPathSegmentPlaced",
+        ):
+            if required not in bh21611: issues.append(f"v2.16.11 continuous Settlement Path API/state missing: {required}")
+        for required in (
+            "BeginSettlementPathAuthority", "PlaceSettlementPathPointAuthority", "ConsumeBuildResources(Piece)",
+            "InitializePathSegment", "PreviousSegment->SetPathEndpointTangentsWorld",
+            "Spawned->SetPathEndpointTangentsWorld", "ServerCancelSettlementPath()",
+            "BuildNeighbor->Definition->PieceKind == EARPGBuildPieceKind::SettlementPath",
+        ):
+            if required not in bc21611: issues.append(f"v2.16.11 authoritative Settlement Path runtime missing: {required}")
+        begin_start_21611 = bc21611.find("EARPGPlacementResult UARPGBuildingComponent::BeginSettlementPathAuthority")
+        begin_end_21611 = bc21611.find("EARPGPlacementResult UARPGBuildingComponent::PlaceSettlementPathPointAuthority", begin_start_21611) if begin_start_21611 >= 0 else -1
+        if begin_start_21611 < 0 or begin_end_21611 <= begin_start_21611:
+            issues.append("v2.16.11 first-point Settlement Path authority implementation is missing")
+        else:
+            begin_body_21611 = bc21611[begin_start_21611:begin_end_21611]
+            for forbidden in ("ConsumeBuildResources", "SpawnActor", "InitializePathSegment"):
+                if forbidden in begin_body_21611: issues.append(f"v2.16.11 first Settlement Path anchor must not create/charge a segment: {forbidden}")
+        for required in ("SetSettlementPathSegmentPreview", "ClearSettlementPathSegmentPreview", "PathPreviewSpline", "PathPreviewMeshComponents"):
+            if required not in pvh21611: issues.append(f"v2.16.11 Settlement Path preview API missing: {required}")
+        for required in ("while (PathPreviewMeshComponents.Num() < NeededMeshCount)", "USplineMeshComponent", "SetStartAndEnd", "SampleParams.AddIgnoredActor(ExistingPath)"):
+            if required not in pvc21611: issues.append(f"v2.16.11 pooled terrain-conforming path preview missing: {required}")
+        for required in (
+            "class AKUMASRPGFRAMEWORK_API AARPGBuildPathActor", "PathStartLocal", "PathEndLocal",
+            "PathStartTangentLocal", "PathEndTangentLocal", "SetPathEndpointTangentsWorld",
+        ):
+            if required not in pah21611: issues.append(f"v2.16.11 native Settlement Path actor API missing: {required}")
+        for required in (
+            "USplineMeshComponent", "ESplinePointType::CurveClamped", "SampleParams.AddIgnoredActor(ExistingPath)",
+            "DOREPLIFETIME(AARPGBuildPathActor, PathStartLocal)", "DOREPLIFETIME(AARPGBuildPathActor, PathEndLocal)",
+            "DOREPLIFETIME(AARPGBuildPathActor, PathStartTangentLocal)", "DOREPLIFETIME(AARPGBuildPathActor, PathEndTangentLocal)",
+        ):
+            if required not in pac21611: issues.append(f"v2.16.11 replicated terrain-conforming path actor missing: {required}")
+        for required in ("PathSegmentTooShort", "PathSegmentTooLong", "SettlementPathStartLocal", "SettlementPathEndLocal", "SettlementPathStartTangentLocal", "SettlementPathEndTangentLocal"):
+            if required not in th21611: issues.append(f"v2.16.11 Settlement Path placement/save state missing: {required}")
+        if "Definition->PieceKind == EARPGBuildPieceKind::SettlementPath" not in bac21611:
+            issues.append("v2.16.11 Settlement Paths must be excluded from structural/tree occupancy work")
+        for required in ("Path point is too close to the previous point", "Path point is too far from the previous point", "Place first path point", "Place next path point", "Continue until Cancel"):
+            if required not in bwc21611: issues.append(f"v2.16.11 native Settlement Path HUD feedback missing: {required}")
+        if svh21611.count("SaveVersion = 5") < 1 or "SaveVersion = 9" not in svh21611:
+            issues.append("v2.16.11 save schema must keep character v5 and advance world save to v9")
+        if "SaveVersion>=9" not in svc21611 or "RestorePathGeometry" not in svc21611:
+            issues.append("v2.16.11 world-save v9 Settlement Path geometry restore is missing")
+
+        # v2.16.12 turn stability: endpoint overrides are direction-only and their runtime magnitude is
+        # derived from the adjacent terrain-sampled span. This prevents whole-segment Hermite overshoot
+        # while retaining the v9 save schema and sanitizing v2.16.11 tangent payloads on load.
+        for required in (
+            "ARPGResolveStableSettlementPathEndpointTangent", "AdjacentSpan", "MinimumForwardDot",
+            "SavedStartTangentLocal.GetSafeNormal()", "SavedEndTangentLocal.GetSafeNormal()",
+            "GetActorTransform().InverseTransformVectorNoScale(StartTangentWorld).GetSafeNormal()",
+            "GetActorTransform().InverseTransformVectorNoScale(EndTangentWorld).GetSafeNormal()",
+        ):
+            if required not in pac21611: issues.append(f"v2.16.12 Settlement Path tangent-stability fix missing: {required}")
+        for required in (
+            "const FVector PreviousJoinTangent = JoinDirection;",
+            "const FVector NewJoinTangent = JoinDirection;",
+            "SettlementPathLastPlacedSegment", "PreviewStartTangentWorld",
+        ):
+            if required not in bc21611: issues.append(f"v2.16.12 Settlement Path turn/preview parity missing: {required}")
+        if "PreviousSegment->GetPathSegmentLength()" in bc21611[bc21611.find("EARPGPlacementResult UARPGBuildingComponent::PlaceSettlementPathPointAuthority"):bc21611.find("void UARPGBuildingComponent::ServerBeginSettlementPath_Implementation")]:
+            issues.append("v2.16.12 Settlement Path join tangent must not use whole previous-segment length")
+        if "FVector::Distance(StartPoint, ProjectedEnd)" in bc21611[bc21611.find("EARPGPlacementResult UARPGBuildingComponent::PlaceSettlementPathPointAuthority"):bc21611.find("void UARPGBuildingComponent::ServerBeginSettlementPath_Implementation")]:
+            issues.append("v2.16.12 Settlement Path join tangent must not use whole new-segment length")
+        for required in ("StartTangentDirectionWorld", "AdjacentSpan", "MinimumForwardDot"):
+            if required not in pvc21611: issues.append(f"v2.16.12 Settlement Path preview tangent bound missing: {required}")
+
     # v2.15.43 Stair low-end story-surface contract: LOW-departure/up-flight art starts on the
     # CURRENT finished surface. The upper Floor remains on low-story + StandardWallHeight instead
     # of lifting the Stair by the 22 cm difference between 300 cm story height and 278 cm art rise.
@@ -2503,8 +2621,8 @@ if all(p.exists() for p in paths_2150):
     svh215 = save_h_2140.read_text(errors="replace"); svc215 = save_cpp_2140.read_text(errors="replace"); th215 = types_h_2140.read_text(errors="replace")
     for required in ("bConstructionComplete", "ConstructionRemainingSeconds", "bDoorOpen", "bWindowOpen", "bLightOn"):
         if required not in th215: issues.append(f"v2.15.0 building persistence state missing: {required}")
-    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 8" not in svh215:
-        issues.append("v2.16.0 world save schema must be v8 while character save remains v5")
+    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 9" not in svh215:
+        issues.append("v2.16.11 world save schema must be v9 while character save remains v5")
     if "SaveVersion>=6 ? R.bWindowOpen : false" not in svc215:
         issues.append("v2.15.54 world-save v7 migration must retain v6 Window-state compatibility")
     for required in ("RestoreConstructionState", "RestoreDoorOpenState", "RestoreWindowOpenState", "RestoreLightState", "ProcessOfflineElapsed()"):
@@ -2602,6 +2720,8 @@ if readme_2150.exists():
     if not release_documented("v2.16.8-alpha — Native Dynamic Recast Stair Navigation Cleanup"): issues.append("README or Docs/CHANGELOG.md must document v2.16.8 native Dynamic Recast Stair navigation cleanup")
     if not release_documented("v2.16.9-alpha — Build-Aware Tree Replacement & Respawn Suppression"): issues.append("README or Docs/CHANGELOG.md must document v2.16.9 build-aware Tree replacement and respawn suppression")
     if not release_documented("v2.16.10-alpha — Settlement Villager Contextual Woodcutting Tool Presentation"): issues.append("README or Docs/CHANGELOG.md must document v2.16.10 settlement villager contextual woodcutting tool presentation")
+    if not release_documented("v2.16.11-alpha — Player-Built Settlement Spline Paths"): issues.append("README or Docs/CHANGELOG.md must document v2.16.11 player-built Settlement spline paths")
+    if not release_documented("v2.16.12-alpha — Settlement Path Turn Tangent Stability Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.16.12 Settlement Path turn tangent stability root fix")
 
     persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
     ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")

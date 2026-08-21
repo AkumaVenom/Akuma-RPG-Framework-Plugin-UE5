@@ -9,6 +9,7 @@
 #include "Building/ARPGBuildDoorActor.h"
 #include "Building/ARPGBuildWindowActor.h"
 #include "Building/ARPGBuildLightActor.h"
+#include "Building/ARPGBuildPathActor.h"
 #include "Settlement/ARPGBuildBedActor.h"
 #include "Settlement/ARPGSettlementHubActor.h"
 #include "Settlement/ARPGSettlementResidentComponent.h"
@@ -270,6 +271,13 @@ bool UARPGSaveSubsystem::SaveWorld(FString WorldId, FString SlotOverride)
         if(const AARPGBuildDoorActor* Door=Cast<AARPGBuildDoorActor>(B)) R.bDoorOpen=Door->IsDoorOpen();
         if(const AARPGBuildWindowActor* Window=Cast<AARPGBuildWindowActor>(B)) R.bWindowOpen=Window->IsWindowOpen();
         if(const AARPGBuildLightActor* Light=Cast<AARPGBuildLightActor>(B)) R.bLightOn=Light->IsLightOn();
+        if(const AARPGBuildPathActor* Path=Cast<AARPGBuildPathActor>(B))
+        {
+            R.SettlementPathStartLocal=Path->PathStartLocal;
+            R.SettlementPathEndLocal=Path->PathEndLocal;
+            R.SettlementPathStartTangentLocal=Path->PathStartTangentLocal;
+            R.SettlementPathEndTangentLocal=Path->PathEndTangentLocal;
+        }
         if(const AARPGBuildBedActor* Bed=Cast<AARPGBuildBedActor>(B))
         {
             R.BedRole=Bed->BedRole;
@@ -355,6 +363,10 @@ bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
         if(AARPGBuildDoorActor* Door=Cast<AARPGBuildDoorActor>(B)) Door->RestoreDoorOpenState(R.bDoorOpen);
         if(AARPGBuildWindowActor* Window=Cast<AARPGBuildWindowActor>(B)) Window->RestoreWindowOpenState(Save->SaveVersion>=6 ? R.bWindowOpen : false);
         if(AARPGBuildLightActor* Light=Cast<AARPGBuildLightActor>(B)) Light->RestoreLightState(Save->SaveVersion>=7 ? R.bLightOn : (B->Definition ? B->Definition->bLightStartsOn : false));
+        if(AARPGBuildPathActor* Path=Cast<AARPGBuildPathActor>(B))
+        {
+            if(Save->SaveVersion>=9) Path->RestorePathGeometry(R.SettlementPathStartLocal,R.SettlementPathEndLocal,R.SettlementPathStartTangentLocal,R.SettlementPathEndTangentLocal);
+        }
         if(AARPGBuildBedActor* Bed=Cast<AARPGBuildBedActor>(B))
         {
             if(Save->SaveVersion>=8) Bed->RestoreBedState(R.BedRole,R.BedAssignedResidentId,R.PlayerBedOwnerCharacterId);
