@@ -1,6 +1,6 @@
 # Akuma's RPG Framework — UE 5.8
 
-<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/046f6018-b205-4f0a-82f7-5950b2e7877d" />
+<img width="1672" height="941" alt="AumaRPGFWSplash" src="https://github.com/user-attachments/assets/cee99ca5-b1a1-456d-a549-b747bf11933c" />
 
 **Akuma's RPG Framework** is a Blueprint-first, data-driven Unreal Engine 5.8 gameplay framework for building large single-player and multiplayer RPGs without rebuilding the same core systems for every project.
 
