@@ -60,7 +60,19 @@ public:
     /** Produces ready standard snap transforms plus any custom snap transforms authored on the definition. */
     UFUNCTION(BlueprintCallable, Category="ARPG|Building|Snapping") void GetSnapTransformsFor(const UARPGBuildPieceDefinition* IncomingPiece, TArray<FTransform>& OutWorldTransforms) const;
 
+    /** Re-registers this runtime build piece with NavigationSystem and dirties its local Recast tiles. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Navigation", meta=(BlueprintAuthorityOnly)) void RefreshRuntimeNavigation();
+    /** Re-evaluates nearby ARPG Tree resource respawn occupancy. Called automatically on placement/load/removal; exposed for custom runtime build actors. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Environment", meta=(BlueprintAuthorityOnly)) void RefreshNearbyTreeRespawnSuppression();
+    /** Logical PlacementBounds overlap test used by environment/resource suppression. Rotation and actor scale are respected without depending on decorative mesh collision. */
+    UFUNCTION(BlueprintPure, Category="ARPG|Building|Environment") bool DoesLogicalPlacementOverlapWorldCylinder(FVector WorldCenter, float HorizontalRadius, float WorldMinZ, float WorldMaxZ) const;
+    /** Deprecated compatibility node. Automatic Stair NavLinks were removed in v2.16.8; refreshes real Dynamic Recast instead. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Building|Navigation", meta=(BlueprintAuthorityOnly, DeprecatedFunction, DeprecationMessage="Automatic Stair NavLinks were removed in v2.16.8. Use Refresh Runtime Navigation.")) void RefreshStairNavigationBridge();
+    /** Deprecated compatibility query. Automatic Stair NavLinks were removed in v2.16.8 and this always returns false. */
+    UFUNCTION(BlueprintPure, Category="ARPG|Building|Navigation", meta=(DeprecatedFunction, DeprecationMessage="Automatic Stair NavLinks were removed in v2.16.8.")) bool HasActiveStairNavigationBridge() const;
+
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void Tick(float DeltaSeconds) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 protected:
@@ -78,6 +90,7 @@ protected:
     void CompleteConstructionAuthority();
     float GetAuthoritativeServerTime() const;
 private:
+    void NotifyNearbyTreesOfOccupancy(bool bPresent);
     FVector BaseMeshRelativeLocation = FVector::ZeroVector;
     FVector BaseMeshRelativeScale = FVector::OneVector;
     float LastConstructionVisualProgress = -1.f;

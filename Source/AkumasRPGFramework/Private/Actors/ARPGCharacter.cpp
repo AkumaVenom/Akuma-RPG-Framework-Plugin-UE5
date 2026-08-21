@@ -24,6 +24,7 @@
 #include "Components/ARPGInteractionComponent.h"
 #include "Building/ARPGBuildingComponent.h"
 #include "Components/ARPGBuildingUIComponent.h"
+#include "Components/ARPGSettlementUIComponent.h"
 #include "Data/ARPGBuildPieceDefinition.h"
 #include "Mounts/ARPGMountComponent.h"
 #include "Social/ARPGGroupComponent.h"
@@ -66,6 +67,7 @@ AARPGCharacter::AARPGCharacter()
     Interaction = CreateDefaultSubobject<UARPGInteractionComponent>(TEXT("Interaction"));
     Building = CreateDefaultSubobject<UARPGBuildingComponent>(TEXT("Building"));
     BuildingUI = CreateDefaultSubobject<UARPGBuildingUIComponent>(TEXT("BuildingUI"));
+    SettlementUI = CreateDefaultSubobject<UARPGSettlementUIComponent>(TEXT("SettlementUI"));
     Mounts = CreateDefaultSubobject<UARPGMountComponent>(TEXT("Mounts"));
     Group = CreateDefaultSubobject<UARPGGroupComponent>(TEXT("Group"));
     Threat = CreateDefaultSubobject<UARPGThreatComponent>(TEXT("Threat"));
@@ -306,4 +308,11 @@ bool AARPGCharacter::PreviousBuildPiece() { return Building ? Building->SelectPr
 void AARPGCharacter::CancelBuildPlacement() { if (Building) Building->EndBuildMode(); }
 bool AARPGCharacter::InteractBuiltStructure() { return BuildingUI ? BuildingUI->InteractWithBuiltStructureFromView() : false; }
 bool AARPGCharacter::DemolishBuiltStructure() { return BuildingUI ? BuildingUI->DemolishBuiltStructureFromView() : false; }
-bool AARPGCharacter::CloseBuiltStructureUI() { return BuildingUI ? BuildingUI->CloseStructureUI() : false; }
+bool AARPGCharacter::CloseBuiltStructureUI()
+{
+    const bool bBuildingClosed = BuildingUI ? BuildingUI->CloseStructureUI() : false;
+    const bool bSettlementClosed = SettlementUI ? SettlementUI->CloseAllSettlementUI() : false;
+    return bBuildingClosed || bSettlementClosed;
+}
+bool AARPGCharacter::OpenNearbySettlementUI() { return SettlementUI && SettlementUI->GetNearbySettlementHub() ? SettlementUI->OpenSettlementPanel(SettlementUI->GetNearbySettlementHub()) : false; }
+bool AARPGCharacter::CloseSettlementUI() { return SettlementUI ? SettlementUI->CloseAllSettlementUI() : false; }

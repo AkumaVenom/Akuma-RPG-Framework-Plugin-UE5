@@ -75,3 +75,12 @@ The same `FARPGChatMessage` format is used for player and game-generated message
 - quest
 - loot
 - combat/event messages
+
+
+## Settlement authority — v2.16.0
+
+Settlement mutation is server-authoritative. Hub placement uses the normal build catalogue/range/resources/faction/territory checks and additionally validates settlement-area overlap when enabled. Bed role changes travel through the existing player-owned `ARPGInteractionComponent` RPC and call `CanActorModify` on authority. Hub recruitment, Bed assignment, resident activity selection, tree reservation/chopping and resource deposit run on the server.
+
+Settlement villagers copy the Hub's owner account, owner character and faction identity into the framework's existing ownership/faction components. They do not use a parallel settlement-only allegiance table. The local Settlement UI is presentation only: proximity HUD discovery checks Hub access, and Hub/Bed/Stockpile requests are revalidated by the normal authoritative gameplay path.
+
+World save v8 persists resident/Bed/Hub identity links after buildings and containers are restored. This keeps Hub stockpile and resident assignment consistent while retaining the older v6 Window and v7 Light migration paths.

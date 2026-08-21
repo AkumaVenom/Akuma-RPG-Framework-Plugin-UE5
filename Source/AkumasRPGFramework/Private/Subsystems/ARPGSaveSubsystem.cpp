@@ -9,6 +9,11 @@
 #include "Building/ARPGBuildDoorActor.h"
 #include "Building/ARPGBuildWindowActor.h"
 #include "Building/ARPGBuildLightActor.h"
+#include "Settlement/ARPGBuildBedActor.h"
+#include "Settlement/ARPGSettlementHubActor.h"
+#include "Settlement/ARPGSettlementResidentComponent.h"
+#include "Settlement/ARPGSettlementVillagerCharacter.h"
+#include "Data/ARPGSettlementDefinition.h"
 #include "Crafting/ARPGStorageActor.h"
 #include "Crafting/ARPGCraftingStationActor.h"
 #include "Components/ARPGFactionOwnershipComponent.h"
@@ -257,8 +262,22 @@ bool UARPGSaveSubsystem::SaveWorld(FString WorldId, FString SlotOverride)
     for(TActorIterator<AARPGBuildPieceActor> It(W);It;++It)
     {
         AARPGBuildPieceActor* B=*It; if(!B || !B->bRuntimePlaced || !B->BuildingId.IsValid())continue;
-        FARPGPlacedBuildingSave R; R.BuildingId=B->BuildingId; R.PieceId=B->Definition?B->Definition->DefinitionId:NAME_None; R.ActorClass=FSoftClassPath(B->GetClass()->GetPathName()); R.Transform=B->GetActorTransform(); R.Health=B->Health; R.UpgradeLevel=B->UpgradeLevel; R.bConstructionComplete=B->IsConstructionComplete(); R.ConstructionRemainingSeconds=B->GetConstructionRemainingSeconds(); if(const AARPGBuildDoorActor* Door=Cast<AARPGBuildDoorActor>(B))R.bDoorOpen=Door->IsDoorOpen(); if(const AARPGBuildWindowActor* Window=Cast<AARPGBuildWindowActor>(B))R.bWindowOpen=Window->IsWindowOpen(); if(const AARPGBuildLightActor* Light=Cast<AARPGBuildLightActor>(B))R.bLightOn=Light->IsLightOn();
-        if(B->Ownership){R.OwnerAccountId=B->Ownership->OwnerAccountId;R.OwnerCharacterId=B->Ownership->OwnerCharacterId;R.OwnerFactionId=B->Ownership->OwnerFactionId;} D.Buildings.Add(R);
+        FARPGPlacedBuildingSave R;
+        R.BuildingId=B->BuildingId; R.PieceId=B->Definition?B->Definition->DefinitionId:NAME_None;
+        R.ActorClass=FSoftClassPath(B->GetClass()->GetPathName()); R.Transform=B->GetActorTransform();
+        R.Health=B->Health; R.UpgradeLevel=B->UpgradeLevel; R.bConstructionComplete=B->IsConstructionComplete();
+        R.ConstructionRemainingSeconds=B->GetConstructionRemainingSeconds();
+        if(const AARPGBuildDoorActor* Door=Cast<AARPGBuildDoorActor>(B)) R.bDoorOpen=Door->IsDoorOpen();
+        if(const AARPGBuildWindowActor* Window=Cast<AARPGBuildWindowActor>(B)) R.bWindowOpen=Window->IsWindowOpen();
+        if(const AARPGBuildLightActor* Light=Cast<AARPGBuildLightActor>(B)) R.bLightOn=Light->IsLightOn();
+        if(const AARPGBuildBedActor* Bed=Cast<AARPGBuildBedActor>(B))
+        {
+            R.BedRole=Bed->BedRole;
+            R.BedAssignedResidentId=Bed->AssignedResidentId;
+            R.PlayerBedOwnerCharacterId=Bed->PlayerBedOwnerCharacterId;
+        }
+        if(B->Ownership){R.OwnerAccountId=B->Ownership->OwnerAccountId;R.OwnerCharacterId=B->Ownership->OwnerCharacterId;R.OwnerFactionId=B->Ownership->OwnerFactionId;}
+        D.Buildings.Add(R);
     }
     for(TActorIterator<AARPGStorageActor> It(W);It;++It)
     {
@@ -266,6 +285,26 @@ bool UARPGSaveSubsystem::SaveWorld(FString WorldId, FString SlotOverride)
         FARPGContainerSave R; R.ContainerId=S->ContainerId; R.LinkedBuildingId=S->BuildingId; R.ActorClass=FSoftClassPath(S->GetClass()->GetPathName()); R.Transform=S->GetActorTransform(); if(S->Inventory)R.Items=S->Inventory->Items;
         if(S->Ownership){R.OwnerAccountId=S->Ownership->OwnerAccountId;R.OwnerCharacterId=S->Ownership->OwnerCharacterId;R.OwnerFactionId=S->Ownership->OwnerFactionId;}
         if(AARPGCraftingStationActor* C=Cast<AARPGCraftingStationActor>(S)){R.CraftQueue=C->CraftQueue;if(C->OutputInventory)R.OutputItems=C->OutputInventory->Items;} D.Containers.Add(R);
+    }
+    for(TActorIterator<AARPGSettlementVillagerCharacter> It(W);It;++It)
+    {
+        AARPGSettlementVillagerCharacter* Villager=*It;
+        if(!Villager || !Villager->SettlementResident || !Villager->SettlementResident->ResidentId.IsValid() || !Villager->SettlementResident->SettlementHub) continue;
+        FARPGSettlementResidentSave R;
+        R.ResidentId=Villager->SettlementResident->ResidentId;
+        R.SettlementHubBuildingId=Villager->SettlementResident->SettlementHub->BuildingId;
+        if(Villager->SettlementResident->AssignedBed) R.AssignedBedBuildingId=Villager->SettlementResident->AssignedBed->BuildingId;
+        R.ActorClass=FSoftClassPath(Villager->GetClass()->GetPathName());
+        R.Transform=Villager->GetActorTransform();
+        R.ResidentName=Villager->RPGCharacterName;
+        if(Villager->Stats) R.Health=Villager->Stats->Health;
+        if(Villager->SettlementOwnership)
+        {
+            R.OwnerAccountId=Villager->SettlementOwnership->OwnerAccountId;
+            R.OwnerCharacterId=Villager->SettlementOwnership->OwnerCharacterId;
+            R.OwnerFactionId=Villager->SettlementOwnership->OwnerFactionId;
+        }
+        D.SettlementResidents.Add(R);
     }
     for(TActorIterator<AARPGDungeonManager> It(W);It;++It)
     {
@@ -293,14 +332,40 @@ bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
             UARPGBuildPieceDefinition* Def=Cast<UARPGBuildPieceDefinition>(UARPGAssetLibrary::ResolveDefinitionById(UARPGBuildPieceDefinition::StaticClass(),R.PieceId));
             if(Def)
             {
-                if(AARPGStorageActor* Storage=Cast<AARPGStorageActor>(B)) if(Storage->Inventory) Storage->Inventory->MaxSlots=FMath::Max(1,Def->StorageSlots);
+                if(AARPGSettlementHubActor* Hub=Cast<AARPGSettlementHubActor>(B))
+                {
+                    if(Hub->Inventory)
+                    {
+                        const UARPGSettlementDefinition* SettlementDef=Def->SettlementDefinition;
+                        Hub->Inventory->MaxSlots=SettlementDef?FMath::Max(1,SettlementDef->SettlementStockpileSlots):96;
+                    }
+                }
+                else if(AARPGStorageActor* Storage=Cast<AARPGStorageActor>(B))
+                {
+                    if(Storage->Inventory) Storage->Inventory->MaxSlots=FMath::Max(1,Def->StorageSlots);
+                }
                 if(AARPGCraftingStationActor* Station=Cast<AARPGCraftingStationActor>(B)) Station->ApplyStationDefinition(Def->StationDefinition);
                 B->InitializeBuilding(Def,nullptr);
             }
             B->BuildingId=R.BuildingId; B->bRuntimePlaced=true;
         }
-        B->SetActorTransform(R.Transform,false,nullptr,ETeleportType::TeleportPhysics);B->Health=R.Health;B->UpgradeLevel=R.UpgradeLevel; if(Save->SaveVersion>=5) B->RestoreConstructionState(R.bConstructionComplete,R.ConstructionRemainingSeconds); else B->RestoreConstructionState(true,0.f); if(AARPGBuildDoorActor* Door=Cast<AARPGBuildDoorActor>(B)) Door->RestoreDoorOpenState(R.bDoorOpen); if(AARPGBuildWindowActor* Window=Cast<AARPGBuildWindowActor>(B)) Window->RestoreWindowOpenState(Save->SaveVersion>=6 ? R.bWindowOpen : false); if(AARPGBuildLightActor* Light=Cast<AARPGBuildLightActor>(B)) Light->RestoreLightState(Save->SaveVersion>=7 ? R.bLightOn : (B->Definition ? B->Definition->bLightStartsOn : false));
-        if(B->Ownership)B->Ownership->SetOwnership(R.OwnerAccountId,R.OwnerCharacterId,R.OwnerFactionId);
+        B->SetActorTransform(R.Transform,false,nullptr,ETeleportType::TeleportPhysics);
+        B->Health=R.Health; B->UpgradeLevel=R.UpgradeLevel;
+        if(Save->SaveVersion>=5) B->RestoreConstructionState(R.bConstructionComplete,R.ConstructionRemainingSeconds); else B->RestoreConstructionState(true,0.f);
+        if(AARPGBuildDoorActor* Door=Cast<AARPGBuildDoorActor>(B)) Door->RestoreDoorOpenState(R.bDoorOpen);
+        if(AARPGBuildWindowActor* Window=Cast<AARPGBuildWindowActor>(B)) Window->RestoreWindowOpenState(Save->SaveVersion>=6 ? R.bWindowOpen : false);
+        if(AARPGBuildLightActor* Light=Cast<AARPGBuildLightActor>(B)) Light->RestoreLightState(Save->SaveVersion>=7 ? R.bLightOn : (B->Definition ? B->Definition->bLightStartsOn : false));
+        if(AARPGBuildBedActor* Bed=Cast<AARPGBuildBedActor>(B))
+        {
+            if(Save->SaveVersion>=8) Bed->RestoreBedState(R.BedRole,R.BedAssignedResidentId,R.PlayerBedOwnerCharacterId);
+            else
+            {
+                const EARPGBedRole LegacyRole=B->Definition?B->Definition->DefaultBedRole:EARPGBedRole::Unassigned;
+                const FGuid LegacyPlayerOwner=LegacyRole==EARPGBedRole::Player?R.OwnerCharacterId:FGuid();
+                Bed->RestoreBedState(LegacyRole,FGuid(),LegacyPlayerOwner);
+            }
+        }
+        if(B->Ownership) B->Ownership->SetOwnership(R.OwnerAccountId,R.OwnerCharacterId,R.OwnerFactionId);
     }
     for(const TPair<FGuid,AARPGBuildPieceActor*>& Pair:Existing) if(!SavedIds.Contains(Pair.Key)&&Pair.Value)Pair.Value->Destroy();
 
@@ -330,6 +395,85 @@ bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
             C->SetActorTickEnabled(C->CraftQueue.Num()>0);
         }
     }
+    // Residents are restored only after every building/Bed/Hub and Hub stockpile container exists.
+    // This preserves Bed assignment identity and prevents a freshly loaded Hub from recruiting a
+    // duplicate resident into a slot that belongs to the save.
+    if(Save->SaveVersion>=8)
+    {
+        TMap<FGuid,AARPGSettlementVillagerCharacter*> ExistingResidents;
+        for(TActorIterator<AARPGSettlementVillagerCharacter> It(W);It;++It)
+            if(It->SettlementResident && It->SettlementResident->ResidentId.IsValid()) ExistingResidents.Add(It->SettlementResident->ResidentId,*It);
+        TSet<FGuid> SavedResidentIds;
+
+        auto FindHub=[&](FGuid Id)->AARPGSettlementHubActor*
+        {
+            if(!Id.IsValid()) return nullptr;
+            for(TActorIterator<AARPGSettlementHubActor> It(W);It;++It) if(It->BuildingId==Id) return *It;
+            return nullptr;
+        };
+        auto FindBed=[&](FGuid Id)->AARPGBuildBedActor*
+        {
+            if(!Id.IsValid()) return nullptr;
+            for(TActorIterator<AARPGBuildBedActor> It(W);It;++It) if(It->BuildingId==Id) return *It;
+            return nullptr;
+        };
+
+        for(const FARPGSettlementResidentSave& R:Save->World.SettlementResidents)
+        {
+            if(!R.ResidentId.IsValid()) continue;
+            AARPGSettlementHubActor* Hub=FindHub(R.SettlementHubBuildingId);
+            AARPGBuildBedActor* Bed=FindBed(R.AssignedBedBuildingId);
+            if(!Hub || !Hub->IsConstructionComplete()) continue;
+            SavedResidentIds.Add(R.ResidentId);
+
+            AARPGSettlementVillagerCharacter* Villager=ExistingResidents.FindRef(R.ResidentId);
+            if(!Villager)
+            {
+                UClass* ResidentClass=R.ActorClass.TryLoadClass<AARPGSettlementVillagerCharacter>();
+                if(!ResidentClass)
+                {
+                    if(const UARPGSettlementDefinition* Def=Hub->GetSettlementDefinition()) ResidentClass=Def->VillagerClass.LoadSynchronous();
+                }
+                if(!ResidentClass) ResidentClass=AARPGSettlementVillagerCharacter::StaticClass();
+                FActorSpawnParameters Params; Params.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
+                Villager=W->SpawnActor<AARPGSettlementVillagerCharacter>(ResidentClass,R.Transform,Params);
+                if(!Villager && Bed)
+                {
+                    FVector InteriorAnchor;
+                    if(Hub->ResolveResidentHomeAnchor(Bed,InteriorAnchor))
+                    {
+                        FTransform SafeTransform=R.Transform; SafeTransform.SetLocation(InteriorAnchor);
+                        Villager=W->SpawnActor<AARPGSettlementVillagerCharacter>(ResidentClass,SafeTransform,Params);
+                    }
+                }
+                if(!Villager) continue;
+            }
+            else
+            {
+                Villager->SetActorTransform(R.Transform,false,nullptr,ETeleportType::TeleportPhysics);
+            }
+
+            Villager->RPGCharacterName=R.ResidentName;
+            if(Villager->SettlementResident) Villager->SettlementResident->RestoreResidentLinks(Hub,Bed,R.ResidentId);
+            if(Villager->SettlementOwnership) Villager->SettlementOwnership->SetOwnership(R.OwnerAccountId,R.OwnerCharacterId,R.OwnerFactionId);
+            if(Villager->Faction && !R.OwnerFactionId.IsNone()) Villager->Faction->SetPrimaryFactionId(R.OwnerFactionId);
+            if(Villager->Stats) Villager->Stats->Health=FMath::Clamp(R.Health,0.f,Villager->Stats->MaxHealth);
+            Hub->RegisterLoadedResident(Villager);
+        }
+        for(const TPair<FGuid,AARPGSettlementVillagerCharacter*>& Pair:ExistingResidents)
+            if(!SavedResidentIds.Contains(Pair.Key) && Pair.Value) Pair.Value->Destroy();
+    }
+    else
+    {
+        // Older worlds had no residents. Remove any transient pre-load recruits and let restored Hubs
+        // perform normal v2.16 recruitment after their configured initial delay.
+        for(TActorIterator<AARPGSettlementVillagerCharacter> It(W);It;)
+        {
+            AARPGSettlementVillagerCharacter* Villager=*It; ++It;
+            if(Villager) Villager->Destroy();
+        }
+    }
+
     for(const FARPGDungeonSaveState& R:Save->World.Dungeons)
         for(TActorIterator<AARPGDungeonManager> It(W);It;++It) if(It->Definition&&It->Definition->DefinitionId==R.DungeonId){It->RestoreEncounterProgress(R.Encounters);It->CurrentCheckpoint=R.Checkpoint;It->bDungeonComplete=R.bComplete;break;}
     return true;

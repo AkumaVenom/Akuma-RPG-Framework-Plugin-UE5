@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "ARPGTypes.h"
 #include "Components/ActorComponent.h"
 #include "ARPGInteractionComponent.generated.h"
 
@@ -10,6 +11,8 @@ class AARPGBuildDoorActor;
 class AARPGBuildWindowActor;
 class AARPGBuildLightActor;
 class AARPGBuildPieceActor;
+class AARPGBuildBedActor;
+class AARPGSettlementHubActor;
 class UARPGRecipeDefinition;
 class UARPGQuestGiverComponent;
 class UARPGQuestDefinition;
@@ -39,6 +42,8 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void ToggleBuiltDoor(AARPGBuildDoorActor* Door);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void ToggleBuiltWindow(AARPGBuildWindowActor* Window);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void ToggleBuiltLight(AARPGBuildLightActor* Light);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Settlement") void SetBuiltBedRole(AARPGBuildBedActor* Bed, EARPGBedRole NewRole);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Settlement") void RefreshSettlementHub(AARPGSettlementHubActor* Hub);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Building") void DemolishBuilding(AARPGBuildPieceActor* Building);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Crafting") void QueueCraft(AARPGCraftingStationActor* Station, UARPGRecipeDefinition* Recipe, int32 Count=1);
     UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Quest") void AcceptQuest(UARPGQuestGiverComponent* Giver, UARPGQuestDefinition* Quest);
@@ -59,6 +64,8 @@ protected:
     UFUNCTION(Server, Reliable) void ServerToggleBuiltDoor(AARPGBuildDoorActor* Door);
     UFUNCTION(Server, Reliable) void ServerToggleBuiltWindow(AARPGBuildWindowActor* Window);
     UFUNCTION(Server, Reliable) void ServerToggleBuiltLight(AARPGBuildLightActor* Light);
+    UFUNCTION(Server, Reliable) void ServerSetBuiltBedRole(AARPGBuildBedActor* Bed, EARPGBedRole NewRole);
+    UFUNCTION(Server, Reliable) void ServerRefreshSettlementHub(AARPGSettlementHubActor* Hub);
     UFUNCTION(Server, Reliable) void ServerDemolishBuilding(AARPGBuildPieceActor* Building);
     UFUNCTION(Server, Reliable) void ServerQueueCraft(AARPGCraftingStationActor* Station, UARPGRecipeDefinition* Recipe, int32 Count);
     UFUNCTION(Server, Reliable) void ServerAcceptQuest(UARPGQuestGiverComponent* Giver, UARPGQuestDefinition* Quest);

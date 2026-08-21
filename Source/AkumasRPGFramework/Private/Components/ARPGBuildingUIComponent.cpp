@@ -6,6 +6,9 @@
 #include "Building/ARPGBuildPieceActor.h"
 #include "Building/ARPGBuildingComponent.h"
 #include "Components/ARPGInteractionComponent.h"
+#include "Components/ARPGSettlementUIComponent.h"
+#include "Settlement/ARPGBuildBedActor.h"
+#include "Settlement/ARPGSettlementHubActor.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGInventoryUIComponent.h"
 #include "Crafting/ARPGCraftingStationActor.h"
@@ -427,6 +430,13 @@ bool UARPGBuildingUIComponent::InteractWithBuiltStructureFromView()
             if (Character->Interaction) { Character->Interaction->ToggleBuiltLight(Light); return true; }
             return false;
         }
+        // Settlement Hub derives Storage, so resolve it before the generic container branch. Beds and
+        // Hubs use the character's dedicated local Settlement UI component; authority remains in the
+        // existing player-owned Interaction component.
+        if (AARPGSettlementHubActor* Hub = Cast<AARPGSettlementHubActor>(Actor))
+            return Character->SettlementUI ? Character->SettlementUI->OpenSettlementPanel(Hub) : false;
+        if (AARPGBuildBedActor* Bed = Cast<AARPGBuildBedActor>(Actor))
+            return Character->SettlementUI ? Character->SettlementUI->OpenBedPanel(Bed) : false;
         if (AARPGCraftingStationActor* Station = Cast<AARPGCraftingStationActor>(Actor)) return OpenCraftingStationUI(Station);
         if (AARPGStorageActor* Storage = Cast<AARPGStorageActor>(Actor)) return OpenStorageUI(Storage);
         return false;

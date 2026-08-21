@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 21554,
-  "VersionName": "2.15.54-alpha",
+  "Version": 21610,
+  "VersionName": "2.16.10-alpha",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with server-authoritative settlement building, structural snapping, interactive persistent buildable lighting (fadeable Point/Spot lights with Niagara/Cascade FX), construction visuals, persistent storage and fuel-driven production stations, player crafting, functional instance durability and repair, reskinnable native UI, Inventory + Quick Access drag/drop, generic item use, JRPG stats, NPC UI, replicated spawning/footsteps, gathering, combat, factions, saves and networking.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with server-authoritative settlement building, Palbox-style Settlement Hubs, validated homes and assignable Beds, persistent faction-owned autonomous villagers with woodcutting, build-aware ARPG Tree replacement/respawn suppression, state-driven settlement villager woodcutting tool presentation, Dynamic Recast runtime build-navigation refresh using real walkable Stair surfaces, reskinnable settlement UI, structural snapping, interactive persistent buildable lighting, construction visuals, storage/production, player crafting, inventory/equipment, JRPG stats/progression, factions, combat, quests, AI, mounts, dungeons, day/night systems, persistence and multiplayer-ready authority.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,

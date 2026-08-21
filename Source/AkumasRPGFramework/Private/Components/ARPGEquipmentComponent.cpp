@@ -385,7 +385,7 @@ FName UARPGEquipmentComponent::ResolveAttachSocket(const UARPGItemDefinition* De
     return NAME_None;
 }
 
-AARPGEquipmentVisualActor* UARPGEquipmentComponent::CreateEquipmentVisual(FGuid ItemInstanceId, const UARPGItemDefinition* Definition, FGameplayTag Slot)
+AARPGEquipmentVisualActor* UARPGEquipmentComponent::SpawnEquipmentVisualActor(const UARPGItemDefinition* Definition)
 {
     if (!bAutoCreateEquipmentVisuals || !GetOwner() || !GetWorld() || !Definition || GetOwner()->GetNetMode() == NM_DedicatedServer) return nullptr;
     const bool bHasNativeMesh = !Definition->EquippedStaticMesh.IsNull() || !Definition->EquippedSkeletalMesh.IsNull();
@@ -425,9 +425,30 @@ AARPGEquipmentVisualActor* UARPGEquipmentComponent::CreateEquipmentVisual(FGuid 
 
     Visual->AttachToComponent(AttachParent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
     Visual->SetActorRelativeTransform(Definition->EquippedRelativeTransform);
+    return Visual;
+}
+
+AARPGEquipmentVisualActor* UARPGEquipmentComponent::CreateEquipmentVisual(FGuid ItemInstanceId, const UARPGItemDefinition* Definition, FGameplayTag Slot)
+{
+    AARPGEquipmentVisualActor* Visual = SpawnEquipmentVisualActor(Definition);
+    if (!Visual) return nullptr;
     EquipmentVisualActors.Add(ItemInstanceId, Visual);
     OnEquipmentVisualChanged.Broadcast(ItemInstanceId, Slot, Visual);
     return Visual;
+}
+
+AARPGEquipmentVisualActor* UARPGEquipmentComponent::CreateTransientEquipmentVisual(UARPGItemDefinition* Definition, bool bPlayEquipPresentation)
+{
+    AARPGEquipmentVisualActor* Visual = SpawnEquipmentVisualActor(Definition);
+    if (Visual && bPlayEquipPresentation) PlayEquipmentPresentationLocal(Definition, true);
+    return Visual;
+}
+
+void UARPGEquipmentComponent::DestroyTransientEquipmentVisual(AARPGEquipmentVisualActor* VisualActor, UARPGItemDefinition* Definition, bool bPlayUnequipPresentation)
+{
+    if (!VisualActor) return;
+    VisualActor->Destroy();
+    if (bPlayUnequipPresentation && Definition) PlayEquipmentPresentationLocal(Definition, false);
 }
 
 void UARPGEquipmentComponent::DestroyEquipmentVisual(FGuid ItemInstanceId, FGameplayTag Slot)

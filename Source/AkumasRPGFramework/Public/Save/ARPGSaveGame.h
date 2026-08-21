@@ -22,8 +22,8 @@ class AKUMASRPGFRAMEWORK_API UARPGWorldSaveGame : public USaveGame
 {
     GENERATED_BODY()
 public:
-    // v7 adds replicated buildable-Light on/off persistence; v6 Window and v5 construction/Door fields remain unchanged.
-    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 7;
+    // v8 adds Settlement Bed role/assignment + resident persistence; v7 Light, v6 Window and v5 construction/Door fields remain unchanged.
+    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 8;
     UPROPERTY(SaveGame, BlueprintReadWrite) FARPGWorldSaveData World;
 };
 

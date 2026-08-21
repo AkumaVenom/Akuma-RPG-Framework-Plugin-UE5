@@ -1,3 +1,9 @@
+> **v2.16.10 settlement presentation note:** autonomous woodcutters can reference an existing Axe Item Definition and hold its normal equipment visual while travelling/chopping, then remove it on roam/home states. The contextual visual is state-driven and never mutates Inventory, equipment slots or durability.
+
+> **v2.16.9 environment/build note:** `AARPGTree` now cooperates with runtime building: Foundations pierce Tree collision for placement without ignoring normal blockers, and any logical build occupancy suppresses that tree's regeneration until the location is clear. Suppression is authoritative/replicated and does not fabricate harvest rewards.
+
+> **v2.16.8 navigation note:** runtime structural construction still updates/dirties local Dynamic Recast tiles, but automatic Stair off-mesh links are removed. Stairs use their real rasterized Recast surface under the project's Supported Agent settings, avoiding endpoint oscillation while retaining v2.16.5 same-story resident spawning.
+
 ## Combat, Targeting & Relog Persistence Integrity (v2.15.40)
 
 | Feature | Status | Notes |
@@ -6,15 +12,24 @@
 | Reciprocal hostile AI combat | Implemented | Player damage permission and lock-on can recognize hostility owned by the target AI, preventing hostile NPCs from being untargetable/undamageable when the base relation is neutral or temporarily unresolved. |
 | Player-only character persistence | Implemented | v2.15.40 prevents `AARPGAICharacter` from consuming `LastCharacterId` or reading/writing the player account character slot. NPCs keep authored/spawner state across relog instead of inheriting player faction/state. |
 
-## Settlement Building, Storage, Production & Buildable Lighting (v2.15.54)
+## Settlement Building, Storage, Lighting & Autonomous Villagers (v2.16.0)
 
 | Feature | Status | Notes |
 |---|---|---|
+| Settlement Hub opt-in boundary | Implemented | `SettlementHub` is appended after Light and uses native `AARPGSettlementHubActor`; no completed Hub + Settlement Definition means no recruitment, housing simulation or settlement work. |
+| Deterministic settlement ownership | Implemented | New Hubs can reject overlapping settlement radii; legacy/edge overlaps assign each Bed to one primary eligible Hub by nearest distance + stable Building ID tie-break. |
+| Assignable Player/Villager Beds | Implemented | Native Bed actor persists Unassigned/Player/Villager role, player-bed owner and resident assignment; role mutation uses existing authoritative interaction/range/modification rules. |
+| Validated configurable homes (2x2+ default) | Implemented | Pivot-aware Foundation rectangle, complete overhead cover, complete Wall-family perimeter, Doorway and an installed completed Door are required before a Villager Bed contributes resident capacity. |
+| Persistent settlement villagers | Implemented | Native villager derives from existing `AARPGAICharacter`, inherits Hub account/character/faction ownership, persists resident/Hub/Bed links and reuses AI wander/combat components. |
+| Autonomous settlement woodcutting | Implemented | Residents reserve nearby existing `ARPGTree` actors, path/chop through the normal authoritative tree durability/reward path, can deposit configured tree rewards into the Hub stockpile, and can automatically hold an Item-Definition-driven axe visual only while working. |
+| Settlement HUD / Hub / Bed UI | Implemented | Native proximity HUD auto-shows/hides by Hub range; full Hub/Bed/resident widgets work immediately and expose Widget Classes + Blueprint refresh hooks for reskinning. Hub panel can open native Stockpile UI. |
+| Settlement persistence v8 | Implemented | World save v8 persists Bed roles/assignments and resident class/transform/name/health/ownership links while retaining v6 Window and v7 Light migration. |
 | Player build mode | Implemented | Inherited Building + local BuildingUI, ready catalog, local ghost, live validation, rotate/next/previous/confirm/cancel. |
 | Pivot-aware ground placement | Implemented | v2.15.2+ anchors the active Build visual bounds to the traced surface so bottom/center/corner pivots place flush; validation/support/vertical snaps use the same mesh-aware anchor. |
 | Data-driven mesh orientation | Implemented | v2.15.3 exposes per-piece `Mesh Relative Transform` so imported art can be rotated/offset/scaled inside the native build actor without reimporting meshes; ghost/final presentation and transformed bounds stay in parity while structural snapping retains stable logical actor axes. |
 | Static/Skeletal build visuals | Implemented | v2.15.44 keeps the established Static `Build Mesh` path and adds optional `Build Skeletal Mesh` / `Preview Skeletal Mesh`. The active asset drives the same transformed bounds, ghost, construction presentation and snap math; a Static preview proxy may be used for a skeletal final piece, and plain skeletal build/preview components remain Tick-dormant until animation is explicitly needed. v2.15.46 prepares the existing global preview materials for Skeletal Mesh usage so a skeletal ghost does not remain on Unreal's grey/default fallback. |
 | Native skeletal Window shell | Implemented | `Window` resolves to `ARPGBuildWindowActor` with bounds-driven gameplay collision independent of imported mesh/Physics Asset collision. v2.15.47 adds a separate non-blocking Visibility interaction target so an open Window remains button-interactable; v2.15.48 also resolves a hosted Window when conservative WindowWall collision is the first trace hit. |
+| Runtime-built Stair navigation bridge | Implemented | Completed Stairs publish a transient bidirectional Simple Nav Link between logical low/high landing NavMesh islands. Endpoints use the protected +X-uphill/SnapSize contract with Data Asset landing inset/projection tuning; roof-story projection is constrained. |
 | Structural snapping | Implemented | Standard modular snaps for foundations, wall/window/door families, floors/ceilings/roofs, stairs/pillars and custom snap transforms. Preview and authority resolve the same structural graph; full-view semantic acquisition is used for Door/Window openings. |
 | Multi-storey build-order symmetry | Implemented | Upper slabs and Wall-family pieces can be authored in either order when they describe the same story seam. v2.15.42 uses the finished slab top/walking surface as the story plane and recesses slab thickness downward, so physical thickness does not create vertical gaps or cumulative storey drift. |
 | Finished-surface story lattice | Implemented | **Confirmed v2.15.43 baseline:** Foundation/Floor/Ceiling/Roof finished tops own `0/300/600/900...` story surfaces; slab thickness extends downward and Wall-family bottoms use the same surface. Mesh height/thickness cannot redefine the next storey. |

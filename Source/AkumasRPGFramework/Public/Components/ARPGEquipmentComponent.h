@@ -39,6 +39,18 @@ public:
     UFUNCTION(BlueprintPure, Category="ARPG|Equipment") UARPGItemDefinition* GetEquippedItemDefinitionInSlot(FGameplayTag Slot) const;
     UFUNCTION(BlueprintPure, Category="ARPG|Equipment|Visuals") AARPGEquipmentVisualActor* GetEquipmentVisual(FGuid ItemInstanceId) const;
 
+    /**
+     * Create a presentation-only equipment visual from an Item Definition without changing Inventory/equipped state.
+     * Intended for short-lived contextual tools (for example a settlement worker axe). The caller owns the returned
+     * local visual actor and must destroy it with DestroyTransientEquipmentVisual when the presentation ends.
+     */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Equipment|Visuals")
+    AARPGEquipmentVisualActor* CreateTransientEquipmentVisual(UARPGItemDefinition* Definition, bool bPlayEquipPresentation = false);
+
+    /** Destroy a presentation-only visual created by CreateTransientEquipmentVisual. Never changes Inventory state. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Equipment|Visuals")
+    void DestroyTransientEquipmentVisual(AARPGEquipmentVisualActor* VisualActor, UARPGItemDefinition* Definition = nullptr, bool bPlayUnequipPresentation = false);
+
     // Returns true when an equipped item supplied a sound, allowing combat to fall back to its class/profile audio otherwise.
     bool PlayEquippedCombatSwingSoundLocal();
 
@@ -56,6 +68,7 @@ protected:
 
     bool EquipAuthority(FGuid ItemInstanceId);
     bool UnequipAuthority(FGuid ItemInstanceId);
+    AARPGEquipmentVisualActor* SpawnEquipmentVisualActor(const UARPGItemDefinition* Definition);
     AARPGEquipmentVisualActor* CreateEquipmentVisual(FGuid ItemInstanceId, const UARPGItemDefinition* Definition, FGameplayTag Slot);
     void DestroyEquipmentVisual(FGuid ItemInstanceId, FGameplayTag Slot=FGameplayTag());
     UARPGItemDefinition* ResolveItemDefinition(FName ItemId) const;

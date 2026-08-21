@@ -337,3 +337,44 @@ Ancient / magical    Required Level 70+ Tool Tier 4+
 ```
 
 Those values are examples, not hard-coded framework rules. The purpose of the native system is to let each derived tree Blueprint define its own level, durability, drop item, quantity, visuals and tool gate in the Details panel.
+
+
+## Settlement villager woodcutting — v2.16.0
+
+Settlement workers reuse `ARPGTree`; they do not generate resources through a separate passive timer. `ARPGTree` now exposes **Allow Settlement Villager Harvest**. When a resident's Settlement Definition permits the worker requirement bypass, `CanBeChoppedBy` accepts that resident without requiring the player axe/skill loadout, then every chop still goes through the tree's normal authoritative `ApplyChop` durability and reward path.
+
+Residents select standing trees within the Hub's configured Woodcutting Radius, reject trees already reserved by another settlement resident, path to the tree, optionally multicast a chop montage, and apply the configured Villager Chop Power at the configured interval. When the tree falls, its configured Wood item and bonus-drop item IDs can be transferred from the worker inventory into the Hub's normal persistent stockpile.
+
+Configure worker cadence, maximum concurrent woodcutters, search/acceptance radius, duty chance, montage, chop power and stockpile deposit policy on `ARPGSettlementDefinition`. See `Docs/SETTLEMENTS.md` for the complete settlement setup.
+
+
+## Settlement villager contextual axe presentation — v2.16.10
+
+Settlement workers can now visibly hold the same Axe art used by the normal equipment system without receiving a fake gameplay item. In the `ARPGSettlementDefinition` set:
+
+```text
+Settlement | Woodcutting | Tool Presentation
+Villager Woodcutting Tool Item = your Axe ARPGItemDefinition
+Show Tool While Going To Work = true
+Play Tool Equip / Unequip Presentation = true
+```
+
+The referenced Item Definition supplies its `Equipped Static Mesh` or `Equipped Skeletal Mesh`, `Attach Socket`, `Equipped Relative Transform`, optional visual-actor subclass, and optional equip/unequip montage/sounds. `Going To Work` and `Woodcutting` display the tool by default; `Roaming`, `At Home`, `Returning Home` and `Homeless` remove it.
+
+This visual does not call Inventory `EquipItem`, does not create/remove an item instance, does not apply equipment Gameplay Effects/stat modifiers and does not spend durability. It is a local presentation actor rebuilt from replicated settlement work state, so world SaveVersion remains v8.
+
+## Building occupancy and tree respawn — v2.16.9
+
+Gatherable trees now participate cleanly in the player-building lifecycle. Foundations may be placed through an `AARPGTree`; authority then suppresses any Tree whose trunk/root regeneration volume is occupied by the resulting build piece. The resource is hidden and non-colliding rather than destroyed as loot.
+
+Important behavior:
+
+- Construction suppression does **not** call `FellTree`, grant Woodcutting XP, generate drops or fire a fake harvest.
+- Settlement villagers stop targeting a build-suppressed Tree and do not treat that suppression as a rewarded fell/stockpile deposit.
+- A naturally felled Tree keeps its original respawn eligibility while a structure blocks it.
+- `Force Respawn` respects building occupancy; a Tree cannot be forced into a Foundation/house.
+- Multiple blocking build pieces are tracked. Respawn becomes possible only after the final one clears.
+- A suppressed Tree rechecks occupancy on `Building Respawn Recheck Seconds` (default 1 second); standing Trees have no permanent suppression polling cost.
+- Suppression state is replicated but not separately saved. Persisted build actors reconstruct it on world load, avoiding stale tree/build divergence.
+
+For ordinary trees, keep `Suppress Respawn While Built Over = True` and the default `Building Respawn Block Radius = 85 cm`. Increase/decrease the radius only when a tree asset's trunk/root footprint is unusually large/small; the system intentionally does not use canopy width for horizontal suppression.

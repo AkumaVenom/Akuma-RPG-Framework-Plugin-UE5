@@ -1,4 +1,10 @@
-# Settlement Building, Storage, Production & Buildable Lighting — v2.15.54
+# Settlement Building, Storage, Production, Buildable Lighting & Villager Settlements — v2.16.0
+
+## v2.16.0 settlement layer
+
+v2.16.0 adds `Bed` and `SettlementHub` as additive non-structural utility pieces. A completed Hub is the explicit settlement boundary; buildings without a Hub remain normal structures. Beds/Hubs use their own horizontal-surface placement path and do not alter the confirmed Stair/Wall-family snap/collision graph. Resident housing is validated semantically from the completed modular structure. Full setup is in [`SETTLEMENTS.md`](SETTLEMENTS.md).
+
+The default home contract is a complete **2x2+ Foundation** rectangle with full overhead Floor/Ceiling/(optional Roof) cover, complete Wall/WindowWall/Doorway perimeter, a Doorway with a completed hosted Door, and a Villager Bed managed by the Hub. The Hub owns a persistent stockpile and can recruit persistent faction-owned `AARPGSettlementVillagerCharacter` residents who roam and can use the existing tree woodcutting path.
 
 ## Current canonical story + Stair contract — v2.15.43
 
@@ -402,6 +408,15 @@ A completed Stair also exposes native **Floor/Ceiling landing sockets**. The lan
 On tiled decks, the Stair's 17 cm visual overhang may touch an immediately adjacent same-story Foundation/Floor/Ceiling cell. That is a compatible modular seam when the neighbour is outside the actual structural flight cell. A horizontal module occupying the real flight/travel cell remains blocked.
 
 Stair perimeter enclosure separates **structural boundary ownership** from generic collision through one v2.15.53 bidirectional rule. A `Wall`, `WindowWall` or `Doorway` may occupy either exact boundary form of the Stair's 300 cm structural cell: **side boundaries** use a run axis parallel/180-equivalent to the Stair with the Wall actor snap origin on local `Y = ±150 cm`, while **LOW/HIGH endpoint boundaries** use a perpendicular run axis with the actor snap origin on local `X = ±150 cm`. Side longitudinal overlap uses the Stair's authored `PlacementBounds.X` (`167 cm` half-run for the current Wood Stair), preserving the intentional `17 cm` endpoint contact; endpoint lateral overlap uses `PlacementBounds.Y` (`150 cm` half-width). The same transform-relative predicate is used for yaw `0/90/180/270`, whether Stair or Wall-family is placed first, and for Stair-chain hosts. A hosted `Window` or `Door` inherits only its verified `WindowWall` / `Doorway` host boundary in both directions. Parallel centreline walls, perpendicular walls through the Stair interior, distant modules/inserts and unrelated non-boundary conflicts remain blockers.
+
+
+### Runtime build navigation + native Recast Stairs — v2.16.8
+
+Player-built geometry is an explicit Dynamic Recast participant. On authority, structural build initialization/completion/restore/removal re-registers the active build mesh with NavigationSystem, updates its octree bounds and dirties only the local affected Recast box. With `RecastNavMesh Runtime Generation = Dynamic`, this is the normal runtime path; **do not require a per-piece full-world `Build Navigation`** after the player constructs a house. `Refresh Runtime Navigation` remains Blueprint exposed for diagnostics or custom actors that mutate collision after construction.
+
+Completed Stairs now use their **real rasterized Recast surface only**. v2.16.6/v2.16.7 automatic `NavLinkProxy` shortcuts were removed after real PIE testing showed that a correctly configured Supported Agent makes the Wood Stair continuously walkable, while an overlapping off-mesh link can compete with the native route and cause residents to oscillate around its endpoints. The framework no longer spawns Simple Nav Links, projects link endpoints, or runs Stair-link retry timers.
+
+Configure `Project Settings -> Navigation System -> Supported Agents` so the active agent dimensions match the AI capsule/navigation profile, and tune the actual Stair collision/rasterization if necessary. The framework intentionally does **not** force or overwrite project Recast agent radius/height. Press **P** in PIE: acceptance is a continuous green path over the Stair/door threshold and ordinary AI path following across it. The old `Refresh Stair Navigation Bridge` / `Has Active Stair Navigation Bridge` Blueprint nodes are retained only as deprecated compatibility stubs; the refresh node delegates to `Refresh Runtime Navigation` and the query returns false.
 
 Landscape handling remains intentionally narrow: once a Stair matches a verified native landing/chain socket, Unreal `Landscape` is treated as terrain support rather than a discrete WorldStatic blocker. Static-mesh rocks, cliffs, props, other structures and true profile penetrations still block.
 
@@ -974,3 +989,39 @@ The ready implementation avoids permanent ticking:
 - production UI progress timer exists only while that UI is open.
 
 Completed Static structures and plain skeletal build visuals therefore do not each carry a permanent framework gameplay/component Tick; dedicated animated actors enable Tick only while their runtime animation requires it.
+
+
+### Build-aware ARPG Tree replacement and respawn suppression — v2.16.9
+
+`AARPGTree` is treated as replaceable world vegetation for **Foundation** placement, not as a permanent structural blocker. Foundation preview traces and authority support traces retry through encountered ARPG Tree actors, and the final Foundation occupancy test ignores only `AARPGTree`. Rocks, cliffs, props, pawns, protected structures and every other blocker keep the normal placement rules.
+
+After authority places/restores a build piece, the build actor notifies ARPG Trees of its logical occupancy. Tree suppression uses the build piece's rotated/scaled `PlacementBounds`, plus the Tree's trunk-root radius; it does **not** use the tree canopy as the horizontal blocker footprint. This prevents a nearby house from suppressing a tree merely because branches overlap it.
+
+Default Tree settings:
+
+```text
+Tree | Respawn | Building Suppression
+Suppress Respawn While Built Over = True
+Building Respawn Block Radius     = 85 cm
+Building Respawn Recheck Seconds  = 1.0 s
+```
+
+While occupied, both the standing-tree/stump presentation and collision are disabled and `Is Respawn Suppressed By Building` is true. This is environmental replacement, not harvesting: construction never grants Wood, Woodcutting XP or fell rewards. Multiple build pieces are tracked independently. Removing one does not permit respawn while another still occupies the regeneration volume.
+
+Normal respawn timing is retained. If a structure is removed before the Tree's respawn time, the remaining delay continues; if the timer expired while the structure existed, the Tree returns promptly after the final blocker clears. Suppressed Trees use a bounded recheck timer only while suppressed. Standing Trees do not acquire a permanent polling Tick.
+
+Useful Blueprint calls/events:
+
+```text
+AARPGTree
+  Is Respawn Suppressed By Building
+  Refresh Building Respawn Suppression
+  Is Respawn Blocked By Build Piece
+  On Tree Building Suppression Changed
+
+AARPGBuildPieceActor
+  Refresh Nearby Tree Respawn Suppression
+  Does Logical Placement Overlap World Cylinder
+```
+
+Suppression is derived from build occupancy and therefore requires no world-save schema bump. Persisted runtime buildings re-establish suppression when loaded.

@@ -30,6 +30,7 @@ class UARPGPersistenceComponent;
 class UARPGInteractionComponent;
 class UARPGBuildingComponent;
 class UARPGBuildingUIComponent;
+class UARPGSettlementUIComponent;
 class UARPGBuildPieceDefinition;
 class UARPGMountComponent;
 class UARPGGroupComponent;
@@ -80,6 +81,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGBuildingComponent> Building;
     /** Local ready build catalogue / placement HUD / storage / production station UI owner. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGBuildingUIComponent> BuildingUI;
+    /** Local proximity Settlement HUD + Bed/Hub panels. Native fallback widgets are ready and subclassable. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGSettlementUIComponent> SettlementUI;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGMountComponent> Mounts;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGGroupComponent> Group;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGThreatComponent> Threat;
@@ -149,6 +152,8 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool InteractBuiltStructure();
     UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool DemolishBuiltStructure();
     UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool CloseBuiltStructureUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Settlement UI|Input") bool OpenNearbySettlementUI();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Settlement UI|Input") bool CloseSettlementUI();
 
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return AbilitySystem; }
     virtual void BeginPlay() override;

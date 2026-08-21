@@ -27,7 +27,8 @@ assert enum_body, "PieceKind enum not found"
 entries = [re.sub(r"/\*.*?\*/", "", x, flags=re.S).strip().split()[0].rstrip(",")
            for x in enum_body.group(1).splitlines() if x.strip() and not x.strip().startswith("/**")]
 entries = [x for x in entries if x]
-assert entries[-2:] == ["Custom", "Light"], f"Light must be appended after Custom, got tail={entries[-4:]}"
+assert entries.index("Light") == entries.index("Custom") + 1, f"Light must remain immediately after Custom, got tail={entries[-6:]}"
+assert entries[-2:] == ["Bed", "SettlementHub"], f"Settlement kinds must append after Light, got tail={entries[-6:]}"
 
 for token in (
     "EARPGBuildLightPlacementMode",
@@ -150,7 +151,8 @@ for token in (
 
 # World save v7 adds only Light state and preserves v6 Window migration behavior.
 assert "bool bLightOn = false;" in TYPES
-assert "SaveVersion = 7" in SAVE_H
+assert "SaveVersion = 8" in SAVE_H
+assert "Save->SaveVersion>=7 ? R.bLightOn" in SAVE_CPP
 for token in (
     "R.bLightOn=Light->IsLightOn()",
     "Save->SaveVersion>=7 ? R.bLightOn",

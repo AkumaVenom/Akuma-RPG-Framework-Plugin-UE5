@@ -6,6 +6,8 @@
 #include "Building/ARPGBuildWindowActor.h"
 #include "Building/ARPGBuildLightActor.h"
 #include "Building/ARPGBuildPieceActor.h"
+#include "Settlement/ARPGBuildBedActor.h"
+#include "Settlement/ARPGSettlementHubActor.h"
 #include "Crafting/ARPGCraftingStationActor.h"
 #include "Data/ARPGRecipeDefinition.h"
 #include "Data/ARPGQuestDefinition.h"
@@ -89,6 +91,18 @@ void UARPGInteractionComponent::ToggleBuiltLight(AARPGBuildLightActor* Light)
 {
     if (!GetOwner() || !Light) return;
     if (GetOwner()->HasAuthority()) ServerToggleBuiltLight_Implementation(Light); else ServerToggleBuiltLight(Light);
+}
+
+void UARPGInteractionComponent::SetBuiltBedRole(AARPGBuildBedActor* Bed, EARPGBedRole NewRole)
+{
+    if (!GetOwner() || !Bed) return;
+    if (GetOwner()->HasAuthority()) ServerSetBuiltBedRole_Implementation(Bed, NewRole); else ServerSetBuiltBedRole(Bed, NewRole);
+}
+
+void UARPGInteractionComponent::RefreshSettlementHub(AARPGSettlementHubActor* Hub)
+{
+    if (!GetOwner() || !Hub) return;
+    if (GetOwner()->HasAuthority()) ServerRefreshSettlementHub_Implementation(Hub); else ServerRefreshSettlementHub(Hub);
 }
 
 void UARPGInteractionComponent::DemolishBuilding(AARPGBuildPieceActor* Building)
@@ -204,6 +218,19 @@ void UARPGInteractionComponent::ServerToggleBuiltLight_Implementation(AARPGBuild
 {
     const bool bSuccess = Light && IsActorInRange(Light) && Light->ToggleLight(GetOwner());
     ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Light toggled.") : TEXT("Light cannot be used.")));
+}
+
+void UARPGInteractionComponent::ServerSetBuiltBedRole_Implementation(AARPGBuildBedActor* Bed, EARPGBedRole NewRole)
+{
+    const bool bSuccess = Bed && IsActorInRange(Bed) && Bed->SetBedRole(NewRole, GetOwner());
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Bed assignment updated.") : TEXT("Bed cannot be changed.")));
+}
+
+void UARPGInteractionComponent::ServerRefreshSettlementHub_Implementation(AARPGSettlementHubActor* Hub)
+{
+    const bool bSuccess = Hub && IsActorInRange(Hub) && Hub->CanActorUse(GetOwner());
+    if (bSuccess) Hub->RefreshSettlementNow();
+    ClientInteractionResult(bSuccess, FText::FromString(bSuccess ? TEXT("Settlement refreshed.") : TEXT("Settlement cannot be managed.")));
 }
 
 void UARPGInteractionComponent::ServerDemolishBuilding_Implementation(AARPGBuildPieceActor* Building)

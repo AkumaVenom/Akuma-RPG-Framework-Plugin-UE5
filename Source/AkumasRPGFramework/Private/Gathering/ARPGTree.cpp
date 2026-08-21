@@ -1,9 +1,11 @@
 #include "Gathering/ARPGTree.h"
+#include "Building/ARPGBuildPieceActor.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/ARPGWoodcuttingComponent.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGEventRouterComponent.h"
+#include "Settlement/ARPGSettlementResidentComponent.h"
 #include "Data/ARPGItemDefinition.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -13,6 +15,7 @@
 #include "Particles/WorldPSCPool.h"
 #include "Sound/SoundBase.h"
 #include "Net/UnrealNetwork.h"
+#include "EngineUtils.h"
 #include "TimerManager.h"
 
 AARPGTree::AARPGTree()
@@ -75,6 +78,8 @@ void AARPGTree::BeginPlay()
     ApplySelectedTreeMesh();
     ApplySelectedTreeMeshScale();
     ApplyTreeStateVisuals(true);
+    CacheStandingRespawnBounds();
+    if (HasAuthority()) RefreshBuildingRespawnSuppression();
 }
 
 float AARPGTree::GetChopHealthPercent() const
@@ -117,6 +122,11 @@ bool AARPGTree::CanBeChoppedBy(AActor* Harvester, FText& OutFailureReason) const
     {
         OutFailureReason = FText::FromString(TEXT("This tree has already been felled."));
         return false;
+    }
+    if (bAllowSettlementVillagerHarvest)
+    {
+        if (const UARPGSettlementResidentComponent* Resident = Harvester->FindComponentByClass<UARPGSettlementResidentComponent>())
+            if (Resident->CanBypassTreeRequirements(this)) return true;
     }
     const UARPGWoodcuttingComponent* Woodcutting = Harvester->FindComponentByClass<UARPGWoodcuttingComponent>();
     if (!Woodcutting)
@@ -187,7 +197,8 @@ bool AARPGTree::FellTree(AActor* Harvester)
     if (bRespawn)
     {
         const float RespawnDelay = FMath::Max(StumpDelay + 0.05f, RespawnSeconds);
-        GetWorldTimerManager().SetTimer(RespawnTimer, this, &AARPGTree::ForceRespawn, RespawnDelay, false);
+        RespawnEligibleServerTime = GetWorld() ? GetWorld()->GetTimeSeconds() + RespawnDelay : RespawnDelay;
+        GetWorldTimerManager().SetTimer(RespawnTimer, this, &AARPGTree::TryRespawnAuthority, RespawnDelay, false);
     }
     return true;
 }
@@ -204,8 +215,45 @@ void AARPGTree::EnterStumpAuthority()
 void AARPGTree::ForceRespawn()
 {
     if (!HasAuthority()) return;
+    bForcedRespawnPending = true;
+    RespawnEligibleServerTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+    TryRespawnAuthority();
+}
+
+void AARPGTree::TryRespawnAuthority()
+{
+    if (!HasAuthority()) return;
+
+    GetWorldTimerManager().ClearTimer(RespawnTimer);
+    RefreshBuildingRespawnSuppression();
+    if (bBuildingRespawnSuppressed)
+    {
+        ScheduleSuppressionRecheck();
+        return;
+    }
+
+    if (!bRespawn && !bForcedRespawnPending) return;
+
+    const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : RespawnEligibleServerTime;
+    const double Remaining = RespawnEligibleServerTime - Now;
+    if (Remaining > KINDA_SMALL_NUMBER)
+    {
+        GetWorldTimerManager().SetTimer(RespawnTimer, this, &AARPGTree::TryRespawnAuthority, static_cast<float>(Remaining), false);
+        return;
+    }
+
+    CompleteRespawnAuthority();
+}
+
+void AARPGTree::CompleteRespawnAuthority()
+{
+    if (!HasAuthority() || bBuildingRespawnSuppressed) return;
     GetWorldTimerManager().ClearTimer(StumpTimer);
     GetWorldTimerManager().ClearTimer(RespawnTimer);
+    GetWorldTimerManager().ClearTimer(BuildingSuppressionRecheckTimer);
+    BuildingRespawnBlockers.Reset();
+    bForcedRespawnPending = false;
+    RespawnEligibleServerTime = 0.0;
     if (bRerollTreeMeshOnRespawn && TreeMeshes.Num() > 0) SelectRandomTreeMesh();
     if (bRerollTreeMeshScaleOnRespawn) SelectRandomTreeMeshScale();
     CurrentChopHealth = FMath::Max(1.f, MaxChopHealth);
@@ -213,8 +261,135 @@ void AARPGTree::ForceRespawn()
     const EARPGTreeState OldState = TreeState;
     TreeState = EARPGTreeState::Standing;
     ApplyTreeStateVisuals(true);
+    CacheStandingRespawnBounds();
     if (OldState != TreeState) OnTreeStateChanged.Broadcast(TreeState);
     OnTreeRespawned.Broadcast(this);
+    ForceNetUpdate();
+}
+
+void AARPGTree::CacheStandingRespawnBounds()
+{
+    if (!TreeMesh) return;
+    // Cache only while the tree is in its upright presentation. Falling rotates the visual bounds into
+    // the ground and must never shrink the future regeneration height used by building suppression.
+    if (TreeState == EARPGTreeState::Standing && TreeMesh->Bounds.SphereRadius > KINDA_SMALL_NUMBER)
+        CachedStandingRespawnBounds = TreeMesh->Bounds.GetBox();
+}
+
+bool AARPGTree::IsRespawnBlockedByBuildPiece(const AARPGBuildPieceActor* Building) const
+{
+    if (!bSuppressRespawnWhileBuiltOver || !IsValid(Building) || !Building->Definition || Building->IsActorBeingDestroyed()) return false;
+
+    FBox StandingBounds = CachedStandingRespawnBounds;
+    if (!StandingBounds.IsValid && TreeMesh && TreeMesh->Bounds.SphereRadius > KINDA_SMALL_NUMBER)
+        StandingBounds = TreeMesh->Bounds.GetBox();
+
+    float MinZ = GetActorLocation().Z - 25.f;
+    float MaxZ = GetActorLocation().Z + FMath::Max(200.f, ChopImpactHeight * 2.f);
+    if (StandingBounds.IsValid)
+    {
+        MinZ = FMath::Min(MinZ, StandingBounds.Min.Z);
+        MaxZ = FMath::Max(MaxZ, StandingBounds.Max.Z);
+    }
+
+    return Building->DoesLogicalPlacementOverlapWorldCylinder(
+        GetActorLocation(), FMath::Max(0.f, BuildingRespawnBlockRadius), MinZ, MaxZ);
+}
+
+void AARPGTree::NotifyBuildPieceOccupancyChanged(AARPGBuildPieceActor* Building, bool bPresent)
+{
+    if (!HasAuthority() || !Building) return;
+
+    if (bPresent && IsRespawnBlockedByBuildPiece(Building))
+        BuildingRespawnBlockers.Add(Building);
+    else
+        BuildingRespawnBlockers.Remove(Building);
+
+    UpdateBuildingSuppressionStateAuthority();
+}
+
+bool AARPGTree::RefreshBuildingRespawnSuppression()
+{
+    if (!HasAuthority() || !GetWorld()) return bBuildingRespawnSuppressed;
+
+    BuildingRespawnBlockers.Reset();
+    if (bSuppressRespawnWhileBuiltOver)
+    {
+        for (TActorIterator<AARPGBuildPieceActor> It(GetWorld()); It; ++It)
+        {
+            AARPGBuildPieceActor* Building = *It;
+            if (IsRespawnBlockedByBuildPiece(Building)) BuildingRespawnBlockers.Add(Building);
+        }
+    }
+
+    UpdateBuildingSuppressionStateAuthority();
+    return bBuildingRespawnSuppressed;
+}
+
+void AARPGTree::ScheduleSuppressionRecheck()
+{
+    if (!HasAuthority() || !bBuildingRespawnSuppressed) return;
+    const float Interval = FMath::Max(0.1f, BuildingRespawnRecheckSeconds);
+    if (!GetWorldTimerManager().IsTimerActive(BuildingSuppressionRecheckTimer))
+        GetWorldTimerManager().SetTimer(BuildingSuppressionRecheckTimer, this, &AARPGTree::RecheckBuildingRespawnSuppressionAuthority, Interval, true);
+}
+
+void AARPGTree::RecheckBuildingRespawnSuppressionAuthority()
+{
+    RefreshBuildingRespawnSuppression();
+}
+
+void AARPGTree::UpdateBuildingSuppressionStateAuthority()
+{
+    if (!HasAuthority()) return;
+
+    for (auto It = BuildingRespawnBlockers.CreateIterator(); It; ++It)
+        if (!It->IsValid() || !IsRespawnBlockedByBuildPiece(It->Get())) It.RemoveCurrent();
+
+    const bool bShouldSuppress = bSuppressRespawnWhileBuiltOver && BuildingRespawnBlockers.Num() > 0;
+    if (bShouldSuppress == bBuildingRespawnSuppressed)
+    {
+        if (bShouldSuppress) ScheduleSuppressionRecheck();
+        return;
+    }
+
+    bBuildingRespawnSuppressed = bShouldSuppress;
+    if (bBuildingRespawnSuppressed)
+    {
+        // A placed Foundation/build piece replaces vegetation space immediately. This is environmental
+        // suppression, not harvesting: no wood, XP or fell feedback is granted. Preserve a normal
+        // regeneration eligibility time so removing the structure later resumes the resource lifecycle.
+        if (TreeState == EARPGTreeState::Standing)
+        {
+            CacheStandingRespawnBounds();
+            CurrentChopHealth = 0.f;
+            const EARPGTreeState OldState = TreeState;
+            TreeState = EARPGTreeState::Stump;
+            if (OldState != TreeState) OnTreeStateChanged.Broadcast(TreeState);
+            if (bRespawn)
+            {
+                const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+                RespawnEligibleServerTime = FMath::Max(RespawnEligibleServerTime, Now + FMath::Max(0.f, RespawnSeconds));
+            }
+        }
+        GetWorldTimerManager().ClearTimer(RespawnTimer);
+        ApplyTreeStateVisuals(true);
+        ScheduleSuppressionRecheck();
+    }
+    else
+    {
+        GetWorldTimerManager().ClearTimer(BuildingSuppressionRecheckTimer);
+        ApplyTreeStateVisuals(true);
+        if (bRespawn || bForcedRespawnPending)
+        {
+            const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : RespawnEligibleServerTime;
+            const float Delay = static_cast<float>(FMath::Max(0.05, RespawnEligibleServerTime - Now));
+            GetWorldTimerManager().SetTimer(RespawnTimer, this, &AARPGTree::TryRespawnAuthority, Delay, false);
+        }
+    }
+
+    OnTreeBuildingSuppressionChanged.Broadcast(bBuildingRespawnSuppressed);
+    ForceNetUpdate();
 }
 
 void AARPGTree::SelectRandomTreeMesh()
@@ -286,6 +461,20 @@ void AARPGTree::ApplySelectedTreeMesh()
 void AARPGTree::ApplyTreeStateVisuals(bool bLateJoinOrImmediate)
 {
     if (!TreeMesh || !StumpMesh || !FallPivot) return;
+
+    if (bBuildingRespawnSuppressed)
+    {
+        bLocalFallActive = false;
+        SetActorTickEnabled(false);
+        FallPivot->SetRelativeRotation(FRotator::ZeroRotator);
+        TreeMesh->SetVisibility(false, true);
+        TreeMesh->SetHiddenInGame(true, true);
+        TreeMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        StumpMesh->SetVisibility(false, true);
+        StumpMesh->SetHiddenInGame(true, true);
+        StumpMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        return;
+    }
     if (TreeState == EARPGTreeState::Standing)
     {
         bLocalFallActive = false;
@@ -436,6 +625,8 @@ void AARPGTree::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     GetWorldTimerManager().ClearTimer(StumpTimer);
     GetWorldTimerManager().ClearTimer(RespawnTimer);
+    GetWorldTimerManager().ClearTimer(BuildingSuppressionRecheckTimer);
+    BuildingRespawnBlockers.Reset();
     bLocalFallActive = false;
     SetActorTickEnabled(false);
     Super::EndPlay(EndPlayReason);
@@ -454,14 +645,22 @@ void AARPGTree::OnRep_TreeState(EARPGTreeState OldState)
     if (OldState != TreeState) OnTreeStateChanged.Broadcast(TreeState);
 }
 
+void AARPGTree::OnRep_BuildingRespawnSuppressed()
+{
+    ApplyTreeStateVisuals(true);
+    OnTreeBuildingSuppressionChanged.Broadcast(bBuildingRespawnSuppressed);
+}
+
 void AARPGTree::OnRep_SelectedTreeMeshIndex()
 {
     ApplySelectedTreeMesh();
+    CacheStandingRespawnBounds();
 }
 
 void AARPGTree::OnRep_SelectedTreeMeshScale()
 {
     ApplySelectedTreeMeshScale();
+    CacheStandingRespawnBounds();
 }
 
 void AARPGTree::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -472,4 +671,5 @@ void AARPGTree::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
     DOREPLIFETIME(AARPGTree, CurrentChopHealth);
     DOREPLIFETIME(AARPGTree, TreeState);
     DOREPLIFETIME(AARPGTree, FallDirection);
+    DOREPLIFETIME(AARPGTree, bBuildingRespawnSuppressed);
 }

@@ -8,16 +8,17 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.15.54-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.16.10-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest release:** v2.15.54 adds **interactive buildable lighting** as an additive, non-structural `Light` Piece Kind: stick torches can seat on terrain/Foundations/Floors, wall torches and lanterns can mount on either face of completed Wall-family surfaces, and the existing Interact button toggles replicated/persistent light + flame state with smooth fades. Native Point/Spot lights, Niagara and Cascade modes, emissive fading and no-fuel toggling are Data Asset driven. Fixture collision is intentionally non-blocking so the project-confirmed v2.15.53 Stair/Wall/Window combinations remain protected. **Confirmed geometry baseline remains v2.15.43; v2.15.53 is the current Stair/Wall-family boundary completion; the Window placement/interaction path through v2.15.48 is project-confirmed.** See [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md) for release history.
+> **Latest release:** v2.16.10 adds contextual settlement-worker tool presentation. Assign an Axe `ARPGItemDefinition` to the Settlement Definition and villagers automatically hold its existing equipped mesh/socket/transform while `Going To Work` / `Woodcutting`, then remove it as soon as they return to roaming/home states. The visual is reconstructed from replicated work state and never grants an item, mutates Inventory/equipment slots or consumes durability. v2.16.9 build-aware Tree replacement/respawn suppression, the confirmed **2x2+** settlement loop, native Dynamic Recast stairs, world save v8, Lights and protected v2.15.53 Stair/Wall-family placement semantics remain intact. See [`Docs/WOODCUTTING.md`](Docs/WOODCUTTING.md), [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
 
 ## Start here
 
 - **New to the framework?** Read [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 - **Setting up items/equipment?** Read [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md).
 - **Setting up crafting/durability/repair?** Read [`Docs/CRAFTING_DURABILITY_REPAIR.md`](Docs/CRAFTING_DURABILITY_REPAIR.md).
-- **Setting up settlement building, buildable lights, storage or furnaces?** Read [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md).
+- **Setting up Settlement Hubs, homes, Beds or villagers?** Read [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md).
+- **Setting up structural building, buildable lights, storage or furnaces?** Read [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md).
 - **Want the full system status?** Read [`Docs/FEATURE_MATRIX.md`](Docs/FEATURE_MATRIX.md).
 - **Want release history?** Read [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
 
@@ -299,6 +300,18 @@ Always profile with your actual content, target platform and multiplayer populat
 8. For the fastest start, derive the player Blueprint from `ARPGCharacter` and the GameMode from `ARPGGameMode`.
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
+
+## Current release — v2.16.10-alpha
+
+v2.16.10 polishes autonomous settlement workers with a contextual held-tool layer. `ARPGSettlementDefinition -> Settlement | Woodcutting | Tool Presentation` can reference the project's existing Axe Item Definition. Residents reconstruct a local `AARPGEquipmentVisualActor` from that Item's normal equipped static/skeletal mesh, socket and relative transform while `Going To Work` or `Woodcutting`; it is removed immediately when the resident returns to `Roaming`, `At Home`, `Returning Home` or `Homeless`. Optional Item equip/unequip montage and audio can be reused. This presentation never creates an Inventory entry, changes an equipment slot, applies equipment stats/effects or wears durability, and is not saved because replicated resident work state is the source of truth.
+
+v2.16.9 integrates gatherable `AARPGTree` resources with runtime construction. Foundation preview/support traces pierce only encountered ARPG Tree actors and Foundation occupancy ignores Tree collision, so a trunk or stump can no longer prevent a legitimate terrain/grid snap. Once any ARPG Build Piece occupies the tree's configurable trunk-root regeneration volume, the authority suppresses that resource location: tree and stump visuals/collision are disabled, no harvest rewards are fabricated, and regeneration is deferred while one or more blockers remain. Removing the final build piece resumes the original respawn clock; if the natural respawn time already elapsed, the tree returns on the next bounded recheck. Suppression is replicated and Blueprint-readable/callable, while normal standing trees keep zero permanent polling cost. World save remains v8 because suppression is derived from persisted building occupancy rather than serialized as duplicate state.
+
+A `UARPGSettlementDefinition` drives settlement radius/HUD range, deterministic non-overlap policy, configurable housing requirements (2x2 Foundations by default), recruitment/population, villager class/names/wander cadence, woodcutting policy and Hub stockpile size. `AARPGSettlementHubActor` validates homes semantically from completed Foundations, full overhead cover, Wall-family perimeter, Doorway and an installed Door. `AARPGBuildBedActor` supports Unassigned/Player/Villager roles through the existing authoritative Interact path.
+
+Residents are real `AARPGSettlementVillagerCharacter` pawns derived from the existing AI character. They inherit Hub owner/faction identity, persist by resident/Hub/Bed IDs, roam through the existing AI wander system, reserve existing `ARPGTree` actors, chop through the normal tree durability/reward path and can deposit harvested resources into the Hub's native persistent stockpile.
+
+`UARPGSettlementUIComponent` supplies a ready proximity Settlement HUD plus Hub, Bed and resident UI with exposed Widget Classes and Blueprint refresh hooks. The Hub panel can open its stockpile through the existing Storage UI. World save advances to v8 while retaining v6 Window and v7 Light migration behavior. See [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md).
 
 ## Current release — v2.15.54-alpha
 

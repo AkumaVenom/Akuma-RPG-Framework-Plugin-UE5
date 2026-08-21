@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "ARPGTypes.h"
 #include "Data/ARPGDefinitionBase.h"
 #include "Data/ARPGRecipeDefinition.h"
 #include "ARPGBuildPieceDefinition.generated.h"
@@ -13,6 +14,7 @@ class UAnimSequenceBase;
 class USoundBase;
 class UNiagaraSystem;
 class UParticleSystem;
+class UARPGSettlementDefinition;
 
 UENUM(BlueprintType)
 enum class EARPGBuildPieceKind : uint8
@@ -33,7 +35,11 @@ enum class EARPGBuildPieceKind : uint8
     Decoration,
     Custom,
     /** Interactive buildable lighting/decor. Appended to preserve every existing enum value. */
-    Light
+    Light,
+    /** Assignable settlement/player bed. Appended so every pre-settlement enum value remains stable. */
+    Bed,
+    /** Palbox-style settlement control core. Settlement simulation exists only around this explicit Hub. */
+    SettlementHub
 };
 
 
@@ -234,6 +240,32 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Light|FX", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Light", EditConditionHides))
     float LightEmissiveOnValue = 1.f;
 
+
+    /** Buildable Bed role on first placement. Interacting with the Bed opens the native/reskinnable role panel. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Bed", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::Bed", EditConditionHides))
+    EARPGBedRole DefaultBedRole = EARPGBedRole::Unassigned;
+    /** Bottom-plane lift after native Foundation/Floor surface seating. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Bed", meta=(ClampMin="0.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::Bed", EditConditionHides))
+    float BedSurfaceOffset = 0.f;
+    /** Semantic view-acquisition radius for Bed interaction. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Bed", meta=(ClampMin="10.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::Bed", EditConditionHides))
+    float BedInteractionRadius = 100.f;
+
+    /** Settlement profile used only by Settlement Hub pieces. Without a Hub, no settlement simulation runs. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Hub", meta=(EditCondition="PieceKind==EARPGBuildPieceKind::SettlementHub", EditConditionHides))
+    TObjectPtr<UARPGSettlementDefinition> SettlementDefinition = nullptr;
+    /** Bottom-plane lift for Hub placement on terrain/Foundation/Floor. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Hub", meta=(ClampMin="0.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementHub", EditConditionHides))
+    float SettlementHubSurfaceOffset = 0.f;
+    /** Semantic view-acquisition radius for opening the Settlement panel. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Settlement|Hub", meta=(ClampMin="10.0", Units="cm", EditCondition="PieceKind==EARPGBuildPieceKind::SettlementHub", EditConditionHides))
+    float SettlementHubInteractionRadius = 140.f;
+
+    /**
+     * Stair navigation uses the Stair mesh's real Dynamic Recast surface. Automatic off-mesh
+     * NavLinkProxy bridges were removed in v2.16.8 because they can compete with a correctly
+     * rasterized Stair and cause AI to oscillate between link endpoints.
+     */
     /** Resource requirements are read directly from the player's replicated Inventory. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Cost") TArray<FARPGItemAmount> BuildCost;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building|Cost") bool bRefundOnDemolish = true;

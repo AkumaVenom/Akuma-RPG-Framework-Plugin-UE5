@@ -1,4 +1,5 @@
 #include "Building/ARPGBuildPieceActor.h"
+#include "AkumasRPGFramework.h"
 #include "Components/ARPGFactionOwnershipComponent.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/SceneComponent.h"
@@ -9,7 +10,10 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/GameStateBase.h"
+#include "Gathering/ARPGTree.h"
+#include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
+#include "NavigationSystem.h"
 #include "Net/UnrealNetwork.h"
 
 static FName ARPGResolveBuildAmountId(const FARPGItemAmount& Amount)
@@ -26,6 +30,25 @@ static bool ARPGKindIn(const TArray<EARPGBuildPieceKind>& Kinds, EARPGBuildPiece
 static bool ARPGIsWallLike(EARPGBuildPieceKind Kind)
 {
     return Kind == EARPGBuildPieceKind::Wall || Kind == EARPGBuildPieceKind::WindowWall || Kind == EARPGBuildPieceKind::Doorway;
+}
+
+static bool ARPGIsRuntimeNavigationStructuralKind(EARPGBuildPieceKind Kind)
+{
+    switch (Kind)
+    {
+    case EARPGBuildPieceKind::Foundation:
+    case EARPGBuildPieceKind::Wall:
+    case EARPGBuildPieceKind::WindowWall:
+    case EARPGBuildPieceKind::Doorway:
+    case EARPGBuildPieceKind::Door:
+    case EARPGBuildPieceKind::Floor:
+    case EARPGBuildPieceKind::Ceiling:
+    case EARPGBuildPieceKind::Roof:
+    case EARPGBuildPieceKind::Stair:
+        return true;
+    default:
+        return false;
+    }
 }
 
 static void ARPGGetBuildDefinitionLocalBounds(const UARPGBuildPieceDefinition* Piece, FVector& OutMin, FVector& OutMax)
@@ -138,6 +161,26 @@ void AARPGBuildPieceActor::BeginPlay()
         BaseMeshRelativeScale = FVector::OneVector;
     }
     RefreshConstructionPresentation(true);
+    if (HasAuthority())
+    {
+        RefreshRuntimeNavigation();
+        RefreshNearbyTreeRespawnSuppression();
+    }
+}
+
+void AARPGBuildPieceActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (HasAuthority())
+    {
+        // Resource suppression is occupancy-derived. Remove this actor from nearby tree blocker sets
+        // before its components disappear so a tree whose natural respawn time has elapsed can recover
+        // immediately instead of waiting for a world reload.
+        NotifyNearbyTreesOfOccupancy(false);
+        // Dirty the old occupied region before components leave the navigation octree. Dynamic Recast
+        // can then restore walkable terrain/floor underneath a demolished runtime building piece.
+        RefreshRuntimeNavigation();
+    }
+    Super::EndPlay(EndPlayReason);
 }
 
 void AARPGBuildPieceActor::InitializeBuilding(UARPGBuildPieceDefinition* InDefinition, AActor* Builder)
@@ -163,9 +206,116 @@ void AARPGBuildPieceActor::InitializeBuilding(UARPGBuildPieceDefinition* InDefin
     bConstructionComplete = ConstructionDuration <= KINDA_SMALL_NUMBER;
     ConstructionStartServerTime = bConstructionComplete ? 0.f : GetAuthoritativeServerTime();
     RefreshConstructionPresentation(true);
+    RefreshRuntimeNavigation();
+    RefreshNearbyTreeRespawnSuppression();
     if (!bConstructionComplete && InDefinition->ConstructionStartSound.LoadSynchronous())
         UGameplayStatics::PlaySoundAtLocation(this, InDefinition->ConstructionStartSound.Get(), GetActorLocation());
     ForceNetUpdate();
+}
+
+void AARPGBuildPieceActor::RefreshRuntimeNavigation()
+{
+    if (!HasAuthority() || !GetWorld() || !Definition) return;
+
+    UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    if (!Nav) return;
+
+    // Runtime building changes must be explicitly reflected in the navigation octree. This is
+    // especially important for construction reveal/completion where collision is enabled after the
+    // actor and mesh were already registered. Relying on a later editor Build Navigation left PIE
+    // displaying "NAVMESH NEEDS TO BE REBUILT" and stale islands around completed houses.
+    if (UMeshComponent* ActiveMesh = GetActiveBuildMeshComponent())
+    {
+        if (ARPGIsRuntimeNavigationStructuralKind(Definition->PieceKind))
+            ActiveMesh->SetCanEverAffectNavigation(true);
+        UNavigationSystemV1::UpdateComponentInNavOctree(*ActiveMesh);
+    }
+    UNavigationSystemV1::UpdateNavOctreeBounds(this);
+
+    FBox DirtyBounds = GetComponentsBoundingBox(true);
+    if (!DirtyBounds.IsValid)
+        DirtyBounds = FBox(GetActorLocation() - FVector(50.f), GetActorLocation() + FVector(50.f));
+
+    const float Grid = FMath::Max(1.f, Definition->SnapSize);
+    const float Story = FMath::Max(1.f, Definition->StandardWallHeight);
+    float XYPad = FMath::Max(50.f, Grid * 0.25f);
+    float ZPad = FMath::Max(50.f, Story * 0.20f);
+    // Stairs intentionally rely on their real Dynamic Recast surface. Give their local dirty region
+    // slightly more room than a flat module so treads/landings and adjacent doorway thresholds are
+    // regenerated together without introducing off-mesh shortcuts.
+    if (Definition->PieceKind == EARPGBuildPieceKind::Stair)
+    {
+        XYPad = FMath::Max(XYPad, Grid * 0.35f);
+        ZPad = FMath::Max(ZPad, Story * 0.35f);
+    }
+
+    DirtyBounds = DirtyBounds.ExpandBy(FVector(XYPad, XYPad, ZPad));
+    Nav->AddDirtyArea(DirtyBounds, ENavigationDirtyFlag::All, TEXT("ARPG Runtime Build Piece Changed"));
+}
+
+bool AARPGBuildPieceActor::DoesLogicalPlacementOverlapWorldCylinder(FVector WorldCenter, float HorizontalRadius, float WorldMinZ, float WorldMaxZ) const
+{
+    if (!Definition) return false;
+
+    FVector LocalMin, LocalMax;
+    ARPGGetBuildDefinitionLocalBounds(Definition, LocalMin, LocalMax);
+    const FVector LocalCenter = (LocalMin + LocalMax) * 0.5f;
+    const FVector LogicalExtents = Definition->PlacementBounds.ComponentMax(FVector(1.f));
+    const FTransform ActorTransform = GetActorTransform();
+    const FVector LocalPoint = ActorTransform.InverseTransformPosition(WorldCenter);
+    const FVector AbsScale = ActorTransform.GetScale3D().GetAbs().ComponentMax(FVector(0.001f));
+
+    const float DxWorld = FMath::Max(0.f, FMath::Abs(LocalPoint.X - LocalCenter.X) - LogicalExtents.X) * AbsScale.X;
+    const float DyWorld = FMath::Max(0.f, FMath::Abs(LocalPoint.Y - LocalCenter.Y) - LogicalExtents.Y) * AbsScale.Y;
+    if (DxWorld * DxWorld + DyWorld * DyWorld > FMath::Square(FMath::Max(0.f, HorizontalRadius))) return false;
+
+    // Build actors are normally yaw-only, but transform all logical OBB corners so unusual custom
+    // pieces with pitch/roll still produce a correct world vertical interval for vegetation blocking.
+    FBox WorldLogicalBounds(EForceInit::ForceInit);
+    for (int32 X = -1; X <= 1; X += 2)
+    for (int32 Y = -1; Y <= 1; Y += 2)
+    for (int32 Z = -1; Z <= 1; Z += 2)
+    {
+        const FVector Corner = LocalCenter + FVector(
+            LogicalExtents.X * static_cast<float>(X),
+            LogicalExtents.Y * static_cast<float>(Y),
+            LogicalExtents.Z * static_cast<float>(Z));
+        WorldLogicalBounds += ActorTransform.TransformPosition(Corner);
+    }
+
+    const float QueryMinZ = FMath::Min(WorldMinZ, WorldMaxZ);
+    const float QueryMaxZ = FMath::Max(WorldMinZ, WorldMaxZ);
+    return WorldLogicalBounds.IsValid && WorldLogicalBounds.Max.Z >= QueryMinZ && WorldLogicalBounds.Min.Z <= QueryMaxZ;
+}
+
+void AARPGBuildPieceActor::NotifyNearbyTreesOfOccupancy(bool bPresent)
+{
+    if (!HasAuthority() || !GetWorld() || !Definition) return;
+    for (TActorIterator<AARPGTree> It(GetWorld()); It; ++It)
+    {
+        AARPGTree* Tree = *It;
+        if (!Tree) continue;
+        Tree->NotifyBuildPieceOccupancyChanged(this, bPresent);
+    }
+}
+
+void AARPGBuildPieceActor::RefreshNearbyTreeRespawnSuppression()
+{
+    NotifyNearbyTreesOfOccupancy(true);
+}
+
+bool AARPGBuildPieceActor::HasActiveStairNavigationBridge() const
+{
+    // Compatibility implementation retained so older Blueprint nodes continue to compile. v2.16.8 removed
+    // automatic Stair NavLinkProxy actors; completed Stairs use their real Dynamic Recast surface.
+    return false;
+}
+
+void AARPGBuildPieceActor::RefreshStairNavigationBridge()
+{
+    // Compatibility implementation retained for projects that already placed this Blueprint node. The correct
+    // post-v2.16.8 action is simply to refresh the Stair's real runtime navigation contribution.
+    RefreshRuntimeNavigation();
 }
 
 float AARPGBuildPieceActor::GetAuthoritativeServerTime() const
@@ -207,6 +357,8 @@ void AARPGBuildPieceActor::CompleteConstructionAuthority()
     bConstructionComplete = true;
     ConstructionStartServerTime = 0.f;
     RefreshConstructionPresentation(true);
+    RefreshRuntimeNavigation();
+    RefreshNearbyTreeRespawnSuppression();
     if (Definition && Definition->ConstructionCompleteSound.LoadSynchronous())
         UGameplayStatics::PlaySoundAtLocation(this, Definition->ConstructionCompleteSound.Get(), GetActorLocation());
     OnConstructionCompleted.Broadcast();
@@ -231,6 +383,8 @@ void AARPGBuildPieceActor::RestoreConstructionState(bool bWasComplete, float Rem
         bConstructionComplete = ClampedRemaining <= KINDA_SMALL_NUMBER;
     }
     RefreshConstructionPresentation(true);
+    RefreshRuntimeNavigation();
+    RefreshNearbyTreeRespawnSuppression();
     ForceNetUpdate();
 }
 

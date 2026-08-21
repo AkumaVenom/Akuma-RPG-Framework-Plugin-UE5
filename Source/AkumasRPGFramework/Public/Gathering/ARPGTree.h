@@ -14,6 +14,7 @@ class UAnimMontage;
 class UNiagaraSystem;
 class UParticleSystem;
 class USoundBase;
+class AARPGBuildPieceActor;
 
 UENUM(BlueprintType)
 enum class EARPGTreeState : uint8
@@ -38,12 +39,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FARPGTreeChoppedEvent, AARPGTree*,
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FARPGTreeFelledEvent, AARPGTree*, Tree, AActor*, Harvester);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FARPGTreeRespawnedEvent, AARPGTree*, Tree);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FARPGTreeStateChangedEvent, EARPGTreeState, NewState);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FARPGTreeBuildingSuppressionChangedEvent, bool, bSuppressed);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FARPGTreeRewardEvent, AActor*, Harvester, UARPGItemDefinition*, Item, int32, Quantity, bool, bAddedToInventory);
 
 UCLASS(BlueprintType, Blueprintable)
 class AKUMASRPGFRAMEWORK_API AARPGTree : public AActor
 {
     GENERATED_BODY()
+    friend class AARPGBuildPieceActor;
 public:
     AARPGTree();
 
@@ -71,6 +74,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Woodcutting", meta=(ClampMin="1")) int32 RequiredWoodcuttingLevel = 1;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Woodcutting", meta=(ClampMin="0.05")) float ChopResistance = 1.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Woodcutting") bool bRequireWoodcuttingTool = false;
+    /** Allows residents owned by a Settlement Hub to use the Hub's configured native worker rules. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Woodcutting") bool bAllowSettlementVillagerHarvest = true;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Woodcutting", meta=(EditCondition="bRequireWoodcuttingTool")) FGameplayTag RequiredToolTag;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Woodcutting", meta=(EditCondition="bRequireWoodcuttingTool", ClampMin="0")) int32 MinimumToolTier = 0;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Woodcutting", meta=(ClampMin="0")) int64 XPPerSuccessfulChop = 5;
@@ -93,6 +98,15 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Respawn") bool bRespawn = true;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Respawn", meta=(EditCondition="bRespawn", ClampMin="0.0")) float RespawnSeconds = 180.f;
 
+    /** Player-built structures may replace this resource location. While a build piece occupies the tree's respawn volume the tree remains fully hidden/non-colliding and cannot regenerate. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Respawn|Building Suppression", meta=(DisplayName="Suppress Respawn While Built Over")) bool bSuppressRespawnWhileBuiltOver = true;
+    /** Horizontal radius around the tree trunk/root used for build-occupancy suppression. This deliberately ignores the canopy so nearby houses do not suppress unrelated trees. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Respawn|Building Suppression", meta=(EditCondition="bSuppressRespawnWhileBuiltOver", ClampMin="0.0", Units="cm")) float BuildingRespawnBlockRadius = 85.f;
+    /** How often a building-suppressed tree self-heals its blocker set. Only suppressed trees run this timer; normal standing trees have no permanent polling cost. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Respawn|Building Suppression", meta=(EditCondition="bSuppressRespawnWhileBuiltOver", ClampMin="0.1", Units="s")) float BuildingRespawnRecheckSeconds = 1.f;
+    /** Derived authoritative state. True means at least one ARPG Build Piece currently occupies the tree's regeneration volume. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_BuildingRespawnSuppressed, Category="Tree|Respawn|Building Suppression") bool bBuildingRespawnSuppressed = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Feedback") TObjectPtr<UNiagaraSystem> ChopNiagara = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Feedback") TObjectPtr<UParticleSystem> ChopCascadeFallback = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tree|Feedback") TObjectPtr<UNiagaraSystem> FellNiagara = nullptr;
@@ -108,6 +122,7 @@ public:
     UPROPERTY(BlueprintAssignable, Category="Tree|Events") FARPGTreeFelledEvent OnTreeFelled;
     UPROPERTY(BlueprintAssignable, Category="Tree|Events") FARPGTreeRespawnedEvent OnTreeRespawned;
     UPROPERTY(BlueprintAssignable, Category="Tree|Events") FARPGTreeStateChangedEvent OnTreeStateChanged;
+    UPROPERTY(BlueprintAssignable, Category="Tree|Events") FARPGTreeBuildingSuppressionChangedEvent OnTreeBuildingSuppressionChanged;
     UPROPERTY(BlueprintAssignable, Category="Tree|Events") FARPGTreeRewardEvent OnTreeRewardGranted;
 
     UFUNCTION(BlueprintPure, Category="ARPG|Woodcutting|Tree") bool IsStanding() const { return TreeState == EARPGTreeState::Standing; }
@@ -116,6 +131,11 @@ public:
     UFUNCTION(BlueprintPure, Category="ARPG|Woodcutting|Tree") UStaticMesh* GetSelectedTreeMesh() const;
     UFUNCTION(BlueprintPure, Category="ARPG|Woodcutting|Tree") float GetSelectedTreeMeshScale() const { return SelectedTreeMeshScale; }
     UFUNCTION(BlueprintPure, Category="ARPG|Woodcutting|Tree") FVector GetChopImpactLocation(AActor* Harvester = nullptr) const;
+    UFUNCTION(BlueprintPure, Category="ARPG|Woodcutting|Tree|Building Suppression") bool IsRespawnSuppressedByBuilding() const { return bBuildingRespawnSuppressed; }
+    /** Rebuilds the authoritative blocker set from current ARPG Build Pieces. Useful for custom runtime world changes; normal framework construction calls this automatically. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Tree|Building Suppression", meta=(BlueprintAuthorityOnly)) bool RefreshBuildingRespawnSuppression();
+    /** Tests whether one build piece occupies this tree's trunk-root respawn volume using the build piece's logical Placement Bounds. */
+    UFUNCTION(BlueprintPure, Category="ARPG|Woodcutting|Tree|Building Suppression") bool IsRespawnBlockedByBuildPiece(const AARPGBuildPieceActor* Building) const;
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Tree") bool CanBeChoppedBy(AActor* Harvester, FText& OutFailureReason) const;
 
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Tree", meta=(BlueprintAuthorityOnly)) bool ApplyChop(AActor* Harvester, float ChopPower);
@@ -134,6 +154,7 @@ public:
 
 protected:
     UFUNCTION() void OnRep_TreeState(EARPGTreeState OldState);
+    UFUNCTION() void OnRep_BuildingRespawnSuppressed();
     UFUNCTION() void OnRep_SelectedTreeMeshIndex();
     UFUNCTION() void OnRep_SelectedTreeMeshScale();
     UFUNCTION(NetMulticast, Reliable) void MulticastBeginTreeFall(FVector_NetQuantizeNormal InFallDirection);
@@ -148,12 +169,24 @@ protected:
     void StartFallVisualLocal(const FVector& InFallDirection);
     void FinishFallVisualLocal();
     void EnterStumpAuthority();
+    void TryRespawnAuthority();
+    void CompleteRespawnAuthority();
+    void UpdateBuildingSuppressionStateAuthority();
+    void CacheStandingRespawnBounds();
+    void ScheduleSuppressionRecheck();
+    void RecheckBuildingRespawnSuppressionAuthority();
+    void NotifyBuildPieceOccupancyChanged(AARPGBuildPieceActor* Building, bool bPresent);
     void GrantRewards(AActor* Harvester);
     void AwardWoodcuttingXP(AActor* Harvester, int64 Amount) const;
     void PlayFeedbackLocal(bool bFell, const FVector& Location) const;
 
     FTimerHandle StumpTimer;
     FTimerHandle RespawnTimer;
+    FTimerHandle BuildingSuppressionRecheckTimer;
+    TSet<TWeakObjectPtr<AARPGBuildPieceActor>> BuildingRespawnBlockers;
+    double RespawnEligibleServerTime = 0.0;
+    bool bForcedRespawnPending = false;
+    FBox CachedStandingRespawnBounds = FBox(EForceInit::ForceInit);
     float LocalFallElapsed = 0.f;
     FVector LocalFallDirection = FVector::ForwardVector;
     bool bLocalFallActive = false;

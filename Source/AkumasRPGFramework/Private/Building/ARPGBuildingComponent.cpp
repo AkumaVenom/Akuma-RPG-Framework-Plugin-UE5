@@ -13,6 +13,9 @@
 #include "Data/ARPGBuildPieceDefinition.h"
 #include "Data/ARPGCraftingStationDefinition.h"
 #include "Data/ARPGItemDefinition.h"
+#include "Data/ARPGSettlementDefinition.h"
+#include "Settlement/ARPGBuildBedActor.h"
+#include "Settlement/ARPGSettlementHubActor.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
@@ -20,6 +23,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Gathering/ARPGTree.h"
 #include "Materials/MaterialInterface.h"
 #include "LandscapeProxy.h"
 
@@ -80,6 +84,42 @@ static bool ARPGIsInsertPieceKind(EARPGBuildPieceKind Kind)
 static bool ARPGIsLandscapeTerrainActor(const AActor* Actor)
 {
     return Actor && Actor->IsA<ALandscapeProxy>();
+}
+
+/**
+ * Foundations are allowed to replace gatherable vegetation space. A blocking ARPGTree must not steal
+ * the placement ray from the terrain/foundation socket behind it, otherwise the preview either floats
+ * on the trunk or never reaches the intended snap target. Retry the exact same authoritative trace
+ * while ignoring only encountered ARPGTree actors. Every non-tree blocker keeps normal collision.
+ */
+static bool ARPGTracePlacementSurfaceIgnoringFoundationTrees(
+    UWorld* World,
+    const UARPGBuildPieceDefinition* Piece,
+    const FVector& Start,
+    const FVector& End,
+    ECollisionChannel TraceChannel,
+    const FCollisionQueryParams& BaseParams,
+    FHitResult& OutHit)
+{
+    if (!World || !Piece) return false;
+    if (Piece->PieceKind != EARPGBuildPieceKind::Foundation)
+        return World->LineTraceSingleByChannel(OutHit, Start, End, TraceChannel, BaseParams);
+
+    FCollisionQueryParams Params = BaseParams;
+    constexpr int32 MaxTreePierceCount = 32;
+    for (int32 Attempt = 0; Attempt < MaxTreePierceCount; ++Attempt)
+    {
+        FHitResult Hit;
+        if (!World->LineTraceSingleByChannel(Hit, Start, End, TraceChannel, Params)) return false;
+        if (AARPGTree* Tree = Cast<AARPGTree>(Hit.GetActor()))
+        {
+            Params.AddIgnoredActor(Tree);
+            continue;
+        }
+        OutHit = Hit;
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -591,6 +631,145 @@ static bool ARPGFindBuildLightSurfaceFromDesired(
     }
 
     return OutSupport != nullptr;
+}
+
+static bool ARPGIsSettlementSurfacePiece(const UARPGBuildPieceDefinition* Piece)
+{
+    return Piece && (Piece->PieceKind == EARPGBuildPieceKind::Bed || Piece->PieceKind == EARPGBuildPieceKind::SettlementHub);
+}
+
+static bool ARPGIsSettlementHorizontalHostKind(EARPGBuildPieceKind Kind)
+{
+    return Kind == EARPGBuildPieceKind::Foundation || Kind == EARPGBuildPieceKind::Floor;
+}
+
+static float ARPGGetSettlementSurfaceOffset(const UARPGBuildPieceDefinition* Piece)
+{
+    if (!Piece) return 0.f;
+    if (Piece->PieceKind == EARPGBuildPieceKind::Bed) return FMath::Max(0.f, Piece->BedSurfaceOffset);
+    if (Piece->PieceKind == EARPGBuildPieceKind::SettlementHub) return FMath::Max(0.f, Piece->SettlementHubSurfaceOffset);
+    return 0.f;
+}
+
+static FTransform ARPGMakeSettlementHorizontalTransform(
+    const UARPGBuildPieceDefinition* Piece,
+    const FVector& SurfacePoint,
+    float DesiredYaw)
+{
+    if (!Piece) return FTransform::Identity;
+    FRotator Rotation(0.f, DesiredYaw, 0.f);
+    Rotation.Yaw = FMath::GridSnap(Rotation.Yaw, FMath::Max(1.f, Piece->RotationStepDegrees));
+    const FQuat Q = Rotation.Quaternion();
+    const FVector BottomAnchor = ARPGGetBuildPieceBottomAnchorLocal(Piece);
+    const FVector SurfaceAnchor = SurfacePoint + FVector::UpVector * ARPGGetSettlementSurfaceOffset(Piece);
+    FTransform Result(Q, FVector::ZeroVector);
+    Result.SetLocation(SurfaceAnchor - Q.RotateVector(BottomAnchor) + Q.RotateVector(Piece->PlacementOffset));
+    return Result;
+}
+
+/**
+ * Beds and Settlement Hubs use a native furnishing/utility surface contract rather than structural
+ * snap points. Beds deliberately require a completed Foundation/Floor host; Hubs may additionally
+ * opt into terrain via bAllowGroundPlacement. This branch is kept entirely separate from structural
+ * Stair/Wall/insert topology so settlement content cannot perturb the proven construction graph.
+ */
+static bool ARPGResolveSettlementPlacementFromHit(
+    const UARPGBuildPieceDefinition* Piece,
+    const FHitResult& Hit,
+    float DesiredYaw,
+    FTransform& OutTransform,
+    AARPGBuildPieceActor*& OutSupport)
+{
+    OutSupport = nullptr;
+    if (!ARPGIsSettlementSurfacePiece(Piece) || !Hit.bBlockingHit) return false;
+
+    AARPGBuildPieceActor* BuildHit = Cast<AARPGBuildPieceActor>(Hit.GetActor());
+    if (BuildHit)
+    {
+        if (!BuildHit->Definition || !BuildHit->IsConstructionComplete() ||
+            !ARPGIsSettlementHorizontalHostKind(BuildHit->Definition->PieceKind))
+            return false;
+        OutSupport = BuildHit;
+    }
+    else
+    {
+        if (Piece->PieceKind == EARPGBuildPieceKind::Bed || !Piece->bAllowGroundPlacement) return false;
+    }
+
+    const FVector Normal = Hit.ImpactNormal.GetSafeNormal();
+    if (Normal.IsNearlyZero()) return false;
+    const float MaxSlope = FMath::Clamp(Piece->MaxGroundSlopeDegrees, 0.f, 89.f);
+    if (FVector::DotProduct(Normal, FVector::UpVector) < FMath::Cos(FMath::DegreesToRadians(MaxSlope))) return false;
+
+    OutTransform = ARPGMakeSettlementHorizontalTransform(Piece, Hit.ImpactPoint, DesiredYaw);
+    return true;
+}
+
+static bool ARPGFindSettlementSurfaceFromDesired(
+    UWorld* World,
+    const UARPGBuildPieceDefinition* Piece,
+    const FTransform& Desired,
+    ECollisionChannel TraceChannel,
+    FTransform& OutTransform,
+    AARPGBuildPieceActor*& OutSupport)
+{
+    OutSupport = nullptr;
+    if (!World || !ARPGIsSettlementSurfacePiece(Piece)) return false;
+
+    const FVector BottomAnchor = ARPGGetBuildPieceBottomAnchorLocal(Piece);
+    const FVector PlacementCorrection = Desired.GetRotation().RotateVector(Piece->PlacementOffset);
+    const FVector DesiredBottomWorld = Desired.TransformPosition(BottomAnchor) - PlacementCorrection;
+    const float Capture = FMath::Max(4.f, Piece->SnapCaptureDistance);
+    const float CaptureSq = FMath::Square(Capture);
+    float BestScore = TNumericLimits<float>::Max();
+
+    for (TActorIterator<AARPGBuildPieceActor> It(World); It; ++It)
+    {
+        AARPGBuildPieceActor* Host = *It;
+        if (!Host || !Host->Definition || !Host->IsConstructionComplete() ||
+            !ARPGIsSettlementHorizontalHostKind(Host->Definition->PieceKind)) continue;
+
+        FVector HostMin, HostMax;
+        ARPGGetBuildPieceLocalBounds(Host->Definition, HostMin, HostMax);
+        const FTransform HostTransform = Host->GetActorTransform();
+        const FVector LocalPoint = HostTransform.InverseTransformPosition(DesiredBottomWorld);
+        const float Padding = FMath::Max(2.f, Piece->PlacementCollisionClearance + 1.f);
+        if (LocalPoint.X < HostMin.X - Padding || LocalPoint.X > HostMax.X + Padding ||
+            LocalPoint.Y < HostMin.Y - Padding || LocalPoint.Y > HostMax.Y + Padding) continue;
+
+        const FVector SurfaceLocal(
+            FMath::Clamp(LocalPoint.X, HostMin.X, HostMax.X),
+            FMath::Clamp(LocalPoint.Y, HostMin.Y, HostMax.Y),
+            HostMax.Z);
+        const FVector SurfaceWorld = HostTransform.TransformPosition(SurfaceLocal);
+        const float DistSq = FVector::DistSquared(DesiredBottomWorld, SurfaceWorld);
+        if (DistSq > CaptureSq || DistSq >= BestScore) continue;
+
+        BestScore = DistSq;
+        OutSupport = Host;
+        OutTransform = ARPGMakeSettlementHorizontalTransform(Piece, SurfaceWorld, Desired.Rotator().Yaw);
+    }
+    if (OutSupport) return true;
+
+    // Only Hubs can opt into terrain. Re-seat on an authority-side trace instead of trusting client Z.
+    if (Piece->PieceKind != EARPGBuildPieceKind::SettlementHub || !Piece->bAllowGroundPlacement) return false;
+    const float ProbeLift = FMath::Max(4.f, Piece->PlacementCollisionClearance + 2.f);
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(ARPGSettlementUtilitySupport), false);
+    FHitResult Hit;
+    const FVector Start = DesiredBottomWorld + FVector::UpVector * ProbeLift;
+    const FVector End = DesiredBottomWorld - FVector::UpVector * FMath::Max(1.f, Piece->SupportTraceDepth);
+    if (!World->LineTraceSingleByChannel(Hit, Start, End, TraceChannel, Params)) return false;
+    if (AARPGBuildPieceActor* HitBuild = Cast<AARPGBuildPieceActor>(Hit.GetActor()))
+    {
+        if (!HitBuild->Definition || !HitBuild->IsConstructionComplete() ||
+            !ARPGIsSettlementHorizontalHostKind(HitBuild->Definition->PieceKind)) return false;
+        OutSupport = HitBuild;
+    }
+    const FVector Normal = Hit.ImpactNormal.GetSafeNormal();
+    const float MaxSlope = FMath::Clamp(Piece->MaxGroundSlopeDegrees, 0.f, 89.f);
+    if (Normal.IsNearlyZero() || FVector::DotProduct(Normal, FVector::UpVector) < FMath::Cos(FMath::DegreesToRadians(MaxSlope))) return false;
+    OutTransform = ARPGMakeSettlementHorizontalTransform(Piece, Hit.ImpactPoint, Desired.Rotator().Yaw);
+    return true;
 }
 
 /**
@@ -2331,7 +2510,8 @@ void UARPGBuildingComponent::UpdatePlacementPreview()
     FCollisionQueryParams Params(SCENE_QUERY_STAT(ARPGBuildPreviewTrace), false, GetOwner());
     if (ActivePreviewActor) Params.AddIgnoredActor(ActivePreviewActor);
     FHitResult Hit;
-    const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, ViewLocation, End, PlacementTraceChannel, Params);
+    const bool bHit = ARPGTracePlacementSurfaceIgnoringFoundationTrees(
+        GetWorld(), SelectedBuildPiece, ViewLocation, End, PlacementTraceChannel, Params, Hit);
 
     const FRotator DesiredRotation(0.f, ViewRotation.Yaw + PreviewYawOffset, 0.f);
     FVector Location = bHit ? Hit.ImpactPoint : End;
@@ -2364,6 +2544,15 @@ void UARPGBuildingComponent::UpdatePlacementPreview()
         {
             CurrentPreviewTransform = Desired;
         }
+    }
+    else if (ARPGIsSettlementSurfacePiece(SelectedBuildPiece))
+    {
+        FTransform SurfaceTransform;
+        if (bHit && ARPGResolveSettlementPlacementFromHit(
+            SelectedBuildPiece, Hit, ViewRotation.Yaw + PreviewYawOffset, SurfaceTransform, SnapTarget))
+            CurrentPreviewTransform = SurfaceTransform;
+        else
+            CurrentPreviewTransform = Desired;
     }
     else
     {
@@ -2438,6 +2627,14 @@ FTransform UARPGBuildingComponent::ResolvePlacementTransform(const UARPGBuildPie
                 }
             }
         }
+        return DesiredTransform;
+    }
+
+    if (ARPGIsSettlementSurfacePiece(Piece))
+    {
+        FTransform SurfaceTransform;
+        if (ARPGFindSettlementSurfaceFromDesired(GetWorld(), Piece, DesiredTransform, PlacementCollisionChannel, SurfaceTransform, OutSnapTarget))
+            return SurfaceTransform;
         return DesiredTransform;
     }
 
@@ -2712,6 +2909,46 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
         }
     }
 
+    if (ARPGIsSettlementSurfacePiece(Piece))
+    {
+        if (SnapTarget)
+        {
+            if (!SnapTarget->Definition || !SnapTarget->IsConstructionComplete() ||
+                !ARPGIsSettlementHorizontalHostKind(SnapTarget->Definition->PieceKind))
+                return EARPGPlacementResult::Unsupported;
+        }
+        else
+        {
+            // Beds are furnishings and may not float on terrain. Settlement Hubs can opt into direct
+            // terrain placement through the normal bAllowGroundPlacement authoring flag.
+            if (Piece->PieceKind == EARPGBuildPieceKind::Bed || !Piece->bAllowGroundPlacement)
+                return EARPGPlacementResult::Unsupported;
+        }
+
+        // One physical location belongs to one settlement authority. By default Hub influence areas
+        // cannot overlap, which prevents the same Bed/home from being recruited by two bases and keeps
+        // ownership, HUD proximity and worker stockpile routing deterministic. This is semantic only;
+        // it does not alter structural collision or the protected Stair/Wall-family topology.
+        if (Piece->PieceKind == EARPGBuildPieceKind::SettlementHub && Piece->SettlementDefinition &&
+            Piece->SettlementDefinition->bPreventOverlappingSettlementAreas)
+        {
+            const float NewRadius = FMath::Max(300.f, Piece->SettlementDefinition->SettlementRadius);
+            const float NewPadding = FMath::Max(0.f, Piece->SettlementDefinition->SettlementSeparationPadding);
+            for (TActorIterator<AARPGSettlementHubActor> It(World); It; ++It)
+            {
+                const AARPGSettlementHubActor* ExistingHub = *It;
+                if (!ExistingHub || !ExistingHub->IsConstructionComplete()) continue;
+                const UARPGSettlementDefinition* ExistingDef = ExistingHub->GetSettlementDefinition();
+                const float ExistingRadius = ExistingHub->GetSettlementRadius();
+                const float ExistingPadding = ExistingDef && ExistingDef->bPreventOverlappingSettlementAreas
+                    ? FMath::Max(0.f, ExistingDef->SettlementSeparationPadding) : 0.f;
+                const float RequiredDistance = NewRadius + ExistingRadius + FMath::Max(NewPadding, ExistingPadding);
+                if (FVector::DistSquared2D(Final.GetLocation(), ExistingHub->GetActorLocation()) < FMath::Square(RequiredDistance))
+                    return EARPGPlacementResult::Blocked;
+            }
+        }
+    }
+
     // Hosted inserts are singleton occupants of their semantic host socket. Do not depend on current
     // physical collision for duplicate detection: an open Door/Window may legitimately move/disable its
     // gameplay blocker, but its Doorway/WindowWall socket is still occupied until the insert is removed.
@@ -2748,6 +2985,13 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
         {
             AActor* Other = Overlap.GetActor();
             if (!Other || Other == Owner || Other == SnapTarget) continue;
+
+            // Foundations intentionally replace ARPG gatherable vegetation space. Ignore the Tree actor
+            // as a placement blocker; once authority places the Foundation, the build actor immediately
+            // suppresses that Tree's visuals/collision and prevents respawn until the logical build
+            // occupancy clears. Rocks, props, pawns and every non-tree blocker remain unchanged.
+            if (Piece->PieceKind == EARPGBuildPieceKind::Foundation && Other->IsA<AARPGTree>())
+                continue;
 
             // A verified snapped Stair may embed into Landscape terrain. Landscape uses large
             // continuous collision components whose broad-phase overlap is intentionally conservative;
@@ -2949,7 +3193,8 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
         const float ProbeLift = FMath::Max(4.f, Piece->PlacementCollisionClearance + 2.f);
         const FVector Start = BottomAnchor + FVector::UpVector * ProbeLift;
         const FVector End = BottomAnchor - FVector::UpVector * FMath::Max(1.f, Piece->SupportTraceDepth);
-        if (!World->LineTraceSingleByChannel(Hit, Start, End, PlacementCollisionChannel, Params)) return EARPGPlacementResult::Unsupported;
+        if (!ARPGTracePlacementSurfaceIgnoringFoundationTrees(
+            World, Piece, Start, End, PlacementCollisionChannel, Params, Hit)) return EARPGPlacementResult::Unsupported;
         if (Piece->bRequireMostlyFlatGround)
         {
             const float Slope = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Hit.ImpactNormal.Z, -1.f, 1.f)));
@@ -3000,6 +3245,8 @@ UClass* UARPGBuildingComponent::ResolveNativeBuildActorClass(const UARPGBuildPie
         case EARPGBuildPieceKind::Door: return AARPGBuildDoorActor::StaticClass();
         case EARPGBuildPieceKind::Window: return AARPGBuildWindowActor::StaticClass();
         case EARPGBuildPieceKind::Light: return AARPGBuildLightActor::StaticClass();
+        case EARPGBuildPieceKind::Bed: return AARPGBuildBedActor::StaticClass();
+        case EARPGBuildPieceKind::SettlementHub: return AARPGSettlementHubActor::StaticClass();
         case EARPGBuildPieceKind::Storage: return AARPGStorageActor::StaticClass();
         case EARPGBuildPieceKind::Production: return AARPGCraftingStationActor::StaticClass();
         default: return AARPGBuildPieceActor::StaticClass();
@@ -3040,8 +3287,18 @@ bool UARPGBuildingComponent::PlacePieceAuthority(UARPGBuildPieceDefinition* Piec
         return false;
     }
 
-    if (AARPGStorageActor* Storage = Cast<AARPGStorageActor>(Spawned))
+    if (AARPGSettlementHubActor* Hub = Cast<AARPGSettlementHubActor>(Spawned))
+    {
+        if (Hub->Inventory)
+        {
+            const UARPGSettlementDefinition* SettlementDef = Piece->SettlementDefinition;
+            Hub->Inventory->MaxSlots = SettlementDef ? FMath::Max(1, SettlementDef->SettlementStockpileSlots) : 96;
+        }
+    }
+    else if (AARPGStorageActor* Storage = Cast<AARPGStorageActor>(Spawned))
+    {
         if (Storage->Inventory) Storage->Inventory->MaxSlots = FMath::Max(1, Piece->StorageSlots);
+    }
     if (AARPGCraftingStationActor* Station = Cast<AARPGCraftingStationActor>(Spawned))
         Station->ApplyStationDefinition(Piece->StationDefinition);
 

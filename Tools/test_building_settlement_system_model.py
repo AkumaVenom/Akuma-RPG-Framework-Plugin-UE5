@@ -992,7 +992,7 @@ assert '!StationDefinition || !StationDefinition->StationTag.IsValid()' in canus
 # Persistent construction + Door/Window/Light state and existing container/furnace inventories/queues.
 # Character schema remains v5; world schema is v7 while the v6 Window migration remains explicit.
 require(types_h, 'bConstructionComplete', 'ConstructionRemainingSeconds', 'bDoorOpen', 'bWindowOpen', 'bLightOn')
-assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 7' in save_h
+assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 8' in save_h
 require(save_cpp, 'R.bConstructionComplete=B->IsConstructionComplete()', 'R.ConstructionRemainingSeconds=B->GetConstructionRemainingSeconds()',
         'R.bDoorOpen=Door->IsDoorOpen()', 'R.bWindowOpen=Window->IsWindowOpen()', 'R.bLightOn=Light->IsLightOn()', 'RestoreConstructionState', 'RestoreDoorOpenState', 'RestoreWindowOpenState', 'RestoreLightState', 'Save->SaveVersion>=6 ? R.bWindowOpen : false', 'Save->SaveVersion>=7', 'CraftQueue', 'OutputItems',
         'ProcessOfflineElapsed()', 'SetActorTickEnabled(C->CraftQueue.Num()>0)')

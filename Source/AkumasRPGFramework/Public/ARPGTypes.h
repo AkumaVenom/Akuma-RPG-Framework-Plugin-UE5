@@ -59,6 +59,75 @@ enum class EARPGEncounterState : uint8 { NotStarted, InProgress, Failed, Complet
 UENUM(BlueprintType)
 enum class EARPGGroupRole : uint8 { None, Tank, Healer, Damage };
 
+
+/** Role authored on a buildable Bed. Villager beds are recruitment slots; Player beds are reserved from NPC assignment. */
+UENUM(BlueprintType)
+enum class EARPGBedRole : uint8
+{
+    Unassigned UMETA(DisplayName="Unassigned"),
+    Player UMETA(DisplayName="Player Bed"),
+    Villager UMETA(DisplayName="Villager Bed")
+};
+
+/** High-level state for a settlement resident. */
+UENUM(BlueprintType)
+enum class EARPGSettlementResidentState : uint8
+{
+    Homeless,
+    AtHome,
+    Roaming,
+    GoingToWork,
+    Woodcutting,
+    ReturningHome
+};
+
+/** Result of the native configurable 2x2+ home-validation pass around a Bed. */
+UENUM(BlueprintType)
+enum class EARPGSettlementHomeState : uint8
+{
+    NoSettlement,
+    Incomplete,
+    Valid
+};
+
+/** Blueprint-facing home validation snapshot. */
+USTRUCT(BlueprintType)
+struct AKUMASRPGFRAMEWORK_API FARPGSettlementHomeValidation
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) EARPGSettlementHomeState State = EARPGSettlementHomeState::NoSettlement;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bValid = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FText StatusText;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FGuid AnchorFoundationId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector HomeCenter = FVector::ZeroVector;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector HomeExtent = FVector::ZeroVector;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 FoundationCount = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 RequiredFoundationCount = 4;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 CoverCount = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 RequiredCoverCount = 4;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 PerimeterSegmentCount = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 RequiredPerimeterSegmentCount = 8;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bHasDoorway = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bHasDoor = false;
+};
+
+/** Lightweight replicated/UI summary for one Settlement Hub. */
+USTRUCT(BlueprintType)
+struct AKUMASRPGFRAMEWORK_API FARPGSettlementSummary
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FGuid SettlementId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FText SettlementName;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 ResidentCount = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 ResidentCapacity = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 VillagerBedCount = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 ValidHomeCount = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 WoodcuttersActive = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bSettlementOperational = false;
+};
+
 UENUM(BlueprintType)
 enum class EARPGGroupType : uint8 { Solo, Party, Raid };
 
@@ -367,6 +436,10 @@ struct AKUMASRPGFRAMEWORK_API FARPGPlacedBuildingSave
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bDoorOpen = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bWindowOpen = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bLightOn = false;
+    /** v8 settlement Bed role/assignment. Ignored by non-Bed pieces. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) EARPGBedRole BedRole = EARPGBedRole::Unassigned;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid BedAssignedResidentId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid PlayerBedOwnerCharacterId;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid OwnerAccountId;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid OwnerCharacterId;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FName OwnerFactionId = NAME_None;
@@ -447,6 +520,24 @@ struct AKUMASRPGFRAMEWORK_API FARPGDungeonSaveState
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bComplete = false;
 };
 
+
+USTRUCT(BlueprintType)
+struct AKUMASRPGFRAMEWORK_API FARPGSettlementResidentSave
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid ResidentId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid SettlementHubBuildingId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid AssignedBedBuildingId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FSoftClassPath ActorClass;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FTransform Transform;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FString ResidentName;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) float Health = 100.f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid OwnerAccountId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FGuid OwnerCharacterId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FName OwnerFactionId = NAME_None;
+};
+
 USTRUCT(BlueprintType)
 struct AKUMASRPGFRAMEWORK_API FARPGWorldSaveData
 {
@@ -455,6 +546,7 @@ struct AKUMASRPGFRAMEWORK_API FARPGWorldSaveData
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FString WorldId;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGPlacedBuildingSave> Buildings;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGContainerSave> Containers;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGSettlementResidentSave> SettlementResidents;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<FARPGDungeonSaveState> Dungeons;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FDateTime SavedAtUtc;
 };

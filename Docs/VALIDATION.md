@@ -1,11 +1,133 @@
-# Source Validation — Akuma's RPG Framework v2.15.54-alpha
+# Source Validation — Akuma's RPG Framework v2.16.10-alpha
 
-Package: **Akuma's RPG Framework — v2.15.54-alpha**  
+Package: **Akuma's RPG Framework — v2.16.10-alpha**  
 Target: **Unreal Engine 5.8 / 5.8.1**
 
 ## Important limitation
 
-The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 is additive: buildable Lights use separate surface placement and non-blocking fixture semantics. Runtime PIE confirmation is still required for this release.
+The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 buildable Lights remain confirmed as an additive non-blocking layer. v2.16.0 adds settlement Beds/Hubs through a separate horizontal-surface contract and leaves the protected Stair/Wall-family boundary functions unchanged. Runtime PIE confirmation is still required for this release.
+
+
+
+
+
+
+
+
+## v2.16.10 contextual villager woodcutting-tool acceptance
+
+- Assign an Axe `ARPGItemDefinition` to `Villager Woodcutting Tool Item`; ensure that Item has an equipped mesh and a valid hand socket/relative transform.
+- With `Show Tool While Going To Work = true`, verify the axe appears when the resident transitions from Roaming to Going To Work and remains visible during Woodcutting.
+- Verify the axe disappears when the resident returns to Roaming, At Home, Returning Home or Homeless.
+- Set `Show Tool While Going To Work = false`; verify travel is empty-handed and the axe appears only after Woodcutting begins.
+- Confirm resident Inventory quantities/equipped flags and durability are unchanged by contextual axe show/hide transitions.
+- In a network PIE test, verify remote clients see the same held-tool state after `ResidentState` / `CurrentWorkTree` replication and late visual refresh.
+
+## v2.16.9 build-aware Tree suppression acceptance
+
+- A Foundation preview/authority trace can pass through one or more `AARPGTree` actors to the real terrain or structural snap target behind them.
+- Tree actors are ignored only for Foundation placement; ordinary world blockers and build-vs-build collision remain unchanged.
+- Placing/restoring a build piece over a standing/felled Tree suppresses both Tree/Stump visibility and collision without granting Wood/XP/fell rewards.
+- A suppressed Tree cannot naturally or forcibly respawn while any logical build occupancy remains. Multiple blockers are independent.
+- Removing the final blocker resumes the original remaining respawn delay, or permits prompt respawn when the natural eligibility time already elapsed.
+- Settlement villagers abandon build-suppressed work targets without generating a false stockpile deposit.
+- Suppression rebuilds from persisted building occupancy; world SaveVersion remains v8.
+- `Tools/test_tree_build_suppression_model.py` passes alongside every previous framework regression.
+
+## v2.16.8 native Dynamic Recast Stair navigation acceptance
+
+Real PIE testing showed that after the project Supported Agent was configured correctly the Wood Stair itself rasterized as a continuous walkable surface, while the framework-authored off-mesh shortcut could compete with normal path following and make a resident oscillate near the Stair/doorway. Acceptance now requires:
+
+- structural build initialization/completion/restore/removal continues to update NavigationSystem's component/actor octree entries and dirty a bounded local Recast region;
+- no per-piece full-world synchronous `Build()` is used;
+- completed Stairs create **no automatic `ANavLinkProxy` or Simple Nav Link**;
+- obsolete Stair NavLink authoring fields are no longer exposed on build definitions;
+- deprecated compatibility nodes create no links (`Refresh Stair Navigation Bridge` delegates to runtime nav refresh; `Has Active Stair Navigation Bridge` is false);
+- the project owns Supported Agent radius/height and the framework does not overwrite those settings;
+- the confirmed settlement/home/worker systems remain independent of this generic navigation cleanup.
+
+PIE acceptance: with the Supported Agent configured so the Stair is visibly green under **P**, `Custom NavLinks count` should remain zero for framework Stair traversal and generic AI/residents must cross the Stair naturally in both directions while roaming or working.
+
+## v2.16.6 runtime-built Stair navigation acceptance
+
+Real PIE testing showed the house interior and terrain as separate green NavMesh islands with no connection across the player-built Stair. Acceptance now requires: completed Stairs create one transient non-replicated bidirectional Simple Nav Link; endpoints use the logical +X-uphill / `SnapSize` structural anchors plus the exposed landing inset; low/high points independently project to nearby NavMesh with a vertical cap below half a story; unfinished/non-Stair pieces own no link; demolition/EndPlay removes the proxy; restore/completion refreshes it; and the implementation remains generic with no settlement-villager class dependency.
+
+PIE acceptance: with Navigation visualization enabled, build a Foundation/Floor interior reachable only by a Stair. Spawn/recruit an AI on the interior island and give it an exterior goal (and vice versa). Path following must cross the Stair in both directions without manual level-authored `NavLinkProxy` actors.
+
+## v2.16.5 settlement interior-story spawn/home-anchor acceptance
+
+Real PIE testing of v2.16.4 confirmed resident deduplication and state changes but exposed villagers spawning on the roof above otherwise valid homes. v2.16.5 must therefore ensure:
+
+- resident home anchoring derives the walkable plane from the validated home, not the Bed actor pivot;
+- NavMesh projection uses a tight vertical tolerance and rejects roof/ceiling islands one story above;
+- projected home points remain inside the validated home footprint;
+- recruitment never uses `AlwaysSpawn`, retries collision-safe same-story locations and rejects any collision adjustment that changes story;
+- if no safe interior NavMesh point exists, recruitment is deferred instead of creating a stuck resident;
+- roaming, Return Home and combat leash reuse the same semantic interior anchor;
+- world-load restore can fall back to that anchor and repairs previous roof-position residents without changing world save v8;
+- v2.16.3 housing geometry, v2.16.4 registry/work routing and protected building topology remain unchanged.
+
+## v2.16.4 settlement resident identity / locomotion acceptance
+
+Real PIE testing after v2.16.3 confirmed home validation but exposed one resident appearing twice in the Hub UI and a worker remaining motionless in `Going To Work`. v2.16.4 must therefore ensure:
+
+- recruitment pre-registers the pawn before initialization callbacks can register it again;
+- runtime registry cleanup deduplicates both actor pointer and persistent `ResidentId`;
+- public resident lists, summary counts and worker-cap accounting use the unique resident view;
+- worker movement can recover a missing AI controller, requires Navigation System availability and projects tree targets to navigable approach points;
+- `Going To Work` is published only after a non-failed move request;
+- accepted work routes must prove real translation, otherwise movement is stopped, the tree reservation is released and roaming resumes;
+- v2.16.3 housing geometry, v8 persistence and protected building topology remain unchanged.
+
+## v2.16.3 settlement structural-plane home acceptance
+
+Real PIE testing of v2.16.2 showed valid modular houses reporting `0/N` overhead cover and `Valid Homes 0`. v2.16.3 must therefore ensure:
+
+- default minimum housing is 2x2 Foundations (4 cells / 8 perimeter segments), still Data Asset configurable;
+- Foundation semantic cells use transformed build bounds / finished top planes, never raw actor origins;
+- Floor/Ceiling/Roof cover is matched by transformed footprint coverage at `FoundationTop + HomeStoryHeight`;
+- Wall/WindowWall/Doorway perimeter segments are matched at the real Foundation half-grid boundary and require their finished bottom on the Foundation top;
+- one Wall-family actor may not satisfy multiple perimeter slots in the same candidate;
+- incomplete diagnostics prefer the closest-to-valid/smallest useful candidate instead of drifting to an arbitrary larger connected rectangle;
+- native Doorway -> Door socket validation remains unchanged;
+- v2.15.53 Stair/Wall-family protected structural functions remain hash-identical.
+
+## v2.16.2 UE5.8 incomplete-type compile acceptance
+
+A real UE5.8/MSVC rebuild of v2.16.1 showed that `.Get()` alone is insufficient when `UARPGSettlementPanelWidget` / `UARPGBedPanelWidget` are still only forward-declared at the inline call site. v2.16.2 must therefore ensure:
+
+- `IsSettlementPanelOpen()` and `IsBedPanelOpen()` remain declared in `ARPGSettlementUIComponent.h` but are **not implemented inline** there;
+- their implementations live in `ARPGSettlementUIComponent.cpp`, after `UI/ARPGSettlementWidgets.h` provides complete widget types, and perform `IsValid(Active...Panel.Get())` there;
+- the v2.16.1 descriptive UMG canvas-slot names remain intact under warnings-as-errors;
+- world save remains v8 and settlement/building gameplay code remains unchanged by this compile-only hotfix.
+
+## v2.16.1 UE5.8 compile-compatibility acceptance
+
+A real UE5.8 UnrealBuildTool/MSVC compile of v2.16.0 exposed two settlement-UI C++ compatibility defects that source/model validation could not emulate. v2.16.1 must retain all settlement behavior while ensuring:
+
+- forward-declared `TObjectPtr<UARPGSettlementPanelWidget>` / `TObjectPtr<UARPGBedPanelWidget>` state queries call `IsValid(...Get())`, not `IsValid(TObjectPtr)` directly;
+- native settlement widget methods do not declare a local `Slot` identifier that hides inherited `UWidget::Slot` under warnings-as-errors;
+- world save remains v8 and no structural placement/topology code is changed by the compile hotfix.
+
+## v2.16.0 Settlement Hub / validated-home / villager acceptance
+
+- `Bed` and `SettlementHub` must remain appended after `Light`; all pre-v2.16 build-piece enum values must remain stable.
+- A completed building with no Hub must remain ordinary: no resident recruitment, no settlement worker scheduling and no settlement proximity HUD.
+- New Hub placement must respect normal build authority and, when enabled, reject overlap with completed settlement areas using the sum of both Hub radii plus configured padding.
+- Beds must require a completed Foundation/Floor support. Hubs may use Foundation/Floor and only use terrain when their Build Piece explicitly enables ground placement; authority must re-trace/re-seat terrain.
+- Build a complete default 2x2 Foundation home. A Villager Bed must remain **Incomplete** until all 4 overhead cells are covered, all 8 perimeter Wall-family segments exist, at least one Doorway exists, and a completed Door occupies that Doorway's native socket.
+- Remove one Foundation, cover piece, perimeter wall, Doorway or Door and verify the Bed immediately stops contributing valid resident capacity on the next Hub refresh.
+- Bed role changes must use the existing player-owned interaction RPC and enforce range/modification access. Test Unassigned, Player and Villager roles.
+- Recruitment must be server-only, at most one new resident per recruitment interval, must re-home existing homeless residents first, and must never exceed valid Villager Beds or Maximum Villagers.
+- Resident class must derive from `AARPGSettlementVillagerCharacter`; owner account/character/faction must match the Hub. Verify normal faction hostility/ally behavior remains intact.
+- Resident activity must be timer-driven. Test roaming around Bed/Hub and confirm active combat is not overwritten by settlement work.
+- With settlement woodcutting enabled, two residents must not reserve the same `ARPGTree`. Workers must use the tree's normal `ApplyChop` durability/reward path and configured rewards should transfer into the Hub stockpile.
+- The local Settlement HUD must appear inside `Settlement HUD Radius` and disappear outside it. Hub interaction must open the Settlement panel; Bed interaction must open Bed assignment; Stockpile must hand off to existing Storage UI. Blueprint Widget subclasses must be assignable on SettlementUI.
+- World save **v8** must round-trip mixed Bed roles, Player Bed owner, resident IDs/classes/transforms/names/health, Hub/Bed links, faction ownership and Hub stockpile. v6 Window and v7 Light migration must remain intact.
+- Re-run all confirmed Stair/Wall/Window/Light placement combinations around Hub/Bed content. Settlement additions must not change v2.15.53 structural classifier hashes.
+- `Tools/test_settlement_hub_villager_model.py` checks the native settlement architecture and byte-hash locks the four protected v2.15.53 Stair/Wall-family functions.
+
+Recommended UE 5.8 PIE acceptance: create one Hub definition, one Hub build piece, one Bed piece and one Blueprint villager subclass. Build a complete 2x2 house, assign a Villager Bed, verify recruitment/roam/woodcut/deposit, save/reload, then demolish or invalidate one home segment and confirm housing state updates without affecting unrelated building placement.
 
 ## v2.15.54 interactive buildable-light acceptance
 

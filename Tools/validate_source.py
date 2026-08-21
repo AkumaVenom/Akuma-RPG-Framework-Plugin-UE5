@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21554 or descriptor.get("VersionName") != "2.15.54-alpha":
-        issues.append("package descriptor must identify v2.15.54-alpha")
+    if descriptor.get("Version") != 21610 or descriptor.get("VersionName") != "2.16.10-alpha":
+        issues.append("package descriptor must identify v2.16.10-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1836,6 +1836,164 @@ if all(p.exists() for p in paths_2150):
     ):
         if required not in bac:
             issues.append(f"v2.15.42 finished-surface story snap contract missing: {required}")
+    # v2.16.8 native Dynamic Recast Stair navigation cleanup. Runtime construction must continue
+    # to update/dirty local Recast tiles, but automatic Stair NavLinkProxy shortcuts are removed so
+    # AI follows the real rasterized Stair surface without oscillating between off-mesh endpoints.
+    for required in (
+        "void RefreshRuntimeNavigation();",
+        "void RefreshStairNavigationBridge();",
+        "bool HasActiveStairNavigationBridge() const;",
+        "DeprecatedFunction",
+        "Automatic Stair NavLinks were removed in v2.16.8",
+    ):
+        if required not in bah: issues.append(f"v2.16.8 runtime navigation compatibility API missing: {required}")
+    for required in (
+        "SetCanEverAffectNavigation(true)",
+        "UNavigationSystemV1::UpdateComponentInNavOctree(*ActiveMesh)",
+        "UNavigationSystemV1::UpdateNavOctreeBounds(this)",
+        "ENavigationDirtyFlag::All",
+        "ARPG Runtime Build Piece Changed",
+        "Definition->PieceKind == EARPGBuildPieceKind::Stair",
+        "Grid * 0.35f",
+        "Story * 0.35f",
+        "return false;",
+    ):
+        if required not in bac: issues.append(f"v2.16.8 native Dynamic Recast Stair navigation missing: {required}")
+    for forbidden in (
+        "ANavLinkProxy",
+        "Navigation/NavLinkProxy.h",
+        "FNavigationLink StairLink",
+        "PointLinks",
+        "StairNavigationProxy",
+        "ResolveStairNavigationBridgeEndpoints",
+        "ScheduleStairNavigationBridgeRefresh",
+        "RefreshNearbyStairNavigationBridges",
+        "StairNavigationRefreshRetryCount",
+    ):
+        if forbidden in bac or forbidden in bah:
+            issues.append(f"v2.16.8 must not retain automatic Stair off-mesh link runtime machinery: {forbidden}")
+    for forbidden in (
+        "bEnableAutomaticStairNavigationBridge",
+        "StairNavigationLandingInset",
+        "StairNavigationProjectionRadius",
+        "StairNavigationProjectionHalfHeight",
+    ):
+        if forbidden in bdh:
+            issues.append(f"v2.16.8 obsolete Stair NavLink Data Asset setting still exposed: {forbidden}")
+    nav_refresh_start = bac.find("void AARPGBuildPieceActor::RefreshRuntimeNavigation()")
+    nav_refresh_end = bac.find("bool AARPGBuildPieceActor::HasActiveStairNavigationBridge()", nav_refresh_start) if nav_refresh_start >= 0 else -1
+    if nav_refresh_start >= 0 and nav_refresh_end > nav_refresh_start:
+        nav_refresh_body = bac[nav_refresh_start:nav_refresh_end]
+        if "Nav->Build()" in nav_refresh_body or "Build();" in nav_refresh_body:
+            issues.append("v2.16.8 runtime build navigation must dirty local Recast tiles, not force a full-world Build() per piece")
+    nav_stub_start = bac.find("void AARPGBuildPieceActor::RefreshStairNavigationBridge()")
+    nav_stub_end = bac.find("float AARPGBuildPieceActor::GetAuthoritativeServerTime()", nav_stub_start) if nav_stub_start >= 0 else -1
+    if nav_stub_start >= 0 and nav_stub_end > nav_stub_start:
+        nav_stub = bac[nav_stub_start:nav_stub_end]
+        for forbidden in ("SpawnActor", "NavLink", "ProjectPointToNavigation", "PointLinks"):
+            if forbidden in nav_stub:
+                issues.append(f"v2.16.8 deprecated Stair bridge stub must not create off-mesh navigation: {forbidden}")
+
+    # v2.16.9 build-aware Tree replacement/respawn suppression. Foundations may pierce only
+    # AARPGTree blockers; resource regeneration remains authority/occupancy driven with no fake loot.
+    tree_h_21609 = root / "Public" / "Gathering" / "ARPGTree.h"
+    tree_cpp_21609 = root / "Private" / "Gathering" / "ARPGTree.cpp"
+    resident_cpp_21609 = root / "Private" / "Settlement" / "ARPGSettlementResidentComponent.cpp"
+    if not tree_h_21609.exists() or not tree_cpp_21609.exists():
+        issues.append("v2.16.9 ARPG Tree/build suppression source is missing")
+    else:
+        th21609 = tree_h_21609.read_text(errors="replace")
+        tc21609 = tree_cpp_21609.read_text(errors="replace")
+        rc21609 = resident_cpp_21609.read_text(errors="replace") if resident_cpp_21609.exists() else ""
+        for required in (
+            "bSuppressRespawnWhileBuiltOver = true",
+            "BuildingRespawnBlockRadius = 85.f",
+            "BuildingRespawnRecheckSeconds = 1.f",
+            "IsRespawnSuppressedByBuilding()",
+            "RefreshBuildingRespawnSuppression()",
+            "OnTreeBuildingSuppressionChanged",
+        ):
+            if required not in th21609: issues.append(f"v2.16.9 Tree suppression API/default missing: {required}")
+        for required in (
+            "Building->DoesLogicalPlacementOverlapWorldCylinder",
+            "TryRespawnAuthority()",
+            "CompleteRespawnAuthority()",
+            "BuildingRespawnBlockers",
+            "DOREPLIFETIME(AARPGTree, bBuildingRespawnSuppressed)",
+        ):
+            if required not in tc21609: issues.append(f"v2.16.9 Tree suppression runtime missing: {required}")
+        suppress_start = tc21609.find("void AARPGTree::UpdateBuildingSuppressionStateAuthority()")
+        suppress_end = tc21609.find("void AARPGTree::SelectRandomTreeMesh()", suppress_start) if suppress_start >= 0 else -1
+        if suppress_start >= 0 and suppress_end > suppress_start:
+            suppress_body = tc21609[suppress_start:suppress_end]
+            for forbidden in ("GrantRewards(", "AwardWoodcuttingXP(", "OnTreeFelled.Broadcast"):
+                if forbidden in suppress_body: issues.append(f"v2.16.9 build suppression must not fabricate harvest rewards: {forbidden}")
+        if "!CurrentWorkTree->IsRespawnSuppressedByBuilding()" not in rc21609:
+            issues.append("v2.16.9 settlement workers must not treat build-suppressed Trees as rewarded fells")
+    for required in (
+        "ARPGTracePlacementSurfaceIgnoringFoundationTrees",
+        "Params.AddIgnoredActor(Tree)",
+        "Piece->PieceKind == EARPGBuildPieceKind::Foundation && Other->IsA<AARPGTree>()",
+    ):
+        if required not in bc: issues.append(f"v2.16.9 Foundation-through-Tree placement missing: {required}")
+    for required in (
+        "RefreshNearbyTreeRespawnSuppression();",
+        "DoesLogicalPlacementOverlapWorldCylinder",
+    ):
+        if required not in bah and required not in bac: issues.append(f"v2.16.9 build/environment occupancy integration missing: {required}")
+
+    # v2.16.10 contextual settlement worker tool presentation. Work-tool art reuses Item Definition
+    # equipment presentation without mutating Inventory/equipped gameplay state.
+    settlement_def_21610 = root / "Public" / "Data" / "ARPGSettlementDefinition.h"
+    resident_h_21610 = root / "Public" / "Settlement" / "ARPGSettlementResidentComponent.h"
+    resident_cpp_21610 = root / "Private" / "Settlement" / "ARPGSettlementResidentComponent.cpp"
+    equipment_h_21610 = root / "Public" / "Components" / "ARPGEquipmentComponent.h"
+    equipment_cpp_21610 = root / "Private" / "Components" / "ARPGEquipmentComponent.cpp"
+    if not all(path.exists() for path in (settlement_def_21610, resident_h_21610, resident_cpp_21610, equipment_h_21610, equipment_cpp_21610)):
+        issues.append("v2.16.10 contextual villager woodcutting-tool source is missing")
+    else:
+        sd21610 = settlement_def_21610.read_text(errors="replace")
+        rh21610 = resident_h_21610.read_text(errors="replace")
+        rc21610 = resident_cpp_21610.read_text(errors="replace")
+        eh21610 = equipment_h_21610.read_text(errors="replace")
+        ec21610 = equipment_cpp_21610.read_text(errors="replace")
+        for required in (
+            "TSoftObjectPtr<UARPGItemDefinition> VillagerWoodcuttingToolItem",
+            "bShowWoodcuttingToolWhileGoingToWork = true",
+            "bPlayWoodcuttingToolEquipPresentation = true",
+        ):
+            if required not in sd21610: issues.append(f"v2.16.10 Settlement tool-presentation authoring missing: {required}")
+        for required in (
+            "ReplicatedUsing=OnRep_CurrentWorkTree",
+            "ActiveWoodcuttingToolVisual",
+            "OnWoodcuttingToolVisualChanged",
+            "IsWoodcuttingToolVisualActive() const;",
+            "RefreshWoodcuttingToolVisual",
+            "OnRep_CurrentWorkTree",
+        ):
+            if required not in rh21610: issues.append(f"v2.16.10 resident tool-presentation API missing: {required}")
+        if "IsWoodcuttingToolVisualActive() const {" in rh21610:
+            issues.append("v2.16.10 must keep forward-declared work-tool UObject validity implementation out of the public header")
+        for required in (
+            "ShouldDisplayWoodcuttingTool() const",
+            "EARPGSettlementResidentState::GoingToWork",
+            "EARPGSettlementResidentState::Woodcutting",
+            "Equipment->CreateTransientEquipmentVisual",
+            "Equipment->DestroyTransientEquipmentVisual",
+            "OnRep_CurrentWorkTree() { RefreshWoodcuttingToolVisual(); }",
+        ):
+            if required not in rc21610: issues.append(f"v2.16.10 resident contextual tool runtime missing: {required}")
+        for required in ("CreateTransientEquipmentVisual", "DestroyTransientEquipmentVisual", "Never changes Inventory state"):
+            if required not in eh21610: issues.append(f"v2.16.10 transient equipment visual API missing: {required}")
+        transient_start = ec21610.find("AARPGEquipmentVisualActor* UARPGEquipmentComponent::CreateTransientEquipmentVisual")
+        transient_end = ec21610.find("void UARPGEquipmentComponent::DestroyEquipmentVisual", transient_start) if transient_start >= 0 else -1
+        if transient_start < 0 or transient_end <= transient_start:
+            issues.append("v2.16.10 transient equipment visual implementation is missing")
+        else:
+            transient_body = ec21610[transient_start:transient_end]
+            for forbidden in ("SetEquipped(", "EquipAuthority(", "UnequipAuthority(", "AddItem(", "RemoveItem("):
+                if forbidden in transient_body: issues.append(f"v2.16.10 contextual tool visual must not mutate Inventory/equipment state: {forbidden}")
+
     # v2.15.43 Stair low-end story-surface contract: LOW-departure/up-flight art starts on the
     # CURRENT finished surface. The upper Floor remains on low-story + StandardWallHeight instead
     # of lifting the Stair by the 22 cm difference between 300 cm story height and 278 cm art rise.
@@ -2087,6 +2245,124 @@ if all(p.exists() for p in paths_2150):
     for required in ("ARPGFindBuildLightFromView", "VisualBox.GetClosestPointTo(ViewStart)", "ToggleBuiltLight(Light)", "DemolishBuilding(Light)"):
         if required not in buic: issues.append(f"v2.15.54 non-blocking light view interaction/demolition missing: {required}")
 
+
+    # v2.16.0: Hub-gated settlements, validated housing, persistent autonomous residents.
+    settlement_files = {
+        "definition": root / "Public" / "Data" / "ARPGSettlementDefinition.h",
+        "bed_h": root / "Public" / "Settlement" / "ARPGBuildBedActor.h",
+        "bed_c": root / "Private" / "Settlement" / "ARPGBuildBedActor.cpp",
+        "hub_h": root / "Public" / "Settlement" / "ARPGSettlementHubActor.h",
+        "hub_c": root / "Private" / "Settlement" / "ARPGSettlementHubActor.cpp",
+        "resident_h": root / "Public" / "Settlement" / "ARPGSettlementResidentComponent.h",
+        "resident_c": root / "Private" / "Settlement" / "ARPGSettlementResidentComponent.cpp",
+        "villager_h": root / "Public" / "Settlement" / "ARPGSettlementVillagerCharacter.h",
+        "villager_c": root / "Private" / "Settlement" / "ARPGSettlementVillagerCharacter.cpp",
+        "settlement_ui_h": root / "Public" / "Components" / "ARPGSettlementUIComponent.h",
+        "settlement_ui_c": root / "Private" / "Components" / "ARPGSettlementUIComponent.cpp",
+        "widgets_h": root / "Public" / "UI" / "ARPGSettlementWidgets.h",
+        "widgets_c": root / "Private" / "UI" / "ARPGSettlementWidgets.cpp",
+    }
+    for label, path in settlement_files.items():
+        if not path.exists(): issues.append(f"v2.16.0 settlement source missing: {label}")
+    if all(path.exists() for path in settlement_files.values()):
+        sd = settlement_files["definition"].read_text(errors="replace")
+        bedh = settlement_files["bed_h"].read_text(errors="replace"); bedc = settlement_files["bed_c"].read_text(errors="replace")
+        hubh = settlement_files["hub_h"].read_text(errors="replace"); hubc = settlement_files["hub_c"].read_text(errors="replace")
+        resh = settlement_files["resident_h"].read_text(errors="replace"); resc = settlement_files["resident_c"].read_text(errors="replace")
+        villh = settlement_files["villager_h"].read_text(errors="replace"); villc = settlement_files["villager_c"].read_text(errors="replace")
+        suih = settlement_files["settlement_ui_h"].read_text(errors="replace"); suic = settlement_files["settlement_ui_c"].read_text(errors="replace")
+        swh = settlement_files["widgets_h"].read_text(errors="replace"); swc = settlement_files["widgets_c"].read_text(errors="replace")
+        settlement_types = (root / "Public" / "ARPGTypes.h").read_text(errors="replace")
+        settlement_save_h = (root / "Public" / "Save" / "ARPGSaveGame.h").read_text(errors="replace")
+        settlement_save_c = (root / "Private" / "Subsystems" / "ARPGSaveSubsystem.cpp").read_text(errors="replace")
+        if not re.search(r"Light,\s*/\*\* Assignable settlement/player bed.*?\*/\s*Bed,\s*/\*\* Palbox-style settlement control core.*?\*/\s*SettlementHub", bdh, re.S):
+            issues.append("v2.16.0 Bed/SettlementHub PieceKinds must append after Light without shifting earlier enum values")
+        for required in ("DefaultBedRole", "BedSurfaceOffset", "BedInteractionRadius", "SettlementDefinition", "SettlementHubSurfaceOffset", "SettlementHubInteractionRadius"):
+            if required not in bdh: issues.append(f"v2.16.0 settlement Build Piece definition exposure missing: {required}")
+        for required in ("SettlementRadius = 5000.f", "SettlementHUDRadius = 1800.f", "bPreventOverlappingSettlementAreas = true", "SettlementSeparationPadding", "MinimumFoundationWidth = 2", "MinimumFoundationDepth = 2", "MaximumVillagers = 20", "VillagerClass", "bEnableVillagerWoodcutting = true", "SettlementStockpileSlots = 96"):
+            if required not in sd: issues.append(f"v2.16.0 Settlement Definition contract missing: {required}")
+        for required in ("ARPGIsSettlementSurfacePiece", "ARPGResolveSettlementPlacementFromHit", "ARPGFindSettlementSurfaceFromDesired", "bPreventOverlappingSettlementAreas", "ExistingHub->GetSettlementRadius()", "case EARPGBuildPieceKind::Bed: return AARPGBuildBedActor::StaticClass();", "case EARPGBuildPieceKind::SettlementHub: return AARPGSettlementHubActor::StaticClass();"):
+            if required not in bc: issues.append(f"v2.16.0 Bed/Hub placement/overlap path missing: {required}")
+        for required in ("FindManagingSettlementHub", "SetBedRole", "AssignResident", "RestoreBedState", "ReplicatedUsing=OnRep_BedRole"):
+            if required not in bedh: issues.append(f"v2.16.0 Bed API missing: {required}")
+        for required in ("CanActorModify(Requester)", "EGuidFormats::Digits", "DOREPLIFETIME(AARPGBuildBedActor, BedRole)"):
+            if required not in bedc: issues.append(f"v2.16.0 Bed authority/determinism missing: {required}")
+        for required in ("ValidateHomeForBed", "GetManagedBeds", "GetSettlementResidents", "CanResidentStartWoodcutting", "RegisterLoadedResident", "FARPGSettlementSummary"):
+            if required not in hubh: issues.append(f"v2.16.0 Hub Blueprint/runtime API missing: {required}")
+        for required in ("MinimumFoundationWidth", "MinimumFoundationDepth", "SettlementCoverKind", "SettlementWallLike", "DoorOccupiesDoorway", "Candidate.bHasDoorway && Candidate.bHasDoor", "Bed->FindManagingSettlementHub() == this", "Re-home existing homeless residents before recruiting anyone new"):
+            if required not in hubc: issues.append(f"v2.16.0 validated-home/recruitment path missing: {required}")
+        # v2.16.3: home validation must follow the same pivot-aware transformed bounds and
+        # structural story planes as native building placement. Raw actor origins are not semantic cells.
+        for required in ("SettlementGetDefinitionLocalBounds", "SettlementBuildSpatial", "SettlementProjectedDistanceSquaredToBounds",
+                         "SettlementProjectedContains", "BedSpatial.WorldMinZ", "Spatial.WorldMaxZ - FoundationTopZ",
+                         "FoundationCell->WorldMaxZ + Story", "UsedPerimeterPieces", "MissingScore"):
+            if required not in hubc: issues.append(f"v2.16.3 structural-plane home validation missing: {required}")
+        for forbidden in ("B->GetActorLocation().Z - (Origin.Z + Story)", "FVector::DistSquared2D(B->GetActorLocation(), Target)"):
+            if forbidden in hubc: issues.append(f"v2.16.3 home validation must not regress to actor-origin matching: {forbidden}")
+        for required in ("AARPGSettlementVillagerCharacter : public AARPGAICharacter", "UARPGSettlementResidentComponent", "UARPGFactionOwnershipComponent"):
+            if required not in villh: issues.append(f"v2.16.0 villager framework integration missing: {required}")
+        for required in ("OwnerAccountId", "OwnerCharacterId", "OwnerFactionId", "PrimaryFactionId", "InitializeSettlementResident"):
+            if required not in villc: issues.append(f"v2.16.0 villager ownership/faction inheritance missing: {required}")
+        for required in ("ResidentId", "SettlementHub", "AssignedBed", "CurrentWorkTree", "ForceChooseNewActivity", "ReturnHome"):
+            if required not in resh: issues.append(f"v2.16.0 resident component API missing: {required}")
+        for required in ("AIWanderer->SetHomeLocation", "CurrentWorkTree == Tree", "Tree->ApplyChop(GetOwner(), Power)", "DepositTreeRewardsToHub", "TransferItemTo(SettlementHub->Inventory"):
+            if required not in resc: issues.append(f"v2.16.0 resident autonomy/woodcutting path missing: {required}")
+        # v2.16.5: residents must spawn/roam from the validated interior walkable story, never roof fallback.
+        for required in ("ResolveResidentHomeAnchor(AARPGBuildBedActor* Bed, FVector& OutWorldLocation) const",
+                         "WalkablePlaneZ = Validation.HomeCenter.Z - Validation.HomeExtent.Z",
+                         "ProjectPointToNavigation(Candidate, Projected, FVector(QueryXY, QueryXY, VerticalTolerance))",
+                         "AdjustIfPossibleButDontSpawnIfColliding", "MaxResidentSpawnAttempts = 10",
+                         "deferred instead of placing a villager on the roof"):
+            if required not in (hubh + hubc): issues.append(f"v2.16.5 settlement interior-story spawn guard missing: {required}")
+        if "AdjustIfPossibleButAlwaysSpawn" in hubc[hubc.find("bool AARPGSettlementHubActor::RecruitResidentForBed"):hubc.find("bool AARPGSettlementHubActor::RegisterLoadedResident")]:
+            issues.append("v2.16.5 recruitment must not use AlwaysSpawn because collision adjustment can push residents onto roofs")
+        for required in ("SettlementHub->ResolveResidentHomeAnchor(AssignedBed, InteriorAnchor)",
+                         "RepairInvalidHomeStoryPosition()", "bOnUpperStorySurface",
+                         "AI->AICombat->HomeLocation = ResolveHomeLocation();"):
+            if required not in resc: issues.append(f"v2.16.5 resident home-story runtime guard missing: {required}")
+        for required in ("AdjustIfPossibleButDontSpawnIfColliding", "Hub->ResolveResidentHomeAnchor(Bed,InteriorAnchor)", "SafeTransform.SetLocation(InteriorAnchor)"):
+            if required not in settlement_save_c: issues.append(f"v2.16.5 resident save/load home-anchor guard missing: {required}")
+        # v2.16.4: recruitment callbacks must be idempotent and work state must be backed by real navigation.
+        for required in ("TSet<const AARPGSettlementVillagerCharacter*> SeenActors", "TSet<FGuid> SeenResidentIds",
+                         "bDuplicateActor", "bDuplicateId", "IncomingId.IsValid()",
+                         "NewSummary.ResidentCount = UniqueResidents.Num()"):
+            if required not in hubc: issues.append(f"v2.16.4 resident registry identity guard missing: {required}")
+        for required in ("SpawnDefaultController()", "FNavigationSystem::GetCurrent<UNavigationSystemV1>",
+                         "ProjectPointToNavigation(Actor->GetActorLocation()", "Result != EPathFollowingRequestResult::Failed",
+                         "StartWorkMovementProof()", "VerifyWorkMovement()", "EPathFollowingStatus::Moving",
+                         "StopWoodcutting(true)"):
+            if required not in resc: issues.append(f"v2.16.4 resident locomotion guard missing: {required}")
+        for required in ("SettlementHUDWidgetClass", "SettlementPanelWidgetClass", "ResidentRowWidgetClass", "BedPanelWidgetClass", "bAutoShowNearbySettlementHUD", "OpenSettlementPanel", "OpenBedPanel", "SetBedRole", "OpenSettlementStockpile"):
+            if required not in suih: issues.append(f"v2.16.0 settlement UI exposure missing: {required}")
+        for required in ("PollNearbySettlement", "GetSettlementHUDRadius", "ShowSettlementHUD", "HideSettlementHUD", "Character->BuildingUI->OpenStorageUI(Hub)"):
+            if required not in suic: issues.append(f"v2.16.0 settlement proximity/stockpile UI path missing: {required}")
+        for required in ("UARPGSettlementHUDWidget", "UARPGSettlementPanelWidget", "UARPGSettlementResidentRowWidget", "UARPGBedPanelWidget", "OpenStockpileButton", "BlueprintImplementableEvent"):
+            if required not in swh: issues.append(f"v2.16.0 native/reskinnable settlement widgets missing: {required}")
+        if "HandleOpenStockpile" not in swc: issues.append("v2.16.0 Settlement panel Stockpile handoff missing")
+        # v2.16.2: the panel classes are forward-declared in this public header. UE5.8/MSVC cannot
+        # prove that Widget* converts to UObject* inside an inline IsValid accessor, even through .Get().
+        for required in ("bool IsSettlementPanelOpen() const;", "bool IsBedPanelOpen() const;"):
+            if required not in suih: issues.append(f"v2.16.2 settlement UI out-of-line accessor declaration missing: {required}")
+        if "IsSettlementPanelOpen() const {" in suih or "IsBedPanelOpen() const {" in suih:
+            issues.append("v2.16.2 settlement UI state accessors must not be inline while widget types are forward-declared")
+        for required in ("bool UARPGSettlementUIComponent::IsSettlementPanelOpen() const", "bool UARPGSettlementUIComponent::IsBedPanelOpen() const", "return IsValid(ActiveSettlementPanel.Get());", "return IsValid(ActiveBedPanel.Get());"):
+            if required not in suic: issues.append(f"v2.16.2 settlement UI complete-type validity implementation missing: {required}")
+        if "UCanvasPanelSlot*Slot=Canvas->AddChildToCanvas(Panel)" in swc:
+            issues.append("v2.16.1 native Settlement HUD must not hide UWidget::Slot under UE5.8 warnings-as-errors")
+        if "HUDPanelSlot" not in swc:
+            issues.append("v2.16.1 Settlement HUD descriptive canvas-slot compile fix missing")
+
+        if "ServerSetBuiltBedRole" not in inh or "ServerSetBuiltBedRole_Implementation" not in inc:
+            issues.append("v2.16.0 Bed role mutation must use the existing player-owned authoritative interaction channel")
+        if "bAllowSettlementVillagerHarvest" not in (root / "Public" / "Gathering" / "ARPGTree.h").read_text(errors="replace"):
+            issues.append("v2.16.0 ARPGTree settlement-worker authoring flag missing")
+        if "CanBypassTreeRequirements" not in (root / "Private" / "Gathering" / "ARPGTree.cpp").read_text(errors="replace"):
+            issues.append("v2.16.0 ARPGTree settlement-worker requirement integration missing")
+        for required in ("FARPGSettlementResidentSave", "SettlementResidents", "BedAssignedResidentId", "PlayerBedOwnerCharacterId"):
+            if required not in settlement_types: issues.append(f"v2.16.0 settlement save structures missing: {required}")
+        for required in ("R.BedRole=Bed->BedRole", "D.SettlementResidents.Add(R)", "Save->SaveVersion>=8", "RestoreBedState", "for(const FARPGSettlementResidentSave& R:Save->World.SettlementResidents)", "RegisterLoadedResident"):
+            if required not in settlement_save_c: issues.append(f"v2.16.0 settlement save/load path missing: {required}")
+
     for required in ("bNeighborFlatLanding", "HostStoryPlane", "NeighborStoryPlane", "bImmediateGridNeighbor", "actual Stair flight cell", "17 cm art/rail overhang"):
         if required not in bc: issues.append(f"v2.15.38 Stair tiled-deck overhang seam classification missing: {required}")
     stair_host_neighbor_start = bc.find("static bool ARPGIsCompatibleStairHostStructuralNeighbor(")
@@ -2227,8 +2503,8 @@ if all(p.exists() for p in paths_2150):
     svh215 = save_h_2140.read_text(errors="replace"); svc215 = save_cpp_2140.read_text(errors="replace"); th215 = types_h_2140.read_text(errors="replace")
     for required in ("bConstructionComplete", "ConstructionRemainingSeconds", "bDoorOpen", "bWindowOpen", "bLightOn"):
         if required not in th215: issues.append(f"v2.15.0 building persistence state missing: {required}")
-    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 7" not in svh215:
-        issues.append("v2.15.54 world save schema must be v7 while character save remains v5")
+    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 8" not in svh215:
+        issues.append("v2.16.0 world save schema must be v8 while character save remains v5")
     if "SaveVersion>=6 ? R.bWindowOpen : false" not in svc215:
         issues.append("v2.15.54 world-save v7 migration must retain v6 Window-state compatibility")
     for required in ("RestoreConstructionState", "RestoreDoorOpenState", "RestoreWindowOpenState", "RestoreLightState", "ProcessOfflineElapsed()"):
@@ -2317,6 +2593,15 @@ if readme_2150.exists():
     if not release_documented("v2.15.52-alpha — Unified Bidirectional Stair / Wall-Family Seam Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.15.52 unified bidirectional Stair/Wall-family seam root fix")
     if not release_documented("v2.15.53-alpha — Four-Cardinal Stair / Wall-Family Boundary Seam Completion"): issues.append("README or Docs/CHANGELOG.md must document v2.15.53 four-cardinal Stair/Wall-family boundary completion")
     if not release_documented("v2.15.54-alpha — Interactive Buildable Lighting & Surface Placement"): issues.append("README or Docs/CHANGELOG.md must document v2.15.54 interactive buildable lighting and surface placement")
+    if not release_documented("v2.16.0-alpha — Settlement Hubs, Validated Homes & Autonomous Villagers"): issues.append("README or Docs/CHANGELOG.md must document v2.16.0 Settlement Hubs, validated homes and autonomous villagers")
+    if not release_documented("v2.16.1-alpha — UE5.8 Settlement UI Compile Compatibility Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.16.1 UE5.8 Settlement UI compile compatibility fix")
+    if not release_documented("v2.16.2-alpha — UE5.8 Settlement UI Incomplete-Type Compile Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.16.2 UE5.8 Settlement UI incomplete-type compile root fix")
+    if not release_documented("v2.16.3-alpha — Settlement Structural-Plane Home Validation Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.16.3 settlement structural-plane home validation root fix")
+    if not release_documented("v2.16.5-alpha — Settlement Interior Story Spawn & Home Anchor Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.16.5 settlement interior-story spawn and home-anchor root fix")
+    if not release_documented("v2.16.6-alpha — Runtime-Built Stair Navigation Bridge Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.16.6 runtime-built Stair navigation bridge root fix")
+    if not release_documented("v2.16.8-alpha — Native Dynamic Recast Stair Navigation Cleanup"): issues.append("README or Docs/CHANGELOG.md must document v2.16.8 native Dynamic Recast Stair navigation cleanup")
+    if not release_documented("v2.16.9-alpha — Build-Aware Tree Replacement & Respawn Suppression"): issues.append("README or Docs/CHANGELOG.md must document v2.16.9 build-aware Tree replacement and respawn suppression")
+    if not release_documented("v2.16.10-alpha — Settlement Villager Contextual Woodcutting Tool Presentation"): issues.append("README or Docs/CHANGELOG.md must document v2.16.10 settlement villager contextual woodcutting tool presentation")
 
     persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
     ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")
