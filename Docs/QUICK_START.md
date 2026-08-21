@@ -1,3 +1,5 @@
+> **v2.17.0 Mining note:** derive harvestable Stone/Ore/Gem nodes from `ARPGMineableRock`, equip a real `Item.Tool.Pickaxe` runtime item, and use Basic Attack for one free strike or `InteractWorld` / `Start Mining From View` for repeated harvesting. Native Mining uses the RuneScape-style 1–99 curve by default. See `Docs/MINING.md`.
+
 > **v2.16.10 settlement worker note:** in `ARPGSettlementDefinition -> Settlement | Woodcutting | Tool Presentation`, assign your Axe Item Definition to `Villager Woodcutting Tool Item`. Its existing equipped mesh/socket/relative transform is shown automatically while the villager travels to/chops a tree and removed when roaming/home; no villager Inventory item is required.
 
 > **v2.16.9 tree/build note:** Foundations can be aimed/snapped/placed through `AARPGTree` resources. A build piece occupying a tree's trunk-root regeneration volume suppresses that resource automatically, hides both tree/stump collision, and prevents respawn until the final blocker is removed. No Foundation Data Asset flag is required; tune the Tree's `Respawn | Building Suppression` settings only for unusual tree sizes.
@@ -228,6 +230,22 @@ The ready `ARPGCharacter` already contains `ARPGWoodcuttingComponent`.
 For axe progression, put `Item.Tool.Axe` in an equipped Item Definition's `Gathering Tool Tags`, then set its `Gathering Power` and `Gathering Tool Tier`. Trees can optionally require that tool tag and a minimum tier. **Basic Attack Auto Chops Trees** is enabled by default on the Woodcutting component: with an axe equipped and no real combat/lock-on target, your existing `Basic Attack` input automatically performs one chop on the tree in view.
 
 The same Wood Item can be put directly into a Build Piece Definition's `Build Cost`, so chopped logs immediately work as building resources. See `Docs/WOODCUTTING.md`.
+
+## 5B. Mining — create a Stone/Ore/Gem node in minutes
+
+The ready `ARPGCharacter` already contains `ARPGMiningComponent`. Native Mining uses the built-in RuneScape-style 1–99 curve by default.
+
+1. Create a Pickaxe `ARPGItemDefinition`: Equippable, a real Equipment Slot, `Item.Tool.Pickaxe` in Gathering Tool Tags, Gathering Power and Gathering Tool Tier.
+2. Create Item Definitions for Stone, Ore and/or Gems.
+3. Create a Blueprint child of `ARPGMineableRock`.
+4. Add one or more Static Meshes to `Rock Mesh Variations`; optional random scale and yaw are replicated automatically.
+5. Set Mining Health/Resistance, Required Mining Level, Minimum Tool Tier and respawn.
+6. Add common materials to `Successful Strike Drops` and/or `Depletion Drops`.
+7. Add rare Gems to `Bonus Chance Drops`; each entry can gate and scale its chance by Mining level/tool tier.
+8. Place the node or use the Blueprint with Unreal Actor Foliage.
+9. With a valid equipped pickaxe, the existing Basic Attack performs one free Mining strike. Bind Interact to `InteractWorld` (or use `Start Mining From View`) for automatic repeated Mining.
+
+Mining XP is saved through the generic Skills component. A project `ARPGSkillDefinition` is optional; assign one when you want custom unlock metadata or another XP curve/model. See `Docs/MINING.md` for the complete authoring, networking, bonus-drop and Actor Foliage workflow.
 
 ## 6. Quests
 

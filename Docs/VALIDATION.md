@@ -1,3 +1,23 @@
+## v2.17.0 Mining / Mineable Rock acceptance
+
+Source/model validation protects the new Mining contract: ready-character component ownership, RuneScape-style 1–99 model with authored-curve priority, replicated random rock mesh/scale/yaw, tick-free node runtime, exact equipped pickaxe instance validation, per-strike/depletion/bonus rewards, free context-sensitive Basic Attack interception, repeated Interact mining, renewable-resource building suppression and unchanged save schemas.
+
+Project-side UE5.8 PIE acceptance should additionally verify:
+
+1. Equip a real pickaxe runtime item tagged `Item.Tool.Pickaxe`; a Data Asset that merely exists must not satisfy Mining.
+2. Basic Attack a Mineable Rock and confirm exactly one rate-limited Mining strike occurs without ordinary attack Stamina/Mana cost; a real non-rock combat target must retain normal combat behavior.
+3. Bind Interact to `InteractWorld` or call `Start Mining From View`; confirm repeated swings continue until depletion/cancel/range/tool failure.
+4. Confirm Required Mining Level and Minimum Tool Tier reject the wrong player/tool with failure feedback.
+5. Confirm Successful Strike Drops can arrive on each hit, Depletion Drops arrive only on final depletion, and Bonus Chance Drops respect trigger/level/tier/chance settings.
+6. Confirm XP advances on successful strikes/depletion and the default model requires 83 XP for Level 2; verify optional custom Skill Definition curves still override XP Model.
+7. Confirm the exact equipped pickaxe loses configured Gathering durability only after successful authoritative strikes and broken/unequipped tools fail validation.
+8. Place multiple nodes with Rock Mesh Variations/random scale/yaw and verify server/client see the same selection; verify optional rubble, FX/audio and respawn.
+9. Build a Foundation through an `ARPGMineableRock`; the renewable node must suppress without XP/loot. Ordinary static rocks must remain placement blockers. Demolish the final blocker and confirm respawn can recover.
+10. Save/reload and verify Mining level/XP, acquired resources and buildings persist normally; world save remains v9 and character save remains v5.
+11. Test an Actor Foliage-derived Mineable Rock population at project target density and profile server/replication cost; non-harvestable background rocks should remain ISM/HISM foliage.
+
+See `Docs/MINING.md` for full authoring details.
+
 # Source Validation — Akuma's RPG Framework v2.16.12-alpha
 
 Package: **Akuma's RPG Framework — v2.16.12-alpha**  

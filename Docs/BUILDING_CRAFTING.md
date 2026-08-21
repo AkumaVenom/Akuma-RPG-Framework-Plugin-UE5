@@ -1000,6 +1000,11 @@ For `Wall`, `WindowWall` and `Doorway` placement, the framework separates **stru
 
 This is deterministic for 1×2, 2×2 and larger footprints and does not depend on where the camera/player stands while placing the piece.
 
+
+### Mining resources feed Building and Production directly — v2.17.0
+
+Mining rewards are normal exact `ARPGItemDefinition` inventory items. A Stone/Ore/Gem Item Definition granted by `AARPGMineableRock` can therefore be referenced directly in a Build Piece `Build Cost`, personal recipe or Production/Furnace recipe without a Mining-specific conversion layer. This keeps the loop clean: Mine Stone/Ore -> Inventory -> build/refine/craft using the existing authoritative resource systems. See `Docs/MINING.md`.
+
 ## 17. Performance rules
 
 The ready implementation avoids permanent ticking:
@@ -1016,9 +1021,9 @@ Completed Static structures and plain skeletal build visuals therefore do not ea
 
 ### Build-aware ARPG Tree replacement and respawn suppression — v2.16.9
 
-`AARPGTree` is treated as replaceable world vegetation for **Foundation** placement, not as a permanent structural blocker. Foundation preview traces and authority support traces retry through encountered ARPG Tree actors, and the final Foundation occupancy test ignores only `AARPGTree`. Rocks, cliffs, props, pawns, protected structures and every other blocker keep the normal placement rules.
+`AARPGTree` and v2.17.0 `AARPGMineableRock` are treated as framework-managed renewable resources that **Foundation** placement may replace, not as permanent structural blockers. Foundation preview/authority support traces retry through encountered framework Trees/Mineable Rocks, and final Foundation occupancy ignores only those two resource actor classes. Ordinary static rocks, cliffs, props, pawns, protected structures and every other blocker keep the normal placement rules.
 
-After authority places/restores a build piece, the build actor notifies ARPG Trees of its logical occupancy. Tree suppression uses the build piece's rotated/scaled `PlacementBounds`, plus the Tree's trunk-root radius; it does **not** use the tree canopy as the horizontal blocker footprint. This prevents a nearby house from suppressing a tree merely because branches overlap it.
+After authority places/restores a build piece, the build actor notifies ARPG Trees and Mineable Rocks of its logical occupancy. Tree suppression uses the build piece's rotated/scaled `PlacementBounds`, plus the Tree's trunk-root radius; it does **not** use the tree canopy as the horizontal blocker footprint. This prevents a nearby house from suppressing a tree merely because branches overlap it.
 
 Default Tree settings:
 
@@ -1029,9 +1034,9 @@ Building Respawn Block Radius     = 85 cm
 Building Respawn Recheck Seconds  = 1.0 s
 ```
 
-While occupied, both the standing-tree/stump presentation and collision are disabled and `Is Respawn Suppressed By Building` is true. This is environmental replacement, not harvesting: construction never grants Wood, Woodcutting XP or fell rewards. Multiple build pieces are tracked independently. Removing one does not permit respawn while another still occupies the regeneration volume.
+While occupied, both the standing-tree/stump presentation and collision are disabled and `Is Respawn Suppressed By Building` is true. This is environmental replacement, not harvesting: construction never grants Wood/Stone/Ore/Gems, Woodcutting/Mining XP, normal/bonus resource drops or fell/depletion rewards. Multiple build pieces are tracked independently. Removing one does not permit respawn while another still occupies the regeneration volume.
 
-Normal respawn timing is retained. If a structure is removed before the Tree's respawn time, the remaining delay continues; if the timer expired while the structure existed, the Tree returns promptly after the final blocker clears. Suppressed Trees use a bounded recheck timer only while suppressed. Standing Trees do not acquire a permanent polling Tick.
+Normal respawn timing is retained. If a structure is removed before the Tree's respawn time, the remaining delay continues; if the timer expired while the structure existed, the Tree returns promptly after the final blocker clears. Suppressed Trees/Mineable Rocks use a bounded recheck timer only while suppressed. Normal available resources do not acquire a permanent polling Tick.
 
 Useful Blueprint calls/events:
 
@@ -1047,4 +1052,4 @@ AARPGBuildPieceActor
   Does Logical Placement Overlap World Cylinder
 ```
 
-Suppression is derived from build occupancy and therefore requires no world-save schema bump. Persisted runtime buildings re-establish suppression when loaded.
+Suppression is derived from build occupancy and therefore requires no world-save schema bump. Persisted runtime buildings re-establish Tree/Mineable-Rock suppression when loaded. Settlement Paths remain excluded from renewable-resource occupancy scans.

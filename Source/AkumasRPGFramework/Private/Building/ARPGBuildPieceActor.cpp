@@ -11,6 +11,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/GameStateBase.h"
 #include "Gathering/ARPGTree.h"
+#include "Gathering/ARPGMineableRock.h"
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavigationSystem.h"
@@ -290,14 +291,17 @@ bool AARPGBuildPieceActor::DoesLogicalPlacementOverlapWorldCylinder(FVector Worl
 
 void AARPGBuildPieceActor::NotifyNearbyTreesOfOccupancy(bool bPresent)
 {
-    // Settlement Paths are visual settlement dressing, not structural occupancy. Skipping this scan
-    // also keeps long road networks from adding O(path segments x trees) authority work on creation.
+    // Compatibility name retained from v2.16.9. The environment occupancy pass now services both
+    // ARPGTree and ARPGMineableRock resources. Settlement Paths remain visual dressing and skip the
+    // scan entirely, keeping long road networks from adding O(path segments x resources) authority work.
     if (!HasAuthority() || !GetWorld() || !Definition || Definition->PieceKind == EARPGBuildPieceKind::SettlementPath) return;
     for (TActorIterator<AARPGTree> It(GetWorld()); It; ++It)
     {
-        AARPGTree* Tree = *It;
-        if (!Tree) continue;
-        Tree->NotifyBuildPieceOccupancyChanged(this, bPresent);
+        if (AARPGTree* Tree = *It) Tree->NotifyBuildPieceOccupancyChanged(this, bPresent);
+    }
+    for (TActorIterator<AARPGMineableRock> It(GetWorld()); It; ++It)
+    {
+        if (AARPGMineableRock* Rock = *It) Rock->NotifyBuildPieceOccupancyChanged(this, bPresent);
     }
 }
 

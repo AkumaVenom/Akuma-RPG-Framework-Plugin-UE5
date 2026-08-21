@@ -38,11 +38,13 @@ class UARPGThreatComponent;
 class UARPGAICombatComponent;
 class UARPGTargetingComponent;
 class UARPGWoodcuttingComponent;
+class UARPGMiningComponent;
 class UARPGFootstepComponent;
 class UARPGCharacterInfoComponent;
 class UARPGStatsUIComponent;
 class UARPGInventoryUIComponent;
 class AARPGTree;
+class AARPGMineableRock;
 
 UCLASS(BlueprintType, Blueprintable)
 class AKUMASRPGFRAMEWORK_API AARPGCharacter : public ACharacter, public IAbilitySystemInterface
@@ -89,6 +91,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGAICombatComponent> AICombat;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGTargetingComponent> Targeting;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGWoodcuttingComponent> Woodcutting;
+    /** Persistent 1-99 Mining profession with Pickaxe Basic-Attack and interaction-style repeated mining. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGMiningComponent> Mining;
     /** Automatic physical-surface footsteps for players and NPCs. Select this inherited component to author audio/stride settings. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ARPG") TObjectPtr<UARPGFootstepComponent> Footsteps;
     /** Automatic local overhead name/level/health popup. Select this inherited component and assign a Widget Class. */
@@ -126,6 +130,11 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") bool ChopTreeOnce(AARPGTree* Tree);
     UFUNCTION(BlueprintCallable, Category="ARPG|Woodcutting|Input") void StopWoodcutting();
 
+    UFUNCTION(BlueprintCallable, Category="ARPG|Mining|Input") bool StartMiningFromView();
+    UFUNCTION(BlueprintCallable, Category="ARPG|Mining|Input") bool StartMining(AARPGMineableRock* Rock);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Mining|Input") bool MineRockOnce(AARPGMineableRock* Rock);
+    UFUNCTION(BlueprintCallable, Category="ARPG|Mining|Input") void StopMining();
+
     // One-call local player stats panel wrappers. The inherited StatsUI component owns presentation/input state.
     UFUNCTION(BlueprintCallable, Category="ARPG|Stats UI|Input") bool OpenStatsUI();
     UFUNCTION(BlueprintCallable, Category="ARPG|Stats UI|Input") bool CloseStatsUI();
@@ -149,6 +158,8 @@ public:
     UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") bool NextBuildPiece();
     UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") bool PreviousBuildPiece();
     UFUNCTION(BlueprintCallable, Category="ARPG|Building|Input") void CancelBuildPlacement();
+    /** Unified contextual Interact: Mineable Rock -> Tree -> built structure. Existing dedicated wrappers remain available. */
+    UFUNCTION(BlueprintCallable, Category="ARPG|Interaction|Input") bool InteractWorld();
     UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool InteractBuiltStructure();
     UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool DemolishBuiltStructure();
     UFUNCTION(BlueprintCallable, Category="ARPG|Building UI|Input") bool CloseBuiltStructureUI();

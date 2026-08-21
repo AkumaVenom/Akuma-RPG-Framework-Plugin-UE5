@@ -62,7 +62,7 @@ public:
 
     /** Re-registers this runtime build piece with NavigationSystem and dirties its local Recast tiles. */
     UFUNCTION(BlueprintCallable, Category="ARPG|Building|Navigation", meta=(BlueprintAuthorityOnly)) void RefreshRuntimeNavigation();
-    /** Re-evaluates nearby ARPG Tree resource respawn occupancy. Called automatically on placement/load/removal; exposed for custom runtime build actors. */
+    /** Re-evaluates nearby ARPG Tree and Mineable Rock respawn occupancy. Legacy Blueprint name retained for compatibility. */
     UFUNCTION(BlueprintCallable, Category="ARPG|Building|Environment", meta=(BlueprintAuthorityOnly)) void RefreshNearbyTreeRespawnSuppression();
     /** Logical PlacementBounds overlap test used by environment/resource suppression. Rotation and actor scale are respected without depending on decorative mesh collision. */
     UFUNCTION(BlueprintPure, Category="ARPG|Building|Environment") bool DoesLogicalPlacementOverlapWorldCylinder(FVector WorldCenter, float HorizontalRadius, float WorldMinZ, float WorldMaxZ) const;

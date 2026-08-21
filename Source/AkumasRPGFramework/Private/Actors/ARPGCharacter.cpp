@@ -32,11 +32,13 @@
 #include "Components/ARPGAICombatComponent.h"
 #include "Components/ARPGTargetingComponent.h"
 #include "Components/ARPGWoodcuttingComponent.h"
+#include "Components/ARPGMiningComponent.h"
 #include "Components/ARPGFootstepComponent.h"
 #include "Components/ARPGCharacterInfoComponent.h"
 #include "Components/ARPGStatsUIComponent.h"
 #include "Components/ARPGInventoryUIComponent.h"
 #include "Gathering/ARPGTree.h"
+#include "Gathering/ARPGMineableRock.h"
 #include "Net/UnrealNetwork.h"
 
 AARPGCharacter::AARPGCharacter()
@@ -74,6 +76,7 @@ AARPGCharacter::AARPGCharacter()
     AICombat = CreateDefaultSubobject<UARPGAICombatComponent>(TEXT("AICombat"));
     Targeting = CreateDefaultSubobject<UARPGTargetingComponent>(TEXT("Targeting"));
     Woodcutting = CreateDefaultSubobject<UARPGWoodcuttingComponent>(TEXT("Woodcutting"));
+    Mining = CreateDefaultSubobject<UARPGMiningComponent>(TEXT("Mining"));
     Footsteps = CreateDefaultSubobject<UARPGFootstepComponent>(TEXT("Footsteps"));
     CharacterInfo = CreateDefaultSubobject<UARPGCharacterInfoComponent>(TEXT("CharacterInfo"));
     CharacterInfo->SetupAttachment(GetRootComponent());
@@ -250,6 +253,26 @@ void AARPGCharacter::StopWoodcutting()
     if (Woodcutting) Woodcutting->StopWoodcutting();
 }
 
+bool AARPGCharacter::StartMiningFromView()
+{
+    return Mining ? Mining->StartMiningFromView() : false;
+}
+
+bool AARPGCharacter::StartMining(AARPGMineableRock* Rock)
+{
+    return Mining ? Mining->StartMining(Rock) : false;
+}
+
+bool AARPGCharacter::MineRockOnce(AARPGMineableRock* Rock)
+{
+    return Mining ? Mining->MineRockOnce(Rock) : false;
+}
+
+void AARPGCharacter::StopMining()
+{
+    if (Mining) Mining->StopMining();
+}
+
 
 bool AARPGCharacter::OpenStatsUI()
 {
@@ -306,6 +329,17 @@ void AARPGCharacter::RotateBuildPlacement(float Direction) { if (Building) Build
 bool AARPGCharacter::NextBuildPiece() { return Building ? Building->SelectNextBuildPiece() : false; }
 bool AARPGCharacter::PreviousBuildPiece() { return Building ? Building->SelectPreviousBuildPiece() : false; }
 void AARPGCharacter::CancelBuildPlacement() { if (Building) Building->EndBuildMode(); }
+bool AARPGCharacter::InteractWorld()
+{
+    if (Mining)
+        if (AARPGMineableRock* Rock = Mining->FindMineableRockInView())
+            return Mining->StartMining(Rock);
+    if (Woodcutting)
+        if (AARPGTree* Tree = Woodcutting->FindWoodcuttingTreeInView())
+            return Woodcutting->StartWoodcutting(Tree);
+    return BuildingUI ? BuildingUI->InteractWithBuiltStructureFromView() : false;
+}
+
 bool AARPGCharacter::InteractBuiltStructure() { return BuildingUI ? BuildingUI->InteractWithBuiltStructureFromView() : false; }
 bool AARPGCharacter::DemolishBuiltStructure() { return BuildingUI ? BuildingUI->DemolishBuiltStructureFromView() : false; }
 bool AARPGCharacter::CloseBuiltStructureUI()

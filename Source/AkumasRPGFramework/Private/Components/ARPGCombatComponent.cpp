@@ -16,6 +16,7 @@
 #include "Components/ARPGThreatComponent.h"
 #include "Components/ARPGTargetingComponent.h"
 #include "Components/ARPGWoodcuttingComponent.h"
+#include "Components/ARPGMiningComponent.h"
 #include "Components/ARPGEquipmentComponent.h"
 #include "Data/ARPGClassDefinition.h"
 #include "Data/ARPGItemDefinition.h"
@@ -197,6 +198,16 @@ bool UARPGCombatComponent::StartAttackAuthority(AActor* OptionalTarget)
         bool bHandledAsWoodcutting = false;
         const bool bWoodcuttingStarted = Woodcutting->TryHandleBasicAttackAsWoodcutting(OptionalTarget, bHandledAsWoodcutting);
         if (bHandledAsWoodcutting) return bWoodcuttingStarted;
+    }
+
+    // Mining owns the same context-sensitive Basic Attack contract for Pickaxes/Mineable Rocks. It runs
+    // before ordinary combat resource spending, so a mining strike is a free gathering action rather than
+    // a melee attack that also happens to damage a rock. Explicit non-rock combat targets still fall through.
+    if (UARPGMiningComponent* Mining = GetOwner()->FindComponentByClass<UARPGMiningComponent>())
+    {
+        bool bHandledAsMining = false;
+        const bool bMiningStarted = Mining->TryHandleBasicAttackAsMining(OptionalTarget, bHandledAsMining);
+        if (bHandledAsMining) return bMiningStarted;
     }
 
     if (OptionalTarget && OptionalTarget != GetOwner())

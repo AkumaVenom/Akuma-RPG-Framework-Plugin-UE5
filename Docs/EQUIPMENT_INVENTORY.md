@@ -12,7 +12,7 @@ Akuma's RPG Framework v2.1 makes item/equipment authoring designer-facing. The r
 
 ## Important v2.1.1 runtime rule
 
-An Item Definition asset existing in the Content Browser does **not** mean the character owns or has that item equipped. Equipment/Woodcutting only consume a real runtime inventory instance with a valid GUID, positive quantity, equipped flag and matching equipment slot.
+An Item Definition asset existing in the Content Browser does **not** mean the character owns or has that item equipped. Equipment/Woodcutting/Mining only consume a real runtime inventory instance with a valid GUID, positive quantity, equipped flag and matching equipment slot.
 
 Each runtime inventory entry now also stores a soft reference to the exact Item Definition that created it. This prevents a newly-authored project asset such as `DA_StoneAxe` from being added successfully but then failing to resolve for its held mesh, tool checks or sounds. Stable `ItemId` is retained for saves/backward compatibility.
 The same exact-entry resolver is also used by tagged crafting/fuel checks, so a project-authored item does not work in Equipment but mysteriously fail when another framework system asks for its tags.
@@ -60,12 +60,16 @@ Equipment > Audio
   Equip Sound = optional
   Unequip Sound = optional
   Combat Swing Sound = optional ordinary melee swing
-  Gathering Swing Sound = optional Woodcutting swing; falls back to Combat Swing Sound
-  Gathering Hit Sound = optional axe/tree impact
+  Gathering Swing Sound = optional Woodcutting/Mining swing; falls back to Combat Swing Sound
+  Gathering Hit Sound = optional axe/tree or pickaxe/rock impact
   Equipment Audio Volume = 1.0
 ```
 
 A static axe asset does not require another Blueprint. Assign it directly to **Equipped Static Mesh**. If the weapon has a skeletal mesh, use **Equipped Skeletal Mesh** instead.
+
+### Pickaxes use the same gathering contract
+
+For Mining, create the tool exactly the same way but use `Item.Tool.Pickaxe` in **Gathering Tool Tags**. `Gathering Power`, `Gathering Tool Tier`, held visual/socket/audio and durability fields are shared deliberately. `ARPGMiningComponent` resolves the highest-tier/power valid **equipped runtime instance**, rejects broken tools, enforces each rock's Minimum Tool Tier and charges Gathering durability only after the server confirms a successful Mining strike. See `Docs/MINING.md`.
 
 ## Optional custom visual actor
 
@@ -81,7 +85,7 @@ Equipment visuals are presentation actors reconstructed locally from the replica
 
 The existing `Equip Montage` and `Unequip Montage` Item Definition fields are now consumed automatically. Equip/unequip sounds are multicasted with the authoritative equipment request.
 
-Normal melee combat prefers an equipped item's `Combat Swing Sound` when one is configured; otherwise it falls back to the existing Class/Combat Profile melee swing sound. Woodcutting uses `Gathering Swing Sound` (or Combat Swing as fallback) and can layer the tool's `Gathering Hit Sound` with the tree's own Chop Sound.
+Normal melee combat prefers an equipped item's `Combat Swing Sound` when one is configured; otherwise it falls back to the existing Class/Combat Profile melee swing sound. Woodcutting and Mining use `Gathering Swing Sound` (or Combat Swing as fallback) and can layer the tool's `Gathering Hit Sound` with the resource actor's own impact sound.
 
 ## Runtime/Blueprint APIs
 
@@ -113,4 +117,4 @@ Inventory entries and equipped flags remain replicated/save-backed state. Equipm
 
 ## Runtime verification helpers
 
-For testing a loadout, the Inventory component exposes `Get Item Definition For Instance` and `Is Item Instance Equipped`. The Equipment component and Woodcutting still perform stricter validation on top of that state before using a tool. If an authored attach socket is missing, Equipment tries its exposed fallback hand-socket list and logs a warning.
+For testing a loadout, the Inventory component exposes `Get Item Definition For Instance` and `Is Item Instance Equipped`. The Equipment, Woodcutting and Mining components still perform stricter validation on top of that state before using a tool. If an authored attach socket is missing, Equipment tries its exposed fallback hand-socket list and logs a warning.

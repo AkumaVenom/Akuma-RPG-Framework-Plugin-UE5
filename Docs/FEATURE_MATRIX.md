@@ -1,3 +1,5 @@
+> **v2.17.0 Mining note:** the ready character now includes first-class RuneScape-style 1–99 Mining. Blueprintable `AARPGMineableRock` nodes support replicated random mesh/scale/yaw, repeated strike health, level/pickaxe-tier gates, per-strike and depletion resources, rare bonus Gem finds, Basic Attack + Interact harvesting, Actor Foliage authoring and build-aware renewable-resource suppression. See `Docs/MINING.md`.
+
 > **v2.16.12 Settlement Path turn-stability note:** real PIE testing exposed whole-segment tangent magnitude overshoot at bends. Endpoint overrides are now direction-only with adjacent-sampled-span magnitude, sharp-reversal foldover protection, live-preview parity and automatic normalization of v2.16.11 world-v9 tangent saves. Continuous authoring, authority/cost, independent replication/demolition and non-structural semantics remain unchanged.
 
 > **v2.16.10 settlement presentation note:** autonomous woodcutters can reference an existing Axe Item Definition and hold its normal equipment visual while travelling/chopping, then remove it on roam/home states. The contextual visual is state-driven and never mutates Inventory, equipment slots or durability.
@@ -175,6 +177,7 @@ Legend:
 | Quest giver NPC | Implemented | `ARPGQuestGiverComponent` plus player-owned RPC interaction route. |
 | Generic skills | Implemented | Per-skill XP/level, custom XP curve, unlock metadata and persistence. |
 | Woodcutting / harvestable trees | Implemented | Inherited player Woodcutting component with persistent 1-99 skill XP, level/tool gates, equipped axe power/tier, automatic view targeting/repeated interaction chops, context-sensitive Basic Attack -> single chop with combat-target priority, Blueprintable `ARPGTree` mesh arrays plus replicated min/max size variation, Wood Item/bonus drops, falling trunk/stump/respawn, FX/audio and direct Inventory/Building/Collect-quest integration. |
+| Mining / mineable rocks | Implemented | Ready replicated Mining component with RuneScape-style 1–99 progression, exact equipped pickaxe power/tier/durability, free context-sensitive Basic Attack strike, repeated Interact mining, Blueprintable `ARPGMineableRock` random mesh/scale/yaw arrays, Mining Health/resistance, level/tool gates, per-strike + depletion Stone/Ore drops, level/tool-scaled Gem bonus finds, FX/audio, respawn, Foundation suppression, Actor Foliage support and quest/Inventory integration. |
 | Slayer | Implemented | Master definitions, weighted tasks, skill/combat requirements, kill count, XP, points/streaks, cancellation and persistence. |
 | Factions/reputation | Implemented | NPC/player faction IDs, relationship/reputation checks, attack-on-sight rules, automatic damage retaliation/ally assist fallbacks, and persistence. |
 | Player faction/building ownership | Implemented | Player-built structures inherit character/account/faction identity. |
@@ -221,7 +224,7 @@ Legend:
 |---|---|---|
 | Starting inventory authoring | Implemented | Editable Item Definition/quantity/Equip On Spawn array; runtime GUID entries remain protected. |
 | Equipment visuals | Implemented | Automatic local held static/skeletal/custom visual actor from replicated equipped state, socket + relative transform. |
-| Equipment presentation audio | Implemented | Equip/unequip/combat swing/gathering swing/gathering hit audio on Item Definitions with combat/Woodcutting integration. |
+| Equipment presentation audio | Implemented | Equip/unequip/combat swing/gathering swing/gathering hit audio on Item Definitions with combat/Woodcutting/Mining integration. |
 
 ### Ambient AI movement coordination (v2.6.1)
 - Spawned Free Roam immediate first destination: **Implemented**

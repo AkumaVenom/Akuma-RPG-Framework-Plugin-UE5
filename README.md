@@ -8,15 +8,16 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.16.12-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.17.0-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest release:** v2.16.12 fixes Settlement Path turn deformation exposed by real PIE testing. v2.16.11 correctly shared a bisector direction across independently persistent road segments, but incorrectly scaled the endpoint tangent by the whole player-authored segment length; on short terrain-sampled spans that could overshoot the spline and fold wide road meshes into spikes at bends. Endpoint overrides are now direction-only, runtime magnitude is bounded to the adjacent sampled span, sharp reversals fail safe, existing v9 tangent saves self-sanitize on restore, and the live preview uses the same bounded turn rule. No Settlement Path Data Asset or save-schema migration is required. See [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md), [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
+> **Latest release:** v2.17.0 adds first-class **1–99 Mining**. The ready character now owns a replicated Mining component; Blueprintable `ARPGMineableRock` nodes support authority-selected random mesh/scale/yaw variation, level and pickaxe-tier gates, repeated strike health, per-strike Stone/Ore rewards, final depletion payloads, level/tool-scaled bonus Gem finds, FX/audio, timed respawn and build-aware regeneration suppression. Mining can be driven by the existing Basic Attack as a free context-sensitive strike or by contextual Interact for automatic repeated mining. Generic Skill Definitions gain an optional RuneScape-style 1–99 XP model while existing curves remain authoritative. Character save remains v5 and world save remains v9. See [`Docs/MINING.md`](Docs/MINING.md), [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
 
 ## Start here
 
 - **New to the framework?** Read [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 - **Setting up items/equipment?** Read [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md).
 - **Setting up crafting/durability/repair?** Read [`Docs/CRAFTING_DURABILITY_REPAIR.md`](Docs/CRAFTING_DURABILITY_REPAIR.md).
+- **Setting up Mining, pickaxes, Stone/Ore/Gem nodes or Actor Foliage resources?** Read [`Docs/MINING.md`](Docs/MINING.md).
 - **Setting up Settlement Hubs, homes, Beds, villagers or player-built paths?** Read [`Docs/SETTLEMENTS.md`](Docs/SETTLEMENTS.md).
 - **Setting up structural building, buildable lights, storage or furnaces?** Read [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md).
 - **Want the full system status?** Read [`Docs/FEATURE_MATRIX.md`](Docs/FEATURE_MATRIX.md).
@@ -47,8 +48,9 @@ The framework follows a few rules consistently:
 | Crafting | **Implemented** | Data-driven personal recipes, authoritative timed/batch crafting, quantity controls, cancellation/refund and station restrictions. |
 | Durability & Repair | **Implemented** | Per-instance durability, combat/gathering wear, broken state, material repair costs and persistence through saves/storage. |
 | JRPG Stats | **Implemented** | Six primary attributes, derived stats, attribute points, progression integration and ready stats UI. |
-| Skills | **Implemented** | Generic XP/level curves, unlock metadata and persistence. |
+| Skills | **Implemented** | Generic XP/level curves, optional RuneScape-style 1–99 model, authored-curve priority, unlock metadata and persistence. |
 | Woodcutting | **Implemented** | Skill progression, axe/tool checks, harvestable trees, successful-chop durability wear, drops and persistence. |
+| Mining | **Implemented** | RuneScape-style 1–99 progression, exact equipped pickaxe validation, Basic Attack/Interact mining, replicated mineable rocks, Stone/Ore/Gem drops, rare bonus finds, durability, respawn and build suppression. |
 | Slayer | **Implemented** | Masters, weighted assignments, kill credit, XP, points, streaks and persistent tasks. |
 | Quests | **Implemented** | Objectives, prerequisites, chains, rewards, repeatables, auto-complete and persistent objective state. |
 | Currencies & Loot | **Implemented** | Currency balances, loot tables and item/currency/XP rewards. |
@@ -165,6 +167,7 @@ The gameplay logic does not depend on the native visual style. Exposed widget cl
 - `Skills`
 - `Slayer`
 - `Woodcutting`
+- `Mining`
 
 **World and social**
 
@@ -276,6 +279,7 @@ The framework intentionally avoids turning every feature into a permanent Tick.
 Examples:
 
 - Build placement ticks only while the local player is actively placing a piece.
+- Mineable Rocks are tick-free; normal Mining uses swing/impact timers and resource-state events rather than per-node Tick.
 - Completed ordinary structures are tick-free.
 - Timed structures tick only during construction.
 - Doors tick only while moving.
@@ -302,7 +306,15 @@ Always profile with your actual content, target platform and multiplayer populat
 
 Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
 
-## Current release — v2.16.12-alpha
+## Current release — v2.17.0-alpha
+
+v2.17.0 promotes Mining into a first-class gathering profession beside Woodcutting. `AARPGCharacter` now creates a replicated `ARPGMiningComponent` with native Mining level/XP/progress queries, exact equipped runtime-pickaxe resolution, power/tier/durability handling, camera targeting, single-strike and automatic repeated Mining, replicated montage/audio presentation and Blueprint events. The existing Basic Attack checks a Mineable Rock before ordinary combat resource spending, so a valid pickaxe strike is a free context-sensitive gathering action; the new `InteractWorld` convenience wrapper tries Mineable Rock -> Tree -> built structure while all dedicated legacy interaction functions remain available.
+
+`AARPGMineableRock` is a Blueprintable resource actor for hand placement or Actor Foliage. Authority chooses and replicates a mesh from `Rock Mesh Variations`, uniform random scale and random yaw; nodes expose Mining Health, Mining Resistance, Required Mining Level, required tool tag/tier, optional depleted/rubble presentation, per-strike XP/drops, depletion XP/drops, independent Bonus Chance Drops with level/tool gates and scaling, Niagara/Cascade/audio feedback, respawn and build-aware regeneration suppression. Foundations may replace only framework renewable Trees/Mineable Rocks; suppression grants no loot or profession XP and ordinary static world rocks remain normal blockers.
+
+Generic Skill Definitions now expose `XP Model`. Existing assets stay on `Framework Power Curve`, authored `XP Required Per Level` keys still override the model, and Mining can use the built-in `RuneScape-Style 1-99 Curve` without requiring a Skill Definition. The familiar thresholds include 83 XP for Level 2 and 13,034,431 cumulative XP for Level 99. Mining Skill state persists through the existing generic Skills payload, so character save remains v5; renewable rock depletion/respawn follows the Tree-style runtime resource model and world save remains v9. See [`Docs/MINING.md`](Docs/MINING.md).
+
+## Previous release — v2.16.12-alpha
 
 v2.16.12 is a focused root fix for the first real-world Settlement Path turn test. Straight path sections already proved the mesh-axis and terrain-conforming pipeline; the failure occurred only after a second segment established a bend. v2.16.11 multiplied the shared corner tangent by each entire player-authored segment length even though Unreal applies that endpoint tangent to the adjacent terrain-sampled spline interval. The mismatch could produce severe Hermite overshoot, folded triangles and raised/inverted road geometry at ordinary angles.
 
@@ -458,6 +470,7 @@ A production game still requires project-specific UE compilation, multiplayer QA
 - [`Docs/JRPG_STATS.md`](Docs/JRPG_STATS.md) — JRPG stats/progression.
 - [`Docs/JRPG_STATS_UI.md`](Docs/JRPG_STATS_UI.md) — ready Stats UI.
 - [`Docs/WOODCUTTING.md`](Docs/WOODCUTTING.md) — gathering, axes, trees and resource drops.
+- [`Docs/MINING.md`](Docs/MINING.md) — 1–99 Mining, pickaxes, Stone/Ore/Gem nodes, bonus finds and Actor Foliage.
 
 ### Combat, AI and presentation
 

@@ -25,6 +25,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Gathering/ARPGTree.h"
+#include "Gathering/ARPGMineableRock.h"
 #include "Materials/MaterialInterface.h"
 #include "LandscapeProxy.h"
 
@@ -88,10 +89,10 @@ static bool ARPGIsLandscapeTerrainActor(const AActor* Actor)
 }
 
 /**
- * Foundations are allowed to replace gatherable vegetation space. A blocking ARPGTree must not steal
- * the placement ray from the terrain/foundation socket behind it, otherwise the preview either floats
- * on the trunk or never reaches the intended snap target. Retry the exact same authoritative trace
- * while ignoring only encountered ARPGTree actors. Every non-tree blocker keeps normal collision.
+ * Foundations are allowed to replace gatherable resource space. A blocking ARPGTree or ARPGMineableRock
+ * must not steal the placement ray from the terrain/foundation socket behind it. Retry the exact same
+ * authoritative trace while ignoring only encountered framework harvest-resource actors. Every other
+ * blocker keeps normal collision. The legacy helper name is retained for v2.16.9 regression stability.
  */
 static bool ARPGTracePlacementSurfaceIgnoringFoundationTrees(
     UWorld* World,
@@ -107,14 +108,19 @@ static bool ARPGTracePlacementSurfaceIgnoringFoundationTrees(
         return World->LineTraceSingleByChannel(OutHit, Start, End, TraceChannel, BaseParams);
 
     FCollisionQueryParams Params = BaseParams;
-    constexpr int32 MaxTreePierceCount = 32;
-    for (int32 Attempt = 0; Attempt < MaxTreePierceCount; ++Attempt)
+    constexpr int32 MaxHarvestResourcePierceCount = 32;
+    for (int32 Attempt = 0; Attempt < MaxHarvestResourcePierceCount; ++Attempt)
     {
         FHitResult Hit;
         if (!World->LineTraceSingleByChannel(Hit, Start, End, TraceChannel, Params)) return false;
         if (AARPGTree* Tree = Cast<AARPGTree>(Hit.GetActor()))
         {
             Params.AddIgnoredActor(Tree);
+            continue;
+        }
+        if (AARPGMineableRock* Rock = Cast<AARPGMineableRock>(Hit.GetActor()))
+        {
+            Params.AddIgnoredActor(Rock);
             continue;
         }
         OutHit = Hit;
@@ -3086,11 +3092,11 @@ EARPGPlacementResult UARPGBuildingComponent::EvaluatePlacementInternal(const UAR
             AActor* Other = Overlap.GetActor();
             if (!Other || Other == Owner || Other == SnapTarget) continue;
 
-            // Foundations intentionally replace ARPG gatherable vegetation space. Ignore the Tree actor
-            // as a placement blocker; once authority places the Foundation, the build actor immediately
-            // suppresses that Tree's visuals/collision and prevents respawn until the logical build
-            // occupancy clears. Rocks, props, pawns and every non-tree blocker remain unchanged.
-            if (Piece->PieceKind == EARPGBuildPieceKind::Foundation && Other->IsA<AARPGTree>())
+            // Foundations intentionally replace framework harvest-resource space. Once authority places
+            // the Foundation, the build actor suppresses the Tree/Rock visuals and respawn until logical
+            // occupancy clears. Ordinary static-mesh rocks/props/pawns remain strict blockers.
+            if (Piece->PieceKind == EARPGBuildPieceKind::Foundation &&
+                (Other->IsA<AARPGTree>() || Other->IsA<AARPGMineableRock>()))
                 continue;
 
             // A verified snapped Stair may embed into Landscape terrain. Landscape uses large

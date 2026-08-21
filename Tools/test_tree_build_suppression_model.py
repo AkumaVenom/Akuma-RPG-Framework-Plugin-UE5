@@ -10,13 +10,15 @@ PLACEMENT_CPP = (ROOT / 'Source/AkumasRPGFramework/Private/Building/ARPGBuilding
 RESIDENT_CPP = (ROOT / 'Source/AkumasRPGFramework/Private/Settlement/ARPGSettlementResidentComponent.cpp').read_text(encoding='utf-8', errors='ignore')
 SAVE_H = (ROOT / 'Source/AkumasRPGFramework/Public/Save/ARPGSaveGame.h').read_text(encoding='utf-8', errors='ignore')
 
-# Foundation placement must pierce only ARPGTree actors instead of weakening normal world blockers.
+# Foundation placement may pierce framework-managed renewable Trees and Mineable Rocks without weakening normal world blockers.
 for token in (
     '#include "Gathering/ARPGTree.h"',
     'ARPGTracePlacementSurfaceIgnoringFoundationTrees',
     'Piece->PieceKind != EARPGBuildPieceKind::Foundation',
     'Params.AddIgnoredActor(Tree);',
-    'Piece->PieceKind == EARPGBuildPieceKind::Foundation && Other->IsA<AARPGTree>()',
+    '#include "Gathering/ARPGMineableRock.h"',
+    '(Other->IsA<AARPGTree>() || Other->IsA<AARPGMineableRock>())',
+    'Params.AddIgnoredActor(Rock);',
 ):
     assert token in PLACEMENT_CPP, token
 

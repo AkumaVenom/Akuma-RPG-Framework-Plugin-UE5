@@ -57,8 +57,8 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable", ClampMin="0.01")) float UseAudioPitchMin = 0.97f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Use|Presentation", meta=(EditCondition="bUsable", ClampMin="0.01")) float UseAudioPitchMax = 1.03f;
 
-    // Generic gathering-tool metadata. Woodcutting uses these values automatically for equipped axes,
-    // and future gathering professions can reuse the same item definition instead of creating tool-specific item classes.
+    // Generic gathering-tool metadata shared by Woodcutting and Mining. Equipped axes/pickaxes use the same
+    // authoritative runtime-instance power/tier/durability contract instead of tool-specific item subclasses.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Gathering") FGameplayTagContainer GatheringToolTags;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Gathering", meta=(ClampMin="0.01")) float GatheringPower = 1.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Gathering", meta=(ClampMin="0")) int32 GatheringToolTier = 0;

@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21612 or descriptor.get("VersionName") != "2.16.12-alpha":
-        issues.append("package descriptor must identify v2.16.12-alpha")
+    if descriptor.get("Version") != 21700 or descriptor.get("VersionName") != "2.17.0-alpha":
+        issues.append("package descriptor must identify v2.17.0-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1933,7 +1933,8 @@ if all(p.exists() for p in paths_2150):
     for required in (
         "ARPGTracePlacementSurfaceIgnoringFoundationTrees",
         "Params.AddIgnoredActor(Tree)",
-        "Piece->PieceKind == EARPGBuildPieceKind::Foundation && Other->IsA<AARPGTree>()",
+        "(Other->IsA<AARPGTree>() || Other->IsA<AARPGMineableRock>())",
+        "Params.AddIgnoredActor(Rock)",
     ):
         if required not in bc: issues.append(f"v2.16.9 Foundation-through-Tree placement missing: {required}")
     for required in (
@@ -2111,6 +2112,101 @@ if all(p.exists() for p in paths_2150):
             issues.append("v2.16.12 Settlement Path join tangent must not use whole new-segment length")
         for required in ("StartTangentDirectionWorld", "AdjacentSpan", "MinimumForwardDot"):
             if required not in pvc21611: issues.append(f"v2.16.12 Settlement Path preview tangent bound missing: {required}")
+
+    # v2.17.0 first-class Mining / mineable-resource progression.
+    mining_h_217 = root / "Public" / "Components" / "ARPGMiningComponent.h"
+    mining_cpp_217 = root / "Private" / "Components" / "ARPGMiningComponent.cpp"
+    rock_h_217 = root / "Public" / "Gathering" / "ARPGMineableRock.h"
+    rock_cpp_217 = root / "Private" / "Gathering" / "ARPGMineableRock.cpp"
+    skill_h_217 = root / "Public" / "Components" / "ARPGSkillComponent.h"
+    skill_cpp_217 = root / "Private" / "Components" / "ARPGSkillComponent.cpp"
+    skill_def_217 = root / "Public" / "Data" / "ARPGSkillDefinition.h"
+    char_h_217 = root / "Public" / "Actors" / "ARPGCharacter.h"
+    char_cpp_217 = root / "Private" / "Actors" / "ARPGCharacter.cpp"
+    combat_cpp_217 = root / "Private" / "Components" / "ARPGCombatComponent.cpp"
+    build_piece_cpp_217 = root / "Private" / "Building" / "ARPGBuildPieceActor.cpp"
+    placement_cpp_217 = root / "Private" / "Building" / "ARPGBuildingComponent.cpp"
+    mining_paths = (mining_h_217, mining_cpp_217, rock_h_217, rock_cpp_217, skill_h_217, skill_cpp_217, skill_def_217)
+    if not all(path.exists() for path in mining_paths):
+        issues.append("v2.17.0 Mining/Mineable Rock source is missing")
+    else:
+        mh217 = mining_h_217.read_text(errors="replace")
+        mc217 = mining_cpp_217.read_text(errors="replace")
+        rh217 = rock_h_217.read_text(errors="replace")
+        rc217 = rock_cpp_217.read_text(errors="replace")
+        sh217 = skill_h_217.read_text(errors="replace")
+        sc217 = skill_cpp_217.read_text(errors="replace")
+        sd217 = skill_def_217.read_text(errors="replace")
+        ch217 = char_h_217.read_text(errors="replace") if char_h_217.exists() else ""
+        cc217 = char_cpp_217.read_text(errors="replace") if char_cpp_217.exists() else ""
+        combat217 = combat_cpp_217.read_text(errors="replace") if combat_cpp_217.exists() else ""
+        bp217 = build_piece_cpp_217.read_text(errors="replace") if build_piece_cpp_217.exists() else ""
+        plc217 = placement_cpp_217.read_text(errors="replace") if placement_cpp_217.exists() else ""
+
+        for required in (
+            "class AKUMASRPGFRAMEWORK_API UARPGMiningComponent", "bUseRuneScapeStyleXPWithoutSkillDefinition = true",
+            "NativeMiningMaxLevel = 99", "StartMiningFromView", "MineRockOnce", "TryHandleBasicAttackAsMining",
+            "GetBestEquippedMiningToolInstanceId", "GetMiningLevelProgress",
+        ):
+            if required not in mh217: issues.append(f"v2.17.0 Mining API/default missing: {required}")
+        for required in (
+            "Entry.InstanceId.IsValid()", "Entry.bEquipped", "Entry.EquipmentSlot != Definition->EquipmentSlot",
+            "Entry.Durability <= KINDA_SMALL_NUMBER", "GatheringToolTags.HasTag(DesiredTag)",
+            "DamageItemDurability(ToolInstanceId", "EARPGSkillXPModel::RuneScapeStyle99", "PrimaryComponentTick.bCanEverTick = false",
+        ):
+            if required not in mc217: issues.append(f"v2.17.0 Mining exact-tool/progression runtime missing: {required}")
+
+        for required in (
+            "class AKUMASRPGFRAMEWORK_API AARPGMineableRock", "Rock Mesh Variations", "Randomize Rock Mesh Scale",
+            "Randomize Rock Yaw", "RequiredMiningLevel", "MinimumToolTier", "Successful Strike Drops",
+            "Depletion Drops", "Bonus Chance Drops", "BonusChancePerMiningLevel", "BonusChancePerToolTier",
+        ):
+            if required not in rh217: issues.append(f"v2.17.0 Mineable Rock authoring missing: {required}")
+        for required in (
+            "PrimaryActorTick.bCanEverTick = false", "GrantNormalDropArray(Harvester, StrikeDrops",
+            "GrantNormalDropArray(Harvester, DepletionDrops", "GrantBonusDrops(Harvester",
+            "DOREPLIFETIME(AARPGMineableRock, SelectedRockMeshIndex)",
+            "DOREPLIFETIME(AARPGMineableRock, SelectedRockMeshScale)",
+            "DOREPLIFETIME(AARPGMineableRock, SelectedRockYawDegrees)",
+            "DOREPLIFETIME(AARPGMineableRock, CurrentMiningHealth)",
+            "DOREPLIFETIME(AARPGMineableRock, bBuildingRespawnSuppressed)",
+        ):
+            if required not in rc217: issues.append(f"v2.17.0 Mineable Rock runtime missing: {required}")
+        suppress_start_217 = rc217.find("void AARPGMineableRock::UpdateBuildingSuppressionStateAuthority()")
+        suppress_end_217 = rc217.find("void AARPGMineableRock::SelectRandomRockMesh()", suppress_start_217) if suppress_start_217 >= 0 else -1
+        if suppress_start_217 >= 0 and suppress_end_217 > suppress_start_217:
+            suppress217 = rc217[suppress_start_217:suppress_end_217]
+            for forbidden in ("GrantOneReward(", "GrantNormalDropArray(", "GrantBonusDrops(", "AwardMiningXP(", "OnRockDepleted.Broadcast"):
+                if forbidden in suppress217: issues.append(f"v2.17.0 build suppression must not fabricate Mining rewards: {forbidden}")
+
+        for required in ("EARPGSkillXPModel", "RuneScapeStyle99", "FrameworkPower", "XPRequiredPerLevel"):
+            if required not in sd217: issues.append(f"v2.17.0 Skill XP model authoring missing: {required}")
+        for required in ("GetRuneScapeStyleTotalXPForLevel", "GetXPForNextLevelForModel", "GetXPForNextLevelFromDefinition", "AddSkillXPWithModel"):
+            if required not in sh217 or required not in sc217: issues.append(f"v2.17.0 generic Skill XP model runtime missing: {required}")
+        if "Curve && Curve->GetNumKeys() > 0" not in sc217:
+            issues.append("v2.17.0 existing authored Skill XP curves must remain authoritative over XP Model")
+
+        for required in ("TObjectPtr<UARPGMiningComponent> Mining;", "InteractWorld()"):
+            if required not in ch217: issues.append(f"v2.17.0 ready Character Mining exposure missing: {required}")
+        for required in ('CreateDefaultSubobject<UARPGMiningComponent>(TEXT("Mining"))', "FindMineableRockInView", "FindWoodcuttingTreeInView", "InteractWithBuiltStructureFromView"):
+            if required not in cc217: issues.append(f"v2.17.0 ready Character Mining/Interact integration missing: {required}")
+        if "TryHandleBasicAttackAsMining" not in combat217:
+            issues.append("v2.17.0 Combat Basic Attack Mining interception is missing")
+        elif combat217.find("TryHandleBasicAttackAsMining") > combat217.find("Stats->SpendStamina"):
+            issues.append("v2.17.0 Mining Basic Attack must intercept before ordinary combat Stamina spending")
+
+        for required in (
+            '#include "Gathering/ARPGMineableRock.h"', "Params.AddIgnoredActor(Rock)",
+            "(Other->IsA<AARPGTree>() || Other->IsA<AARPGMineableRock>())",
+        ):
+            if required not in plc217: issues.append(f"v2.17.0 Foundation renewable-resource placement integration missing: {required}")
+        if "Rock->NotifyBuildPieceOccupancyChanged(this, bPresent);" not in bp217:
+            issues.append("v2.17.0 build occupancy must notify Mineable Rocks")
+
+        tag_path_217 = plugin_root / "Config" / "Tags" / "ARPGGameplayTags.ini"
+        tags217 = tag_path_217.read_text(errors="replace") if tag_path_217.exists() else ""
+        for required in ("Skill.Mining", "Gathering.MineableRock", "Item.Tool.Pickaxe", "Item.Resource.Stone", "Item.Resource.Ore", "Item.Resource.Gem"):
+            if required not in tags217: issues.append(f"v2.17.0 standard Mining tag missing: {required}")
 
     # v2.15.43 Stair low-end story-surface contract: LOW-departure/up-flight art starts on the
     # CURRENT finished surface. The upper Floor remains on low-story + StandardWallHeight instead
@@ -2722,6 +2818,7 @@ if readme_2150.exists():
     if not release_documented("v2.16.10-alpha — Settlement Villager Contextual Woodcutting Tool Presentation"): issues.append("README or Docs/CHANGELOG.md must document v2.16.10 settlement villager contextual woodcutting tool presentation")
     if not release_documented("v2.16.11-alpha — Player-Built Settlement Spline Paths"): issues.append("README or Docs/CHANGELOG.md must document v2.16.11 player-built Settlement spline paths")
     if not release_documented("v2.16.12-alpha — Settlement Path Turn Tangent Stability Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.16.12 Settlement Path turn tangent stability root fix")
+    if not release_documented("v2.17.0-alpha — First-Class 1–99 Mining & Mineable Resource Nodes"): issues.append("README or Docs/CHANGELOG.md must document v2.17.0 first-class Mining")
 
     persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
     ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")

@@ -1,5 +1,13 @@
 # Networking, Login and Authority
 
+## Mining authority — v2.17.0
+
+Mining intent may originate from Basic Attack, `Start Mining From View`, `Mine Rock Once` or `InteractWorld`, but mutation remains server-owned. Authority revalidates `AARPGMineableRock` availability/build suppression, distance, Mining level, exact equipped runtime pickaxe instance, durability, required tag/tool tier, Mining Power, node health, XP, normal/bonus reward rolls, Inventory adds, durability loss, depletion and respawn.
+
+`CurrentRock` replicates for state/UI hooks. Mineable Rock health/state, random mesh index, random uniform scale/yaw and building-suppression state replicate from authority. Mining swing/depletion FX/audio are presentation multicasts and cannot grant loot. Basic Attack Mining is resolved before ordinary combat Stamina/Mana spending, so an accepted Mining strike is a gathering action rather than a melee attack with side effects.
+
+`InteractWorld` is only a convenience dispatcher: Mineable Rock -> Tree -> built structure. Existing dedicated interaction functions remain available. Generic Skill state already replicates/saves Mining progression; character save stays v5. Renewable node depletion/respawn remains runtime resource state like `ARPGTree`, while persistent build occupancy re-establishes suppression under world save v9.
+
 
 ### Generic Item Use authority (v2.13)
 
