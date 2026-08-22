@@ -92,7 +92,7 @@ assert bui.find('Cast<AARPGSettlementHubActor>') >= 0 and bui.find('Cast<AARPGSt
 assert bui.find('Cast<AARPGSettlementHubActor>') < bui.find('Cast<AARPGStorageActor>'), 'Settlement Hub interaction must precede generic Storage interaction'
 
 # v8 persistence keeps older Window/Light migrations and serializes Beds + residents + Hub stockpile via normal container path.
-assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 9' in save_h
+assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 10' in save_h
 require(types,'FARPGSettlementResidentSave','SettlementHubBuildingId','AssignedBedBuildingId','SettlementResidents','BedAssignedResidentId','PlayerBedOwnerCharacterId')
 for token in ('R.BedRole=Bed->BedRole','D.SettlementResidents.Add(R)','Save->SaveVersion>=8','RestoreBedState',
               'Save->SaveVersion>=7 ? R.bLightOn','Save->SaveVersion>=6 ? R.bWindowOpen : false',

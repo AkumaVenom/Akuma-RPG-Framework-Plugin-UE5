@@ -8,13 +8,14 @@ Create content with **Data Assets**, configure inherited components in the edito
 
 | Current release | Engine target | Project state |
 |---|---|---|
-| **v2.17.3-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
+| **v2.18.5-alpha** | **Unreal Engine 5.8 / 5.8.1** | Source framework — active development |
 
-> **Latest release:** v2.17.3 fixes the fresh-character side of automatic persistence with a deterministic **BeginPlay persistence bootstrap**. Auto-load now explicitly resolves `Fresh Character - No Save`, `Loaded Existing Save`, or `Existing Save - Load Failed` before Inventory initialization can finish. A proven no-save character receives authored Starting Items and their initial Quick Access assignments, then immediately establishes its first character snapshot when automatic persistence is enabled; a loaded save remains authoritative even when intentionally empty, while a proven existing-but-unreadable save still suppresses defaults and overwrite. The bootstrap can no longer deadlock behind a class-only player-persistence guard, and runtime Details expose the resolved CharacterId and exact save slot for diagnosis. Character save remains v5 and world save remains v9. See [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md), [`Docs/QUICK_ACCESS.md`](Docs/QUICK_ACCESS.md), [`Docs/NETWORK_AND_AUTH.md`](Docs/NETWORK_AND_AUTH.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
+> **Latest release:** v2.18.5 fixes account leakage in persistent world state. Logged-in Single Player now saves world-owned state to `ARPG_<AccountId>_World_<WorldId>`; Host & Play uses the host account as the one authoritative shared-world namespace; joined clients never own a local world save. World save **v10** stores and validates its scope AccountId, while Guest/dedicated-server development retains the legacy unscoped namespace. Existing v9 shared world files are deliberately not auto-imported into an account because they may already contain mixed-account structures/state. Character save remains v5 and account-profile metadata remains v1. See [`Docs/FRONTEND_LOGIN_NETWORKING.md`](Docs/FRONTEND_LOGIN_NETWORKING.md), [`Docs/NETWORK_AND_AUTH.md`](Docs/NETWORK_AND_AUTH.md) and [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md).
 
 ## Start here
 
 - **New to the framework?** Read [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
+- **Setting up Login, Main Menu, Single Player, Host & Play or Join by IP?** Read [`Docs/FRONTEND_LOGIN_NETWORKING.md`](Docs/FRONTEND_LOGIN_NETWORKING.md).
 - **Setting up items/equipment?** Read [`Docs/EQUIPMENT_INVENTORY.md`](Docs/EQUIPMENT_INVENTORY.md).
 - **Setting up crafting/durability/repair?** Read [`Docs/CRAFTING_DURABILITY_REPAIR.md`](Docs/CRAFTING_DURABILITY_REPAIR.md).
 - **Setting up Mining, pickaxes, Stone/Ore/Gem nodes or Actor Foliage resources?** Read [`Docs/MINING.md`](Docs/MINING.md).
@@ -85,7 +86,7 @@ v2.15 promotes the earlier building backend into a complete player-facing settle
 | Demolition | **Implemented** | Authoritative modification checks and configurable build-cost refund. |
 | Storage | **Implemented** | Persistent containers, ready transfer UI and exact runtime-instance transfer for durable items. |
 | Production / Furnaces | **Implemented** | Input/fuel/output inventories, recipe queues, tagged fuel, transaction-safe processing and ready production UI. |
-| Building Persistence | **Implemented** | Structure identity, transform, health, construction progress, Door/Window/Light state, Settlement Path endpoints/tangent joins, storage contents and station state. World save v9 retains older migration behavior. |
+| Building Persistence | **Implemented** | Structure identity, transform, health, construction progress, Door/Window/Light state, Settlement Path endpoints/tangent joins, storage contents and station state. v2.18.5 world save v10 isolates logged-in Single Player worlds per account and listen-host worlds per host account while retaining older schema migration. |
 
 Supported standard build-piece kinds:
 
@@ -120,8 +121,8 @@ See [`Docs/BUILDING_CRAFTING.md`](Docs/BUILDING_CRAFTING.md) for the complete Wo
 | Dungeons / Raids | **Foundation** | Encounter states, wipes, checkpoints, completion and persistence. |
 | Battle Pets | **Foundation** | Collection/team/XP, turns, abilities, swaps, capture and persistence. |
 | Unified Chat / Event Log | **Implemented** | Player, NPC, boss, system, quest, loot and event message routing. |
-| Local Profiles | **Implemented** | Local username/password profile identities and character association. |
-| Direct IP Networking | **Implemented** | Listen-server hosting and direct join-by-IP helpers. |
+| Local Profiles + Frontend | **Implemented** | Native/reskinnable Login + Main Menu, local username/password profiles, dedicated account metadata saves and stable character association. |
+| Direct IP Networking | **Implemented** | Single Player, listen-server Host & Play, typed IP/hostname join, travel/network failure handling, profile handshake before pawn spawn and per-connection persistence identity. |
 
 ## Ready native UI
 
@@ -137,6 +138,8 @@ Current ready UI includes:
 - **Build Placement HUD** — selected piece, requirements, placement validity and controls.
 - **Storage** — Player ↔ Container item transfer.
 - **Production / Furnace** — Player, Input/Fuel, Recipes, Output and queue progress.
+- **Login** — native username/password local-profile login/create flow.
+- **Main Menu** — native Single Player, Host & Play, Join by IP, Logout and Quit flow.
 
 The gameplay logic does not depend on the native visual style. Exposed widget classes, standard child bindings and update events allow project-specific reskins without rebuilding the server-authoritative systems underneath.
 
@@ -302,11 +305,41 @@ Always profile with your actual content, target platform and multiplayer populat
 5. Regenerate project files if required by your workflow.
 6. Build the project's **Development Editor** target using the UE 5.8 toolchain.
 7. Open the project and enable **Akuma's RPG Framework** if needed.
-8. For the fastest start, derive the player Blueprint from `ARPGCharacter` and the GameMode from `ARPGGameMode`.
+8. For the fastest gameplay start, derive the player Blueprint from `ARPGCharacter` and the gameplay GameMode from `ARPGGameMode`.
+9. For the v2.18 frontend, create one blank project Main Menu level, set its GameMode Override to `ARPGFrontendGameMode`, and configure **Default Main Menu Map** + **Default Gameplay Map** under Project Settings -> Game -> Akuma's RPG Framework.
 
-Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md).
+Then follow [`Docs/QUICK_START.md`](Docs/QUICK_START.md) and [`Docs/FRONTEND_LOGIN_NETWORKING.md`](Docs/FRONTEND_LOGIN_NETWORKING.md).
 
-## Current release — v2.17.3-alpha
+## Current release — v2.18.5-alpha
+
+v2.18.5 makes world persistence follow the same account boundary already proven for character saves. Logged-in Single Player uses `ARPG_<AccountId>_World_<WorldId>`; Host & Play uses the host account for one shared authoritative world; joined clients never own a local world save. World save v10 embeds and validates `ScopeAccountId`. Existing shared v9 world data is left untouched rather than silently assigned to one account.
+
+## Previous release — v2.18.4-alpha
+
+v2.18.4 makes the gameplay GameMode a first-class frontend travel setting. Set **Default Gameplay GameMode** under Project Settings -> Game -> Akuma's RPG Framework -> Frontend to your project gameplay GameMode Blueprint (an `ARPGGameMode` child). Single Player/Host then force that exact class with `game=`; the menu refuses ambiguous travel when it is unset.
+
+
+v2.18.3 fixes the real project-observed destination GameMode failure where `StartingIslandMap` loaded but PIE still instantiated `ARPGFrontendGameMode`, leaving the runtime in frontend controller/pawn semantics. The frontend GameMode now checks the loaded destination World Settings. If that world explicitly authors a non-frontend `DefaultGameMode`, the framework reopens the same destination exactly once with that authored class forced as the internal `game=` travel option. A private recovery marker prevents loops and logs a clear error if an external project/PIE override still defeats the authored class. No extra Blueprint travel nodes are required.
+
+## Previous release — v2.18.2-alpha
+
+v2.18.2 fixes the real frontend-to-gameplay Single Player handoff reported after v2.18.1 compiled successfully in UE5.8. `ARPGFrontendPlayerController` now removes its active frontend widget and explicitly restores `FInputModeGameOnly`, mouse-cursor, move-input and look-input state before Single Player, Host & Play or Join travel. `ARPGPlayerController` repeats that restoration on gameplay BeginPlay as a travel-safe fallback. Account creation/login now guarantees a stable persistent CharacterId before map travel, while remote-handshake spawn continuation is explicitly tracked so local profile acceptance can no longer re-enter `HandleStartingNewPlayer` during spawn/possession. The v2.17.3 fresh-vs-existing save contract is unchanged: a genuinely fresh account-character receives Starting Items/Quick Access once; an existing or intentionally empty save restores exactly. Character save remains v5, world save remains v9 and account-profile metadata remains schema v1.
+
+## Previous release — v2.18.1-alpha
+
+v2.18.1 fixes the real UE5.8 Development Editor compile errors reported against the first v2.18 package without changing its frontend/network architecture. `UARPGNetworkSubsystem` now matches Unreal's `FOnNetworkFailure` / `FOnTravelFailure` delegate parameter types exactly through `ENetworkFailure::Type` and `ETravelFailure::Type`. `UARPGLoginWidget` / `UARPGMainMenuWidget` Blueprint presentation events now declare reflected `FText` and `FString` inputs as const references so their declarations match the wrappers generated by UE5.8 UHT.
+
+## Previous release — v2.18.0-alpha
+
+v2.18.0 adds a native, Blueprint-reskinnable frontend and makes connection identity a first-class multiplayer persistence boundary. `ARPGFrontendGameMode` is designed for a blank Main Menu level and uses `ARPGFrontendPlayerController` to show a working native `ARPGLoginWidget` or `ARPGMainMenuWidget`. After local profile login/create, the ready menu exposes **Single Player**, **Host & Play**, configurable listen port/LAN mode, typed **Join by IP/hostname**, Logout and Quit. Network/travel failure callbacks retain a user-facing error and can return to the configured Main Menu automatically.
+
+Account creation now establishes `ARPG_Account_<AccountId>` metadata in addition to the existing local account index. That profile stores only non-secret frontend preferences; raw passwords never enter character/world saves and are never RPC parameters. Existing local accounts migrate lazily on successful login. The local verifier remains intended for trusted/local profile separation rather than production Internet authentication.
+
+For gameplay networking, `ARPGGameMode` can require profile identity before spawning the pawn. The local host resolves its already verified local Account Subsystem; a remote direct-IP client submits only AccountId, username and CharacterId through its owned PlayerController. The server rejects duplicate active account/character identities, generates a stable CharacterId for a first character, binds the accepted identity immutably to that connection and only then starts the gameplay pawn. `ARPGSaveSubsystem` now derives character slots from the owning PlayerController when available, so remote listen-server players save under `ARPG_<RemoteAccountId>_Char_<RemoteCharacterId>` instead of the host account namespace. Host GameInstance account fallback is restricted to the locally controlled host/standalone character.
+
+Direct-IP joined character snapshots are host-authoritative: reconnecting the same local profile to the same host restores that host's save; portable characters across unrelated hosts require a trusted backend/cloud service rather than a client-supplied Inventory blob. Existing UI `SaveNow` calls are multiplayer-safe: joined clients request the host to commit their accepted account/character slot and receive an explicit save result event. Character save remains **v5**, world save remains **v9**, and the separate account-profile metadata save starts at version 1. See `Docs/FRONTEND_LOGIN_NETWORKING.md`.
+
+## Previous release — v2.17.3-alpha
 
 v2.17.3 replaces the ambiguous fresh-character startup path with an explicit persistence bootstrap state machine. `Persistence -> Runtime -> Initial Character Persistence State` leaves `Unresolved` on authority and resolves to **Fresh Character - No Save**, **Loaded Existing Save**, or **Existing Save - Load Failed** whenever Auto Load is enabled. The exact `Initial Resolved Character Id` and `Initial Resolved Character Save Slot` are exposed at runtime so editor PIE can verify which identity/slot was actually used.
 
@@ -475,6 +508,7 @@ A production game still requires project-specific UE compilation, multiplayer QA
 ### Getting started
 
 - [`Docs/QUICK_START.md`](Docs/QUICK_START.md) — fastest editor setup.
+- [`Docs/FRONTEND_LOGIN_NETWORKING.md`](Docs/FRONTEND_LOGIN_NETWORKING.md) — login, Main Menu, Single Player, listen hosting, direct-IP joining and profile identity.
 - [`Docs/ASSET_MANAGER.md`](Docs/ASSET_MANAGER.md) — Primary Asset registration.
 - [`Docs/FEATURE_MATRIX.md`](Docs/FEATURE_MATRIX.md) — detailed implementation/status matrix.
 - [`Docs/VALIDATION.md`](Docs/VALIDATION.md) — package validation information.

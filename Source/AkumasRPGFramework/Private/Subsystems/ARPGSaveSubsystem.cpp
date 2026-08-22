@@ -3,6 +3,7 @@
 #include "Subsystems/ARPGAccountSubsystem.h"
 #include "Save/ARPGSaveGame.h"
 #include "Actors/ARPGCharacter.h"
+#include "Actors/ARPGPlayerController.h"
 #include "Actors/ARPGAICharacter.h"
 #include "Actors/ARPGDungeonManager.h"
 #include "Building/ARPGBuildPieceActor.h"
@@ -144,16 +145,65 @@ namespace
 FString UARPGSaveSubsystem::MakeCharacterSlotName(const FGuid& CharacterId) const
 {
     const UARPGAccountSubsystem* Accounts = GetGameInstance() ? GetGameInstance()->GetSubsystem<UARPGAccountSubsystem>() : nullptr;
-    const FString Prefix = Accounts ? Accounts->GetCurrentAccountSlotPrefix() : TEXT("ARPG_Guest");
+    const FGuid LocalAccountId = Accounts && Accounts->IsLoggedIn() ? Accounts->CurrentAccountId : FGuid();
+    return MakeCharacterSlotNameForAccount(LocalAccountId, CharacterId);
+}
+
+FString UARPGSaveSubsystem::MakeCharacterSlotNameForAccount(const FGuid& AccountId, const FGuid& CharacterId) const
+{
+    if (!CharacterId.IsValid()) return FString();
+    const FString Prefix = AccountId.IsValid()
+        ? FString::Printf(TEXT("ARPG_%s"), *AccountId.ToString(EGuidFormats::Digits))
+        : TEXT("ARPG_Guest");
     return FString::Printf(TEXT("%s_Char_%s"), *Prefix, *CharacterId.ToString(EGuidFormats::Digits));
 }
 
-FString UARPGSaveSubsystem::MakeWorldSlotName(FString WorldId) const
+FGuid UARPGSaveSubsystem::ResolveCharacterAccountId(AActor* CharacterActor) const
+{
+    const AARPGCharacter* Character = Cast<AARPGCharacter>(CharacterActor);
+    if (!Character) return FGuid();
+    const AARPGPlayerController* PC = Cast<AARPGPlayerController>(Character->GetController());
+    if (PC && PC->IsProfileIdentityAccepted() && PC->AccountId.IsValid()) return PC->AccountId;
+
+    // The host GameInstance account is a fallback only for this process's locally controlled player.
+    // Remote listen-server pawns must never alias to the host profile namespace.
+    if (Character->IsLocallyControlled())
+    {
+        const UARPGAccountSubsystem* Accounts = GetGameInstance() ? GetGameInstance()->GetSubsystem<UARPGAccountSubsystem>() : nullptr;
+        if (Accounts && Accounts->IsLoggedIn()) return Accounts->CurrentAccountId;
+    }
+    return FGuid();
+}
+
+FString UARPGSaveSubsystem::MakeCharacterSlotNameForActor(AActor* CharacterActor) const
+{
+    const AARPGCharacter* Character = Cast<AARPGCharacter>(CharacterActor);
+    if (!Character || !Character->CharacterId.IsValid()) return FString();
+    return MakeCharacterSlotNameForAccount(ResolveCharacterAccountId(CharacterActor), Character->CharacterId);
+}
+
+FString UARPGSaveSubsystem::MakeWorldSlotNameForAccount(const FGuid& AccountId, FString WorldId) const
 {
     WorldId = WorldId.TrimStartAndEnd();
     if (WorldId.IsEmpty()) WorldId = TEXT("DefaultWorld");
     WorldId.ReplaceInline(TEXT(" "), TEXT("_"));
-    return FString::Printf(TEXT("ARPG_World_%s"), *WorldId.Left(64));
+    const FString SafeWorldId = WorldId.Left(64);
+    if (AccountId.IsValid())
+        return FString::Printf(TEXT("ARPG_%s_World_%s"), *AccountId.ToString(EGuidFormats::Digits), *SafeWorldId);
+    return FString::Printf(TEXT("ARPG_World_%s"), *SafeWorldId);
+}
+
+FGuid UARPGSaveSubsystem::ResolveWorldSaveAccountId() const
+{
+    const UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() == NM_Client || World->GetNetMode() == NM_DedicatedServer) return FGuid();
+    const UARPGAccountSubsystem* Accounts = GetGameInstance() ? GetGameInstance()->GetSubsystem<UARPGAccountSubsystem>() : nullptr;
+    return Accounts && Accounts->IsLoggedIn() ? Accounts->CurrentAccountId : FGuid();
+}
+
+FString UARPGSaveSubsystem::MakeWorldSlotName(FString WorldId) const
+{
+    return MakeWorldSlotNameForAccount(ResolveWorldSaveAccountId(), MoveTemp(WorldId));
 }
 
 AARPGCharacter* UARPGSaveSubsystem::ResolveSaveableCharacter(AActor* CharacterActor) const
@@ -175,10 +225,14 @@ UARPGSaveGame* UARPGSaveSubsystem::BuildCharacterSave(AARPGCharacter* Character)
     UARPGSaveGame* Save = Cast<UARPGSaveGame>(UGameplayStatics::CreateSaveGameObject(UARPGSaveGame::StaticClass()));
     if (!Save) return nullptr;
 
-    if (UARPGAccountSubsystem* Accounts = GetGameInstance() ? GetGameInstance()->GetSubsystem<UARPGAccountSubsystem>() : nullptr)
+    Save->AccountId = ResolveCharacterAccountId(Character);
+    if (Character->IsLocallyControlled())
     {
-        Save->AccountId = Accounts->CurrentAccountId;
-        Accounts->RegisterCharacterId(Character->CharacterId);
+        if (UARPGAccountSubsystem* Accounts = GetGameInstance() ? GetGameInstance()->GetSubsystem<UARPGAccountSubsystem>() : nullptr)
+        {
+            if ((!Save->AccountId.IsValid() && !Accounts->IsLoggedIn()) || (Accounts->IsLoggedIn() && Accounts->CurrentAccountId == Save->AccountId))
+                Accounts->RegisterCharacterId(Character->CharacterId);
+        }
     }
 
     FARPGCharacterSaveData& D = Save->Character;
@@ -214,7 +268,7 @@ bool UARPGSaveSubsystem::SaveCharacter(AActor* CharacterActor, FString SlotOverr
     // frequently and a previous AsyncSaveGameToSlot completion is allowed to finish after a newer write,
     // which can resurrect an older/default loadout. World saves remain async; character saves are small
     // and are debounced by UARPGPersistenceComponent for normal automatic gameplay writes.
-    const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotName(Character->CharacterId) : SlotOverride;
+    const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotNameForActor(Character) : SlotOverride;
     const bool bSuccess = UGameplayStatics::SaveGameToSlot(Save, Slot, 0);
     OnSaveComplete.Broadcast(Slot, bSuccess);
     return bSuccess;
@@ -226,7 +280,7 @@ bool UARPGSaveSubsystem::SaveCharacterImmediate(AActor* CharacterActor, FString 
     UARPGSaveGame* Save = BuildCharacterSave(Character);
     if (!Character || !Save) return false;
 
-    const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotName(Character->CharacterId) : SlotOverride;
+    const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotNameForActor(Character) : SlotOverride;
     const bool bSuccess = UGameplayStatics::SaveGameToSlot(Save, Slot, 0);
     OnSaveComplete.Broadcast(Slot, bSuccess);
     return bSuccess;
@@ -239,9 +293,12 @@ bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverr
     if (Character->IsA<AARPGAICharacter>() && !Character->IsPlayerControlled()) return false;
     if (!Character->CharacterId.IsValid() && SlotOverride.IsEmpty()) return false;
     if (Character->GetNetMode() == NM_Client && !Character->HasAuthority()) return false;
-    const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotName(Character->CharacterId) : SlotOverride;
+    const FString Slot = SlotOverride.IsEmpty() ? MakeCharacterSlotNameForActor(Character) : SlotOverride;
     UARPGSaveGame* Save = Cast<UARPGSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot, 0)); if (!Save) return false;
+    const FGuid ExpectedAccountId = ResolveCharacterAccountId(Character);
+    if (SlotOverride.IsEmpty() && Save->AccountId.IsValid() && ExpectedAccountId.IsValid() && Save->AccountId != ExpectedAccountId) return false;
     const FARPGCharacterSaveData& D = Save->Character;
+    if (SlotOverride.IsEmpty() && D.CharacterId.IsValid() && Character->CharacterId.IsValid() && D.CharacterId != Character->CharacterId) return false;
     Character->CharacterId = D.CharacterId; Character->RPGCharacterName = D.CharacterName;
     Character->SetActorLocationAndRotation(D.Location, D.Rotation, false, nullptr, ETeleportType::TeleportPhysics);
     if (Character->Combat) Character->Combat->SetRespawnTransform(Character->GetActorTransform());
@@ -302,8 +359,14 @@ bool UARPGSaveSubsystem::LoadCharacter(AActor* CharacterActor, FString SlotOverr
 
 bool UARPGSaveSubsystem::SaveWorld(FString WorldId, FString SlotOverride)
 {
+    return SaveWorldForAccount(ResolveWorldSaveAccountId(), MoveTemp(WorldId), MoveTemp(SlotOverride));
+}
+
+bool UARPGSaveSubsystem::SaveWorldForAccount(const FGuid& AccountId, FString WorldId, FString SlotOverride)
+{
     UWorld* W=GetWorld(); if(!W || W->GetNetMode()==NM_Client) return false;
     UARPGWorldSaveGame* Save=Cast<UARPGWorldSaveGame>(UGameplayStatics::CreateSaveGameObject(UARPGWorldSaveGame::StaticClass())); if(!Save)return false;
+    Save->ScopeAccountId=AccountId;
     FARPGWorldSaveData& D=Save->World; D.WorldId=WorldId; D.SavedAtUtc=FDateTime::UtcNow();
     for(TActorIterator<AARPGBuildPieceActor> It(W);It;++It)
     {
@@ -364,13 +427,21 @@ bool UARPGSaveSubsystem::SaveWorld(FString WorldId, FString SlotOverride)
         AARPGDungeonManager* M=*It; if(!M||!M->Definition||M->Definition->DefinitionId.IsNone())continue;
         FARPGDungeonSaveState R;R.DungeonId=M->Definition->DefinitionId;R.Encounters=M->Encounters;R.Checkpoint=M->CurrentCheckpoint;R.bComplete=M->bDungeonComplete;D.Dungeons.Add(R);
     }
-    const FString Slot=SlotOverride.IsEmpty()?MakeWorldSlotName(WorldId):SlotOverride; FAsyncSaveGameToSlotDelegate Delegate;Delegate.BindUObject(this,&UARPGSaveSubsystem::HandleAsyncSaveComplete);UGameplayStatics::AsyncSaveGameToSlot(Save,Slot,0,Delegate);return true;
+    const FString Slot=SlotOverride.IsEmpty()?MakeWorldSlotNameForAccount(AccountId,WorldId):SlotOverride; FAsyncSaveGameToSlotDelegate Delegate;Delegate.BindUObject(this,&UARPGSaveSubsystem::HandleAsyncSaveComplete);UGameplayStatics::AsyncSaveGameToSlot(Save,Slot,0,Delegate);return true;
 }
 
 bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
 {
-    UWorld* W=GetWorld(); if(!W||W->GetNetMode()==NM_Client)return false; const FString Slot=SlotOverride.IsEmpty()?MakeWorldSlotName(WorldId):SlotOverride;
+    return LoadWorldForAccount(ResolveWorldSaveAccountId(), MoveTemp(WorldId), MoveTemp(SlotOverride));
+}
+
+bool UARPGSaveSubsystem::LoadWorldForAccount(const FGuid& AccountId, FString WorldId, FString SlotOverride)
+{
+    UWorld* W=GetWorld(); if(!W||W->GetNetMode()==NM_Client)return false; const FString Slot=SlotOverride.IsEmpty()?MakeWorldSlotNameForAccount(AccountId,WorldId):SlotOverride;
     UARPGWorldSaveGame* Save=Cast<UARPGWorldSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot,0));if(!Save)return false;
+    // v10+ snapshots are cryptographically-untrusted local files but are still namespace-bound: never
+    // accept another account's world payload merely because a caller supplied a wrong SlotOverride.
+    if(Save->SaveVersion>=10 && Save->ScopeAccountId!=AccountId) return false;
     ARPGRecoverLegacyGuestWorldOwnerIdentity(W, Save);
     TMap<FGuid,AARPGBuildPieceActor*> Existing;
     for(TActorIterator<AARPGBuildPieceActor> It(W);It;++It) if(It->bRuntimePlaced&&It->BuildingId.IsValid())Existing.Add(It->BuildingId,*It);
@@ -536,6 +607,16 @@ bool UARPGSaveSubsystem::LoadWorld(FString WorldId, FString SlotOverride)
     return true;
 }
 
-bool UARPGSaveSubsystem::DoesCharacterSaveExist(const FGuid& CharacterId) const{return CharacterId.IsValid()&&UGameplayStatics::DoesSaveGameExist(MakeCharacterSlotName(CharacterId),0);}
-bool UARPGSaveSubsystem::DoesWorldSaveExist(FString WorldId) const{return UGameplayStatics::DoesSaveGameExist(MakeWorldSlotName(WorldId),0);}
+bool UARPGSaveSubsystem::DoesCharacterSaveExist(const FGuid& CharacterId) const
+{
+    return CharacterId.IsValid() && UGameplayStatics::DoesSaveGameExist(MakeCharacterSlotName(CharacterId), 0);
+}
+
+bool UARPGSaveSubsystem::DoesCharacterSaveExistForActor(AActor* CharacterActor) const
+{
+    const FString Slot = MakeCharacterSlotNameForActor(CharacterActor);
+    return !Slot.IsEmpty() && UGameplayStatics::DoesSaveGameExist(Slot, 0);
+}
+bool UARPGSaveSubsystem::DoesWorldSaveExist(FString WorldId) const{return DoesWorldSaveExistForAccount(ResolveWorldSaveAccountId(),MoveTemp(WorldId));}
+bool UARPGSaveSubsystem::DoesWorldSaveExistForAccount(const FGuid& AccountId,FString WorldId) const{return UGameplayStatics::DoesSaveGameExist(MakeWorldSlotNameForAccount(AccountId,MoveTemp(WorldId)),0);}
 void UARPGSaveSubsystem::HandleAsyncSaveComplete(const FString& SlotName,const int32 UserIndex,bool bSuccess){OnSaveComplete.Broadcast(SlotName,bSuccess);}

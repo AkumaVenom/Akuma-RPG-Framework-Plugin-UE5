@@ -1028,8 +1028,8 @@ if inventory_cpp_v2.exists():
 
 try:
     descriptor = json.loads((plugin_root / "AkumasRPGFramework.uplugin").read_text())
-    if descriptor.get("Version") != 21703 or descriptor.get("VersionName") != "2.17.3-alpha":
-        issues.append("package descriptor must identify v2.17.3-alpha")
+    if descriptor.get("Version") != 21805 or descriptor.get("VersionName") != "2.18.5-alpha":
+        issues.append("package descriptor must identify v2.18.5-alpha")
     plugin_refs = {entry.get("Name") for entry in descriptor.get("Plugins", []) if isinstance(entry, dict)}
     for module_only_name in ("GameplayTags", "GameplayTasks"):
         if module_only_name in plugin_refs:
@@ -1038,6 +1038,29 @@ try:
         issues.append(".uplugin must enable Niagara for v1.6 combat feedback")
 except Exception as exc:
     issues.append(f"invalid .uplugin JSON: {exc}")
+
+# v2.18.1 UE5.8 frontend/network compile-signature compatibility.
+network_h_v2181 = root / "Public" / "Subsystems" / "ARPGNetworkSubsystem.h"
+network_cpp_v2181 = root / "Private" / "Subsystems" / "ARPGNetworkSubsystem.cpp"
+frontend_widgets_h_v2181 = root / "Public" / "Frontend" / "ARPGFrontendWidgets.h"
+if network_h_v2181.exists() and network_cpp_v2181.exists():
+    network_h_text = network_h_v2181.read_text(errors="replace")
+    network_cpp_text = network_cpp_v2181.read_text(errors="replace")
+    for required in ("ENetworkFailure::Type FailureType", "ETravelFailure::Type FailureType"):
+        if required not in network_h_text or required not in network_cpp_text:
+            issues.append(f"v2.18.1 UE5.8 network/travel failure delegate signature missing: {required}")
+    for forbidden in ("ENetworkFailure FailureType", "ETravelFailure FailureType"):
+        if forbidden in network_cpp_text:
+            issues.append(f"v2.18.1 must not use invalid UE5.8 failure enum signature: {forbidden}")
+if frontend_widgets_h_v2181.exists():
+    frontend_widgets_text = frontend_widgets_h_v2181.read_text(errors="replace")
+    for required in (
+        "BP_OnLoginStatusChanged(const FText& Message, bool bIsError)",
+        "BP_OnMainMenuRefreshed(const FString& Username, FARPGFrontendSessionSettings Settings)",
+        "BP_OnMainMenuStatusChanged(const FText& Message, bool bIsError)",
+    ):
+        if required not in frontend_widgets_text:
+            issues.append(f"v2.18.1 UE5.8 UHT frontend event signature missing: {required}")
 
 
 # v2.6 ambient NPC social interaction requirements.
@@ -2085,8 +2108,8 @@ if all(p.exists() for p in paths_2150):
             issues.append("v2.16.11 Settlement Paths must be excluded from structural/tree occupancy work")
         for required in ("Path point is too close to the previous point", "Path point is too far from the previous point", "Place first path point", "Place next path point", "Continue until Cancel"):
             if required not in bwc21611: issues.append(f"v2.16.11 native Settlement Path HUD feedback missing: {required}")
-        if svh21611.count("SaveVersion = 5") < 1 or "SaveVersion = 9" not in svh21611:
-            issues.append("v2.16.11 save schema must keep character v5 and advance world save to v9")
+        if svh21611.count("SaveVersion = 5") < 1 or "SaveVersion = 10" not in svh21611:
+            issues.append("current save schema must keep character v5 and world v10 while retaining v2.16.11 v9 migration")
         if "SaveVersion>=9" not in svc21611 or "RestorePathGeometry" not in svc21611:
             issues.append("v2.16.11 world-save v9 Settlement Path geometry restore is missing")
 
@@ -2717,8 +2740,8 @@ if all(p.exists() for p in paths_2150):
     svh215 = save_h_2140.read_text(errors="replace"); svc215 = save_cpp_2140.read_text(errors="replace"); th215 = types_h_2140.read_text(errors="replace")
     for required in ("bConstructionComplete", "ConstructionRemainingSeconds", "bDoorOpen", "bWindowOpen", "bLightOn"):
         if required not in th215: issues.append(f"v2.15.0 building persistence state missing: {required}")
-    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 9" not in svh215:
-        issues.append("v2.16.11 world save schema must be v9 while character save remains v5")
+    if svh215.count("SaveVersion = 5") < 1 or "SaveVersion = 10" not in svh215:
+        issues.append("current world save schema must be v10 while character save remains v5 and v9 migration remains supported")
     if "SaveVersion>=6 ? R.bWindowOpen : false" not in svc215:
         issues.append("v2.15.54 world-save v7 migration must retain v6 Window-state compatibility")
     for required in ("RestoreConstructionState", "RestoreDoorOpenState", "RestoreWindowOpenState", "RestoreLightState", "ProcessOfflineElapsed()"):
@@ -2741,7 +2764,11 @@ if all(p.exists() for p in paths_2150):
             if required not in acc21512: issues.append(f"v2.15.12 Guest identity account path missing: {required}")
         if "bDeferredGuestIdentityRecoveryOnce" not in ph21512:
             issues.append("v2.15.12 one-frame legacy Guest identity recovery guard is missing")
-        for required in ("if (Last.IsValid())", "Character->CharacterId = Last", "SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad)", "Accounts->RegisterCharacterId(Character->CharacterId)"):
+        # v2.18.2 supersedes the literal Last-variable path with GetOrCreateLastCharacterId(), while preserving
+        # the same stable Guest/account recovery contract and deferred fallback.
+        if "Accounts->GetOrCreateLastCharacterId()" not in pc21512 and not ("if (Last.IsValid())" in pc21512 and "Character->CharacterId = Last" in pc21512):
+            issues.append("v2.15.12/v2.18.2 stable Guest/account character auto-load resolution is missing")
+        for required in ("SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad)", "Accounts->RegisterCharacterId(Character->CharacterId)"):
             if required not in pc21512: issues.append(f"v2.15.12 stable Guest character auto-load missing: {required}")
         if "Last.IsValid() && Accounts->IsLoggedIn()" in pc21512:
             issues.append("v2.15.12 must not discard a valid Guest CharacterId solely because no account login is active")
@@ -2749,6 +2776,91 @@ if all(p.exists() for p in paths_2150):
             if required not in svc215: issues.append(f"v2.15.12 legacy Guest building-owner migration missing: {required}")
 else:
     issues.append("v2.15.0 settlement building/storage/production source set is incomplete")
+
+
+# v2.18.2 frontend -> gameplay handoff/runtime identity invariants.
+account_h_v2182 = root / "Public" / "Subsystems" / "ARPGAccountSubsystem.h"
+account_cpp_v2182 = root / "Private" / "Subsystems" / "ARPGAccountSubsystem.cpp"
+frontend_pc_cpp_v2182 = root / "Private" / "Frontend" / "ARPGFrontendPlayerController.cpp"
+player_pc_h_v2182 = root / "Public" / "Actors" / "ARPGPlayerController.h"
+player_pc_cpp_v2182 = root / "Private" / "Actors" / "ARPGPlayerController.cpp"
+if all(p.exists() for p in (account_h_v2182, account_cpp_v2182, frontend_pc_cpp_v2182, player_pc_h_v2182, player_pc_cpp_v2182)):
+    ah = account_h_v2182.read_text(errors="replace")
+    ac = account_cpp_v2182.read_text(errors="replace")
+    fc = frontend_pc_cpp_v2182.read_text(errors="replace")
+    ph = player_pc_h_v2182.read_text(errors="replace")
+    pc = player_pc_cpp_v2182.read_text(errors="replace")
+    for required in ("GetOrCreateLastCharacterId", "NewAccount.LastCharacterId = FGuid::NewGuid()", "NewAccount.CharacterIds.Add(NewAccount.LastCharacterId)"):
+        if required not in ah + ac: issues.append(f"v2.18.2 stable pre-travel CharacterId contract missing: {required}")
+    for required in ("PrepareForGameplayTravel", "FInputModeGameOnly", "SetIgnoreMoveInput(false)", "SetIgnoreLookInput(false)"):
+        if required not in fc: issues.append(f"v2.18.2 frontend gameplay-input handoff missing: {required}")
+    for required in ("bRestoreGameplayInputOnBeginPlay", "ApplyGameplayInputModeIfNeeded", "bProfileIdentitySpawnPending", "bResumeDeferredSpawn"):
+        if required not in ph + pc: issues.append(f"v2.18.2 gameplay possession/identity handoff missing: {required}")
+else:
+    issues.append("v2.18.2 frontend/gameplay handoff source set is incomplete")
+
+
+
+# v2.18.4 explicit gameplay GameMode travel contract invariants.
+settings_h_v2184 = root / "Public" / "ARPGDeveloperSettings.h"
+network_h_v2184 = root / "Public" / "Subsystems" / "ARPGNetworkSubsystem.h"
+network_cpp_v2184 = root / "Private" / "Subsystems" / "ARPGNetworkSubsystem.cpp"
+frontend_pc_cpp_v2184 = root / "Private" / "Frontend" / "ARPGFrontendPlayerController.cpp"
+frontend_widgets_cpp_v2184 = root / "Private" / "Frontend" / "ARPGFrontendWidgets.cpp"
+if all(p.exists() for p in (settings_h_v2184, network_h_v2184, network_cpp_v2184, frontend_pc_cpp_v2184, frontend_widgets_cpp_v2184)):
+    sh = settings_h_v2184.read_text(errors="replace")
+    nh = network_h_v2184.read_text(errors="replace")
+    nc = network_cpp_v2184.read_text(errors="replace")
+    fc = frontend_pc_cpp_v2184.read_text(errors="replace")
+    wc = frontend_widgets_cpp_v2184.read_text(errors="replace")
+    for required in ("TSoftClassPtr<AARPGGameMode> DefaultGameplayGameMode",):
+        if required not in sh: issues.append(f"v2.18.4 gameplay GameMode project setting missing: {required}")
+    for required in ("TSoftClassPtr<AARPGGameMode> GameplayGameMode", "ConfigureGameplayGameMode", "BuildGameplayTravelOptions"):
+        if required not in nh: issues.append(f"v2.18.4 explicit gameplay travel declaration missing: {required}")
+    for required in ("GameplayGameMode.LoadSynchronous()", "IsChildOf(AARPGGameMode::StaticClass())", "TEXT(\"game=%s\")", "BuildGameplayTravelOptions(false", "BuildGameplayTravelOptions(true", "?listen?Port=%d?ARPG_LAN=%d", "OpenLevel(World, MapName, true, Options)"):
+        if required not in nc: issues.append(f"v2.18.4 explicit gameplay GameMode travel contract missing: {required}")
+    if "Settings->DefaultGameplayGameMode" not in fc: issues.append("v2.18.4 frontend controller must configure the network subsystem with DefaultGameplayGameMode")
+    if "Network->LastNetworkMessage" not in wc: issues.append("v2.18.4 native Main Menu must surface gameplay travel configuration failures")
+else:
+    issues.append("v2.18.4 explicit gameplay GameMode travel source set is incomplete")
+
+# v2.18.5 account-scoped authoritative world persistence invariants.
+save_h_v2185 = root / "Public" / "Save" / "ARPGSaveGame.h"
+save_sub_h_v2185 = root / "Public" / "Subsystems" / "ARPGSaveSubsystem.h"
+save_sub_cpp_v2185 = root / "Private" / "Subsystems" / "ARPGSaveSubsystem.cpp"
+game_mode_h_v2185 = root / "Public" / "Actors" / "ARPGGameMode.h"
+game_mode_cpp_v2185 = root / "Private" / "Actors" / "ARPGGameMode.cpp"
+if all(p.exists() for p in (save_h_v2185, save_sub_h_v2185, save_sub_cpp_v2185, game_mode_h_v2185, game_mode_cpp_v2185)):
+    svh = save_h_v2185.read_text(errors="replace")
+    ssh = save_sub_h_v2185.read_text(errors="replace")
+    ssc = save_sub_cpp_v2185.read_text(errors="replace")
+    gmh = game_mode_h_v2185.read_text(errors="replace")
+    gmc = game_mode_cpp_v2185.read_text(errors="replace")
+    for required in ("SaveVersion = 10", "FGuid ScopeAccountId"):
+        if required not in svh: issues.append(f"v2.18.5 world-save scope header missing: {required}")
+    for required in ("MakeWorldSlotNameForAccount", "ResolveWorldSaveAccountId", "SaveWorldForAccount", "LoadWorldForAccount", "DoesWorldSaveExistForAccount"):
+        if required not in ssh: issues.append(f"v2.18.5 account-scoped world persistence declaration missing: {required}")
+    for required in ("ARPG_%s_World_%s", "ARPG_World_%s", "World->GetNetMode() == NM_Client", "World->GetNetMode() == NM_DedicatedServer", "Accounts->IsLoggedIn() ? Accounts->CurrentAccountId", "Save->ScopeAccountId=AccountId", "Save->SaveVersion>=10 && Save->ScopeAccountId!=AccountId"):
+        if required not in ssc: issues.append(f"v2.18.5 account-scoped world persistence runtime contract missing: {required}")
+    for required in ("ActiveWorldSaveWorldId", "ActiveWorldSaveAccountId", "ActiveWorldSaveSlotName"):
+        if required not in gmh: issues.append(f"v2.18.5 world-persistence runtime diagnostic missing: {required}")
+    for required in ("InitializeWorldPersistenceContext", "SaveWorldForAccount(ActiveWorldSaveAccountId", "LoadWorldForAccount(ActiveWorldSaveAccountId", "DoesWorldSaveExistForAccount(ActiveWorldSaveAccountId"):
+        if required not in gmc: issues.append(f"v2.18.5 stable authoritative world context missing: {required}")
+else:
+    issues.append("v2.18.5 account-scoped world persistence source set is incomplete")
+
+# v2.18.3 destination GameMode recovery invariants.
+frontend_gm_h_v2183 = root / "Public" / "Frontend" / "ARPGFrontendGameMode.h"
+frontend_gm_cpp_v2183 = root / "Private" / "Frontend" / "ARPGFrontendGameMode.cpp"
+if frontend_gm_h_v2183.exists() and frontend_gm_cpp_v2183.exists():
+    fgh = frontend_gm_h_v2183.read_text(errors="replace")
+    fgc = frontend_gm_cpp_v2183.read_text(errors="replace")
+    for required in ("BeginPlay() override", "RecoverDestinationAuthoredGameModeIfNeeded"):
+        if required not in fgh: issues.append(f"v2.18.3 frontend GameMode recovery declaration missing: {required}")
+    for required in ("WorldSettings->DefaultGameMode", "IsChildOf(AARPGFrontendGameMode::StaticClass())", "ARPG_GameModeRecovery", "game=%s?ARPG_GameModeRecovery=1", "OptionsString.Contains(TEXT(\"listen\")", "ParseOption(OptionsString, TEXT(\"Port\"))", "ParseOption(OptionsString, TEXT(\"ARPG_LAN\"))", "UGameplayStatics::OpenLevel(this, FName(*CurrentMap), true, RecoveryOptions)"):
+        if required not in fgc: issues.append(f"v2.18.3 authored destination GameMode recovery missing: {required}")
+else:
+    issues.append("v2.18.3 frontend destination GameMode recovery source set is incomplete")
 
 readme_2150 = plugin_root / "README.md"
 if readme_2150.exists():
@@ -2822,6 +2934,12 @@ if readme_2150.exists():
     if not release_documented("v2.17.1-alpha — Automatic Player Inventory Persistence Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.17.1 automatic player Inventory persistence root fix")
     if not release_documented("v2.17.2-alpha — Transactional Automatic Inventory + Quick Access Persistence Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.17.2 transactional automatic Inventory + Quick Access persistence root fix")
     if not release_documented("v2.17.3-alpha — Deterministic Fresh-Character Persistence Bootstrap Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.17.3 deterministic fresh-character persistence bootstrap root fix")
+    if not release_documented("v2.18.0-alpha — Native Login/Main Menu + Direct-IP Profile Identity Networking"): issues.append("README or Docs/CHANGELOG.md must document v2.18.0 frontend/login/direct-IP profile identity networking")
+    if not release_documented("v2.18.1-alpha — UE5.8 Frontend/Network Compile Compatibility Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.18.1 UE5.8 frontend/network compile compatibility root fix")
+    if not release_documented("v2.18.2-alpha — Deterministic Frontend-to-Gameplay Possession & Fresh-Profile Bootstrap Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.18.2 frontend-to-gameplay possession/bootstrap root fix")
+    if not release_documented("v2.18.3-alpha — Destination-Authored GameMode Travel Recovery Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.18.3 destination-authored GameMode travel recovery root fix")
+    if not release_documented("v2.18.4-alpha — Explicit Gameplay GameMode Travel Contract Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.18.4 explicit gameplay GameMode travel contract root fix")
+    if not release_documented("v2.18.5-alpha — Account-Scoped Single-Player & Listen-Host World Persistence Root Fix"): issues.append("README or Docs/CHANGELOG.md must document v2.18.5 account-scoped world persistence root fix")
 
     persistence_cpp = (plugin_root / "Source/AkumasRPGFramework/Private/Components/ARPGPersistenceComponent.cpp").read_text(errors="replace")
     ai_character_cpp_v21540 = (plugin_root / "Source/AkumasRPGFramework/Private/Actors/ARPGAICharacter.cpp").read_text(errors="replace")
@@ -2854,9 +2972,11 @@ if inv_h_persist.exists() and inv_cpp_persist.exists() and persist_cpp_v2171.exi
         issues.append("v2.17.1 Inventory must coordinate Starting Items with initial character persistence")
     if "bStartingItemsDelayPrimed" in inv_h_text or "bStartingItemsDelayPrimed" in inv_cpp_text:
         issues.append("v2.17.1 Starting Items must not rely on fixed BeginPlay tick-delay ordering")
-    for required in ("DoesCharacterSaveExist(", "ResolveInitialAutoLoad", "bAutomaticSaveSuppressedAfterLoadFailure", "SaveNowImmediate()"):
+    for required in ("ResolveInitialAutoLoad", "bAutomaticSaveSuppressedAfterLoadFailure", "SaveNowImmediate()"):
         if required not in persist_text:
             issues.append(f"v2.17.1 automatic persistence missing required safety path: {required}")
+    if "DoesCharacterSaveExist(" not in persist_text and "DoesCharacterSaveExistForActor(" not in persist_text:
+        issues.append("v2.17.1 automatic persistence missing required safety path: character save existence check")
 if save_h_v2171.exists() and save_cpp_v2171.exists():
     save_h_text = save_h_v2171.read_text(errors="replace")
     save_cpp_text = save_cpp_v2171.read_text(errors="replace")

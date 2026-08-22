@@ -35,3 +35,29 @@ assert "UCanvasPanelSlot*Slot=Canvas->AddChildToCanvas(Panel)" not in settlement
 assert "UCanvasPanelSlot* HUDPanelSlot" in settlement_widgets or "UCanvasPanelSlot*HUDPanelSlot" in settlement_widgets
 
 print("Packaging compile compatibility model: PASS")
+
+# v2.18.1 UE5.8 frontend/network compile contracts.
+network_h = (ROOT / "Source/AkumasRPGFramework/Public/Subsystems/ARPGNetworkSubsystem.h").read_text(errors="replace")
+network_cpp = (ROOT / "Source/AkumasRPGFramework/Private/Subsystems/ARPGNetworkSubsystem.cpp").read_text(errors="replace")
+frontend_widgets_h = (ROOT / "Source/AkumasRPGFramework/Public/Frontend/ARPGFrontendWidgets.h").read_text(errors="replace")
+
+# FEngine network/travel failure delegates use the nested ::Type enum aliases in UE5.8.
+for required in (
+    "ENetworkFailure::Type FailureType",
+    "ETravelFailure::Type FailureType",
+):
+    assert required in network_h, required
+    assert required in network_cpp, required
+assert "ENetworkFailure FailureType" not in network_cpp
+assert "ETravelFailure FailureType" not in network_cpp
+
+# UHT emits reflected FText/FString Blueprint event parameters as const references; declarations
+# must match generated definitions exactly or the generated .gen.cpp cannot compile.
+for required in (
+    "BP_OnLoginStatusChanged(const FText& Message, bool bIsError)",
+    "BP_OnMainMenuRefreshed(const FString& Username, FARPGFrontendSessionSettings Settings)",
+    "BP_OnMainMenuStatusChanged(const FText& Message, bool bIsError)",
+):
+    assert required in frontend_widgets_h, required
+
+print("v2.18.1 UE5.8 frontend/network signature compatibility: PASS")

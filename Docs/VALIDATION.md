@@ -1,12 +1,82 @@
-# Source Validation — Akuma's RPG Framework v2.17.3-alpha
+> **v2.18.5:** World persistence is account-scoped for logged-in standalone/listen-host authority. World save v10 binds `ScopeAccountId`; remote clients never own a local world save.
 
-Package: **Akuma's RPG Framework — v2.17.3-alpha**  
+## v2.18.5 account-scoped world persistence acceptance
+
+1. Create/login Account A, enter Single Player, build at least one structure and save/exit. Runtime `ARPGGameMode -> Active World Save Slot Name` must contain Account A's GUID.
+2. Login Account B and enter the same gameplay map. Account A's structures must **not** load. Build a visibly different structure and save/exit. Account B must have a different `Active World Save Slot Name`.
+3. Return to Account A. Only Account A's world/buildings must restore; Account B's structures must not appear. Repeat in the opposite direction.
+4. Verify character Inventory/Quick Access remain independently restored through existing v5 character slots.
+5. Host & Play as Account A. Join as Account B. Both players must see/manipulate the same replicated host world; the server's active world slot remains Account A's slot before and after Account B joins/leaves.
+6. A joined client must not create/load its own local world slot for the host session. Client character saves remain host-authoritative and account-specific.
+7. Confirm world save header is v10 and contains the host/standalone `ScopeAccountId`; loading a v10 payload with a different requested account is rejected.
+8. Existing legacy `ARPG_World_<WorldId>` v9 data must not auto-load into either logged-in account. Guest/no-login direct gameplay can still use that legacy namespace.
+9. Run `Tools/test_account_scoped_world_persistence_model.py`, `Tools/validate_source.py`, and the full regression suite.
+
+> **v2.18.4:** Frontend local travel now requires **Default Gameplay GameMode** and explicitly forces that `ARPGGameMode` child through Unreal `game=` URL options for Single Player/Host & Play. This supersedes runtime-only GameMode guessing; v2.18.3 recovery remains a secondary fail-safe.
+
+# Source Validation — Akuma's RPG Framework v2.18.5-alpha
+
+Package: **Akuma's RPG Framework — v2.18.5-alpha**  
 Target: **Unreal Engine 5.8 / 5.8.1**
+
+## v2.18.4 explicit gameplay GameMode travel acceptance
+
+1. Set Default Gameplay Map to the gameplay level and Default Gameplay GameMode to the project `ARPGGameMode` Blueprint.
+2. From MainMenu choose Single Player; verify Output Log reports the destination map, exact gameplay GameMode class and a `game=` option.
+3. In the destination verify the runtime GameMode is the configured gameplay class, not `ARPGFrontendGameMode`; possession/input and fresh Starting Items/Quick Access must initialize normally.
+4. Host & Play must use the same explicit GameMode plus `listen`, Port and ARPG_LAN options.
+5. Clear Default Gameplay GameMode and confirm Single Player/Host refuse travel and surface a configuration error in the Main Menu.
+6. Join by IP must not carry a client `game=` override; the remote server remains authoritative.
+
 
 ## Important limitation
 
-The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 buildable Lights remain confirmed as an additive non-blocking layer. v2.16.0 adds settlement Beds/Hubs through a separate horizontal-surface contract and leaves the protected Stair/Wall-family boundary functions unchanged. v2.16.11 adds Settlement Paths through a separate non-structural continuous spline-placement contract. v2.16.12 fixes the project-observed turn tangent foldover while retaining that architecture. Runtime PIE confirmation is still required for this release.
+The automated checks below are source/model validation. They are not a substitute for UnrealHeaderTool/MSVC/PIE. v2.15.43 remains the project-confirmed Stair/story geometry baseline, the Window placement/interaction path through v2.15.48 is project-confirmed, and v2.15.53 is the completed four-cardinal Stair/Wall-family boundary baseline. v2.15.54 buildable Lights remain confirmed as an additive non-blocking layer. v2.16.0 adds settlement Beds/Hubs through a separate horizontal-surface contract and leaves the protected Stair/Wall-family boundary functions unchanged. v2.16.11 adds Settlement Paths through a separate non-structural continuous spline-placement contract. v2.16.12 fixes the project-observed turn tangent foldover while retaining that architecture. v2.18.0 adds frontend/login and a pre-pawn direct-IP profile handshake without claiming arbitrary project Blueprint variables become replicated automatically. v2.18.1 corrects the UE5.8 compile signatures for engine network/travel failure delegates and UHT-generated frontend Blueprint events without changing those runtime contracts. Runtime PIE/standalone/package confirmation is still required for this release.
 
+### Current automated package result
+
+- `Tools/validate_source.py`: **0 issues / 0 warnings**
+- Exported framework classes: **130**
+- C++ source files: **211**
+- C++ source lines: **43,156**
+- Regression/model test files: **46/46 passing**
+- Source manifest: **298 entries** including the v2.18.3 destination-GameMode recovery regression; final package verification must report zero missing, mismatched or extra tracked files.
+
+
+
+
+
+## v2.18.3 destination-authored GameMode recovery acceptance
+
+- From a blank `MainMenu` using `ARPGFrontendGameMode`, enter Single Player into a gameplay map whose World Settings explicitly use the project `ARPGGameMode` child. Confirm the destination runtime GameMode is the authored gameplay class, never the frontend class.
+- Reproduce in PIE/Standalone. If UE initially instantiates the frontend class on the destination, confirm `LogARPG` reports the one-shot recovery and the same map reopens under its authored gameplay GameMode. There must be no recovery loop.
+- Confirm the recovered gameplay world spawns/possesses the normal player pawn, restores GameOnly input, and fresh accounts receive Starting Items/Quick Access once; an existing save restores exact state.
+- Host & Play must likewise end in the authored gameplay GameMode and preserve `?listen`, port/LAN behavior after the corrected transition. Direct-IP clients continue to use the host/server GameMode and must not inject a client-local GameMode override.
+- Run `Tools/test_frontend_gamemode_travel_recovery_model.py`, `Tools/test_frontend_gameplay_handoff_model.py`, the full regression suite and `Tools/validate_source.py`.
+
+## v2.18.1 UE5.8 frontend/network compile acceptance
+
+- Build the **Development Editor** target with UE5.8/5.8.1 and confirm `ARPGNetworkSubsystem.cpp` compiles with `ENetworkFailure::Type` and `ETravelFailure::Type` in both declarations and definitions.
+- Confirm UHT-generated `ARPGFrontendWidgets.gen.cpp` compiles the Login/Main Menu status/refresh events without C2511/C2352 signature mismatches; the public declarations must keep `const FText&` / `const FString&` for reflected text/string event inputs.
+- Run `Tools/test_packaging_compile_compat_model.py`; it must explicitly validate both contracts. Then run the full historical regression suite and `Tools/validate_source.py`.
+- After compiling, repeat the v2.18.0 login/create/single-player/listen-host/direct-IP acceptance below; v2.18.1 is compile-only and must not change its persistence or network authority behavior.
+
+## v2.18.0 frontend/login/direct-IP profile identity acceptance
+
+Source/model validation protects secret isolation, account-profile creation, native/reskinnable frontend classes, network/travel failure handling, pre-pawn identity gating, duplicate identity rejection, immutable connection identity and account/actor-specific character save namespaces. Project-side UE5.8 testing must additionally verify:
+
+1. Create a blank `MainMenu` map using `ARPGFrontendGameMode`; with no custom widgets, confirm the native Login UI appears with mouse/UI-only input and Create Account/Login/Quit work.
+2. Create Account A. Confirm Main Menu appears and the account profile metadata save is created; restart the frontend and confirm Account A can log in with its password. Password fields must clear after an attempt.
+3. Start **Single Player** and verify the proven v2.17.3 bootstrap: first entry receives Starting Items once; alter Inventory + Quick Access, wait for automatic save or call `SaveNow`, relaunch through Login, and verify exact state restores.
+4. Login as Account A and choose **Host & Play**. Verify listen-server gameplay opens on the configured port, host pawn spawns, world authority remains on the host and Persistence runtime diagnostics resolve an Account A character slot.
+5. From a separate standalone/process, login/create Account B and Join the host by IP/hostname. Verify the remote connection does not spawn its gameplay pawn until profile identity is accepted, then resolves a CharacterId/save slot different from Account A.
+6. On Account B, change Inventory, Quick Access, Mining/progression and Storage/Production state as appropriate. Call the existing UI `SaveNow`; verify `OnManualCharacterSaveResult` reports the host-authoritative result. Disconnect/rejoin the same host and verify the host restores Account B's character snapshot without contaminating Account A.
+7. Attempt a simultaneous second connection using the same AccountId/CharacterId. The server must reject the duplicate rather than spawn two characters sharing a persistence identity.
+8. Attempt an unavailable/invalid IP. Verify address validation or Unreal network/travel failure is shown in the frontend and, when configured, returns to Main Menu cleanly.
+9. Verify raw password/salt/verifier data never appears in network RPC parameters, character/world saves or account-profile metadata. Treat local profile login as trusted/local separation only.
+10. Verify existing server-authoritative systems still replicate in two-player testing: Inventory/equipment, Quick Access owner state, combat, Stats/Mining, building/ownership, Doors/Windows/Lights, Storage transfers, Production queues, Settlements and gathering rewards. Custom project state still requires normal Unreal replication authoring.
+11. Test same-account reconnect against a **different host machine** and confirm expectations are realm/host-specific unless the project supplies a trusted backend/cloud persistence layer; do not treat client-local saves as authority.
+12. Character save must remain v5, world save v9 and account-profile metadata schema v1. Run `Tools/test_frontend_login_direct_ip_network_model.py`, `Tools/test_multiplayer_replication_contract_model.py`, `Tools/validate_source.py` and the complete historical regression suite.
 
 ## v2.17.3 fresh-character persistence bootstrap acceptance
 
@@ -909,3 +979,14 @@ Recommended PIE acceptance test:
 6. During PIE inspect the inherited Persistence component runtime fields: `Initial Auto Load Resolved` should become true; on an existing save `Loaded Existing Character Save` and `Initial Character Save Found` should both be true.
 7. Optional failure-safety test on a disposable copy of the save: make the expected character slot unreadable/corrupt. Confirm `Initial Character Save Found=true`, `Loaded Existing Character Save=false`, `Automatic Save Suppressed After Load Failure=true`, Starting Items are not injected, and stopping PIE does not overwrite the detected file.
 8. Repeat on listen server + client. Only authority mutates/saves Inventory; owner replication should present the restored runtime state on the owning client.
+
+
+## v2.18.2 frontend/gameplay handoff acceptance
+
+1. Create a brand-new local account from the native Login UI.
+2. Choose Single Player. Confirm the frontend disappears and gameplay immediately accepts WASD/mouse input.
+3. Confirm the gameplay pawn is normally possessed and CharacterMovement falls/settles at PlayerStart rather than remaining frozen as an unpossessed pawn.
+4. Inspect Persistence: first entry must resolve `Fresh Character - No Save`.
+5. Confirm authored Starting Items, auto-equip and starting Quick Access assignments appear.
+6. Save, return/relaunch, login to the same account and enter Single Player again. Persistence must resolve `Loaded Existing Save` and restore exact Inventory/Quick Access.
+7. Repeat Host & Play and direct-IP Join with separate accounts; each connection must keep its own stable AccountId + CharacterId.

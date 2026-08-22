@@ -134,7 +134,7 @@ for forbidden in ('GrantOneReward(', 'GrantNormalDropArray(', 'GrantBonusDrops('
 
 # Existing generic Skill persistence carries Mining without a character schema migration; renewable rock depletion
 # deliberately remains runtime/resource-spawn state like ARPGTree, while world build persistence remains v9.
-assert 'SaveVersion = 9' in SAVE_H
+assert 'SaveVersion = 10' in SAVE_H
 assert 'Skills' in SKILL_H and 'SaveGame' in SKILL_H
 
 # Standard tag conventions and documentation must ship with the feature.

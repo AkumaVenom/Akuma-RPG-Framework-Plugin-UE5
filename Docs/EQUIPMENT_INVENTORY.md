@@ -1,4 +1,16 @@
+> **v2.18.4:** Frontend local travel now requires **Default Gameplay GameMode** and explicitly forces that `ARPGGameMode` child through Unreal `game=` URL options for Single Player/Host & Play. This supersedes runtime-only GameMode guessing; v2.18.3 recovery remains a secondary fail-safe.
+
+> **v2.18.3:** Added a destination-GameMode fail-safe for UE5.8 PIE: if a gameplay map loads but `ARPGFrontendGameMode` is still instantiated, the frontend reads that destination World Settings `DefaultGameMode` and performs one guarded absolute reopen with the authored gameplay class explicitly forced. v2.18.2 input/identity/bootstrap behavior remains unchanged.
+
 # Equipment & Starting Inventory — v2.2.1-alpha
+
+> **v2.18.2:** Frontend-to-gameplay travel now explicitly restores gameplay input and guarantees a stable account CharacterId before pawn spawn/persistence; fresh Starting Items/Quick Access bootstrap remains deterministic.
+
+
+## Multiplayer save namespace (v2.18.1 retaining v2.18.0 behavior)
+
+v2.18.0 does not change Inventory replication or item-instance authority. It changes **which character save namespace authority writes** in listen-server multiplayer: after the pre-pawn profile handshake, remote players resolve character saves from their accepted PlayerController AccountId + CharacterId instead of the listen host's local account. Inventory restoration therefore remains exact per player, including durable runtime instance GUIDs and intentionally empty saved inventories. See `Docs/FRONTEND_LOGIN_NETWORKING.md`.
+
 
 ## Physical attachment exclusivity (v2.13.1)
 

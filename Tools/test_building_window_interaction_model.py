@@ -60,7 +60,7 @@ require(bui, "ARPGWindowOccupiesWindowWallHost", "ARPGFindHostedWindowForWindowW
 
 # World persistence has advanced to schema-v7 for buildable lights; the v6 Window migration remains explicit and older worlds still restore Windows closed.
 require(types, "bWindowOpen = false")
-require(saveh, "SaveVersion = 9")
+require(saveh, "SaveVersion = 10")
 require(savec, "R.bWindowOpen=Window->IsWindowOpen()",
         "RestoreWindowOpenState(Save->SaveVersion>=6 ? R.bWindowOpen : false)")
 

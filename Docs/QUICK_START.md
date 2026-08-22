@@ -1,3 +1,14 @@
+> **v2.18.5:** Logged-in Single Player now gets a separate persistent world per account; Host & Play uses the host account as the shared authoritative world. No extra Blueprint setup is required.
+
+> **v2.18.4:** Frontend local travel now requires **Default Gameplay GameMode** and explicitly forces that `ARPGGameMode` child through Unreal `game=` URL options for Single Player/Host & Play. This supersedes runtime-only GameMode guessing; v2.18.3 recovery remains a secondary fail-safe.
+
+> **v2.18.3:** Added a destination-GameMode fail-safe for UE5.8 PIE: if a gameplay map loads but `ARPGFrontendGameMode` is still instantiated, the frontend reads that destination World Settings `DefaultGameMode` and performs one guarded absolute reopen with the authored gameplay class explicitly forced. v2.18.2 input/identity/bootstrap behavior remains unchanged.
+
+> **v2.18.1 frontend note:** for the ready login/main-menu flow, create one blank project level (for example `MainMenu`), set its GameMode Override to `ARPGFrontendGameMode`, configure Default Main Menu Map + Default Gameplay Map under Project Settings -> Game -> Akuma's RPG Framework, and use the native Login/Main Menu widgets or Blueprint subclasses. See `Docs/FRONTEND_LOGIN_NETWORKING.md`.
+
+> **v2.18.2:** Frontend-to-gameplay travel now explicitly restores gameplay input and guarantees a stable account CharacterId before pawn spawn/persistence; fresh Starting Items/Quick Access bootstrap remains deterministic.
+
+
 > **v2.17.0 Mining note:** derive harvestable Stone/Ore/Gem nodes from `ARPGMineableRock`, equip a real `Item.Tool.Pickaxe` runtime item, and use Basic Attack for one free strike or `InteractWorld` / `Start Mining From View` for repeated harvesting. Native Mining uses the RuneScape-style 1–99 curve by default. See `Docs/MINING.md`.
 
 > **v2.16.10 settlement worker note:** in `ARPGSettlementDefinition -> Settlement | Woodcutting | Tool Presentation`, assign your Axe Item Definition to `Villager Woodcutting Tool Item`. Its existing equipped mesh/socket/relative transform is shown automatically while the villager travels to/chops a tree and removed when roaming/home; no villager Inventory item is required.
@@ -16,6 +27,21 @@
 
 > **v2.15.54 note:** The v2.15.53 Stair/Wall-family boundary behavior is preserved unchanged. New `Piece Kind = Light` fixtures use a separate surface-placement path: stick/floor lights can seat on terrain, Foundations and Floors; wall lights can mount on either face of completed `Wall`, `WindowWall` and `Doorway`. The existing Interact button toggles replicated/persistent light + Niagara/Cascade state with smooth fading and no fuel requirement. The confirmed Wood Window remains `Window Insert Offset Z = +20`, and finished Foundation/Floor/Ceiling story planes remain `0,300,600...`. — Akuma's RPG Framework
 
+
+## 0. Frontend, Login and Main Menu (v2.18+)
+
+For the complete local-profile/direct-IP flow:
+
+1. Create an **Empty Level** named, for example, `MainMenu`.
+2. In that level's World Settings set **GameMode Override = `ARPGFrontendGameMode`** (or a Blueprint child).
+3. Under **Project Settings -> Game -> Akuma's RPG Framework**, set **Default Main Menu Map** and **Default Gameplay Map**. Keep **Require Local Profile For Gameplay** enabled for the ready flow.
+4. For a packaged game set **Project Settings -> Maps & Modes -> Game Default Map = MainMenu**.
+5. Run the Main Menu level. The native Login screen supports **Create Account / Login**; the native Main Menu then supports **Single Player / Host & Play / Join by IP / Logout / Quit**.
+6. To reskin, derive Widget Blueprints from `ARPGLoginWidget` and `ARPGMainMenuWidget`, assign them on a Blueprint child of `ARPGFrontendPlayerController`, and use that controller from a Blueprint child of `ARPGFrontendGameMode`.
+
+Do not send passwords to a host or implement a client-authoritative character upload. v2.18's direct-IP handshake sends only locally verified profile identity and the listen server owns the connected character save. See `Docs/FRONTEND_LOGIN_NETWORKING.md` before multiplayer QA.
+
+World persistence is automatic too: logged-in Single Player uses `ARPG_<AccountId>_World_<WorldId>`, Host & Play uses the host account for the shared world, and joined clients never load a local world save. v2.18.5 world save is v10.
 
 ## Definition assets: create Data Assets, not Blueprint Classes
 

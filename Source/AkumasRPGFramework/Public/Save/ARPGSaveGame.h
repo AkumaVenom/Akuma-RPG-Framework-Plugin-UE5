@@ -22,8 +22,11 @@ class AKUMASRPGFRAMEWORK_API UARPGWorldSaveGame : public USaveGame
 {
     GENERATED_BODY()
 public:
-    // v9 adds persistent Settlement Path local endpoints; v8 Bed/residents, v7 Light, v6 Window and v5 construction/Door fields remain unchanged.
-    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 9;
+    // v10 binds a world snapshot to its authoritative local account scope. v9 Settlement Path, v8 Bed/residents,
+    // v7 Light, v6 Window and v5 construction/Door migration behavior remains unchanged.
+    UPROPERTY(SaveGame, BlueprintReadWrite) int32 SaveVersion = 10;
+    /** Invalid for Guest/dedicated-server legacy scope; valid for logged-in Single Player and listen-host worlds. */
+    UPROPERTY(SaveGame, BlueprintReadWrite) FGuid ScopeAccountId;
     UPROPERTY(SaveGame, BlueprintReadWrite) FARPGWorldSaveData World;
 };
 
@@ -48,4 +51,24 @@ public:
     UPROPERTY(SaveGame) TArray<FARPGLocalAccountRecord> Accounts;
     /** Stable local identity used by the no-login/Guest profile so character/build ownership survives restarts. */
     UPROPERTY(SaveGame) FGuid GuestCharacterId;
+};
+
+/**
+ * Per-account local profile metadata. Password material deliberately remains in the private local
+ * account index; this file contains only non-secret frontend/persistence preferences.
+ */
+UCLASS()
+class AKUMASRPGFRAMEWORK_API UARPGAccountProfileSave : public USaveGame
+{
+    GENERATED_BODY()
+public:
+    UPROPERTY(SaveGame, BlueprintReadOnly) int32 SaveVersion = 1;
+    UPROPERTY(SaveGame, BlueprintReadOnly) FGuid AccountId;
+    UPROPERTY(SaveGame, BlueprintReadOnly) FString Username;
+    UPROPERTY(SaveGame, BlueprintReadOnly) FDateTime CreatedUtc;
+    UPROPERTY(SaveGame, BlueprintReadOnly) FDateTime LastLoginUtc;
+    UPROPERTY(SaveGame, BlueprintReadOnly) FString LastJoinAddress;
+    UPROPERTY(SaveGame, BlueprintReadOnly) int32 LastListenPort = 7777;
+    UPROPERTY(SaveGame, BlueprintReadOnly) bool bLastLAN = true;
+    UPROPERTY(SaveGame, BlueprintReadOnly) FName LastGameplayMap = NAME_None;
 };

@@ -15,6 +15,7 @@ enum class EARPGInitialCharacterPersistenceState : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FARPGInitialCharacterPersistenceResolved, bool, bLoadedExistingSave, bool, bExistingSaveFound);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FARPGManualCharacterSaveResult, bool, bSuccess, FText, Message);
 
 UCLASS(ClassGroup=(ARPG), meta=(BlueprintSpawnableComponent))
 class AKUMASRPGFRAMEWORK_API UARPGPersistenceComponent : public UActorComponent
@@ -36,6 +37,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Persistence|Automatic State Save", meta=(DisplayName="Save Inventory And Quick Access Changes Automatically")) bool bAutoSaveCharacterStateChanges = true;
     /** Quiet period after the most recent state mutation before the automatic character snapshot is committed. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Persistence|Automatic State Save", meta=(ClampMin="0.05", UIMin="0.05", Units="s", EditCondition="bAutoSaveCharacterStateChanges")) float CharacterStateSaveDebounceSeconds = 1.5f;
+    /** Minimum authority-side interval between explicit UI SaveNow requests; automatic persistence is unaffected. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Persistence|Manual Save", meta=(ClampMin="0.0", UIMin="0.0", Units="s")) float ManualSaveRequestCooldownSeconds = 2.0f;
 
     /** True while an Inventory / Quick Access mutation is waiting for its debounced automatic save. */
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Persistence|Runtime") bool bCharacterStateSavePending = false;
@@ -57,12 +60,18 @@ public:
     /** Exact character slot used for the initial lookup/creation. */
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Persistence|Runtime") FString InitialResolvedCharacterSaveSlot;
     UPROPERTY(BlueprintAssignable, Category="Persistence|Runtime") FARPGInitialCharacterPersistenceResolved OnInitialCharacterPersistenceResolved;
+    /** Result of an explicit SaveNow request. Joined clients receive the host-authoritative result here. */
+    UPROPERTY(BlueprintAssignable, Category="Persistence|Runtime") FARPGManualCharacterSaveResult OnManualCharacterSaveResult;
 
     /**
      * Writes a complete character snapshot synchronously. The ready automatic persistence path deliberately
      * serializes character writes so an older async snapshot can never finish after a newer Inventory state.
      */
     UFUNCTION(BlueprintCallable, Category="ARPG|Persistence") bool SaveNow();
+    /** Reliable owner -> authority bridge used when SaveNow is pressed by a joined client. */
+    UFUNCTION(Server, Reliable) void ServerRequestSaveNow();
+    /** Returns the host-authoritative result to the owning client UI. */
+    UFUNCTION(Client, Reliable) void ClientManualSaveResult(bool bSuccess, const FText& Message);
     /** Explicit alias for the same synchronous character commit used by automatic persistence. */
     UFUNCTION(BlueprintCallable, Category="ARPG|Persistence") bool SaveNowImmediate();
     /** Immediately commits any pending debounced Inventory / Quick Access save. */
@@ -77,6 +86,8 @@ public:
 protected:
     FTimerHandle AutoSaveTimer;
     FTimerHandle CharacterStateSaveTimer;
+    /** Authority-only anti-spam timestamp for explicit SaveNow requests. */
+    double LastManualSaveAuthorityTimeSeconds = -1.0e12;
     bool bDeferredGuestIdentityRecoveryOnce = false;
     bool bPersistenceDelegatesBound = false;
 
@@ -87,6 +98,7 @@ protected:
     void UnbindAutomaticStateSaveDelegates();
     void ScheduleCharacterStateSave();
     void HandleCharacterStateSaveTimer();
+    bool TryExecuteManualSaveOnAuthority(FText& OutMessage);
 
     UFUNCTION() void HandleInventoryChangedForPersistence();
     UFUNCTION() void HandleQuickAccessChangedForPersistence();

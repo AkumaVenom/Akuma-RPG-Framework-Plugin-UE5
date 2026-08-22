@@ -151,7 +151,7 @@ for token in (
 
 # World save v7 adds only Light state and preserves v6 Window migration behavior.
 assert "bool bLightOn = false;" in TYPES
-assert "SaveVersion = 9" in SAVE_H
+assert "SaveVersion = 10" in SAVE_H
 assert "Save->SaveVersion>=7 ? R.bLightOn" in SAVE_CPP
 for token in (
     "R.bLightOn=Light->IsLightOn()",

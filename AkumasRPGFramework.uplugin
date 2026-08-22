@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 21703,
-  "VersionName": "2.17.3-alpha",
+  "Version": 21805,
+  "VersionName": "2.18.5-alpha",
   "FriendlyName": "Akuma's RPG Framework",
-  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with transactional automatic player Inventory/Quick Access persistence, first-class RuneScape-style 1-99 Mining, replicated mineable Stone/Ore/Gem resource nodes, exact equipped pickaxe progression, Basic Attack/Interact harvesting, server-authoritative settlement building, Palbox-style Settlement Hubs, validated homes and assignable Beds, persistent faction-owned autonomous villagers with woodcutting, terrain-conforming player-built Settlement spline paths, build-aware renewable Tree/Mineable Rock replacement and respawn suppression, state-driven settlement villager woodcutting tool presentation, Dynamic Recast runtime build-navigation refresh using real walkable Stair surfaces, reskinnable settlement UI, structural snapping, interactive persistent buildable lighting, construction visuals, storage/production, player crafting, inventory/equipment, JRPG stats/progression, factions, combat, quests, AI, mounts, dungeons, day/night systems, persistence and multiplayer-ready authority.",
+  "Description": "Blueprint-first, data-driven UE 5.8 RPG framework with native reskinnable account login/main-menu frontend, explicit gameplay-GameMode travel, account-scoped character AND world persistence, listen-host authoritative shared worlds, direct-IP profile identity, transactional Inventory/Quick Access saves, RuneScape-style Mining, replicated resource nodes, server-authoritative settlement building, storage/production, crafting, inventory/equipment, stats/progression, factions, combat, quests, AI, mounts, dungeons, day/night systems and multiplayer-ready authority.",
   "Category": "Gameplay",
   "CreatedBy": "Akuma",
   "CanContainContent": true,

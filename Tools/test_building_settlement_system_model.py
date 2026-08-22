@@ -992,7 +992,7 @@ assert '!StationDefinition || !StationDefinition->StationTag.IsValid()' in canus
 # Persistent construction + Door/Window/Light state and existing container/furnace inventories/queues.
 # Character schema remains v5; world schema is v7 while the v6 Window migration remains explicit.
 require(types_h, 'bConstructionComplete', 'ConstructionRemainingSeconds', 'bDoorOpen', 'bWindowOpen', 'bLightOn')
-assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 9' in save_h
+assert save_h.count('SaveVersion = 5') >= 1 and 'SaveVersion = 10' in save_h
 require(save_cpp, 'R.bConstructionComplete=B->IsConstructionComplete()', 'R.ConstructionRemainingSeconds=B->GetConstructionRemainingSeconds()',
         'R.bDoorOpen=Door->IsDoorOpen()', 'R.bWindowOpen=Window->IsWindowOpen()', 'R.bLightOn=Light->IsLightOn()', 'RestoreConstructionState', 'RestoreDoorOpenState', 'RestoreWindowOpenState', 'RestoreLightState', 'Save->SaveVersion>=6 ? R.bWindowOpen : false', 'Save->SaveVersion>=7', 'CraftQueue', 'OutputItems',
         'ProcessOfflineElapsed()', 'SetActorTickEnabled(C->CraftQueue.Num()>0)')
@@ -1005,8 +1005,8 @@ require(save_h, 'FGuid GuestCharacterId')
 require(account_cpp, 'Index->GuestCharacterId = CharacterId', 'if (!bLoggedIn) return Index->GuestCharacterId',
         'GuestIds.Add(Index->GuestCharacterId)')
 require(persistence_h, 'bDeferredGuestIdentityRecoveryOnce')
-require(persistence_cpp, 'if (Last.IsValid())', 'Character->CharacterId = Last',
-        'SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad)',
+assert ('Accounts->GetOrCreateLastCharacterId()' in persistence_cpp or ('if (Last.IsValid())' in persistence_cpp and 'Character->CharacterId = Last' in persistence_cpp))
+require(persistence_cpp, 'SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad)',
         'Accounts->RegisterCharacterId(Character->CharacterId)')
 assert 'Last.IsValid() && Accounts->IsLoggedIn()' not in persistence_cpp
 require(save_cpp, 'ARPGRecoverLegacyGuestWorldOwnerIdentity', 'PlayerCharacterCount != 1 || !SoleLocalPlayer',

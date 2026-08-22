@@ -1,4 +1,4 @@
-"""Deterministic automatic player Inventory + Quick Access persistence/bootstrap regression model — v2.17.3."""
+"""Deterministic automatic player Inventory + Quick Access persistence/bootstrap regression model — v2.18.2 retaining v2.17.3 guarantees."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,9 +15,9 @@ DOC = (ROOT / "Docs/EQUIPMENT_INVENTORY.md").read_text(encoding="utf-8", errors=
 QUICK_DOC = (ROOT / "Docs/QUICK_ACCESS.md").read_text(encoding="utf-8", errors="ignore")
 
 # Release/version contract.
-assert '"Version": 21703' in UPLUGIN
-assert '"VersionName": "2.17.3-alpha"' in UPLUGIN
-assert "v2.17.3-alpha" in README
+assert '"Version": 21805' in UPLUGIN
+assert '"VersionName": "2.18.5-alpha"' in UPLUGIN
+assert "v2.18.5-alpha" in README and "v2.17.3-alpha" in README
 
 # v2.17.1 startup ownership remains: persistence decides whether Starting Items may seed.
 for token in (
@@ -119,10 +119,17 @@ save_world_start = SAVE_CPP.index("bool UARPGSaveSubsystem::SaveWorld")
 save_world_end = SAVE_CPP.index("bool UARPGSaveSubsystem::LoadWorld", save_world_start)
 assert "AsyncSaveGameToSlot" in SAVE_CPP[save_world_start:save_world_end]
 
-# Ready Persistence SaveNow must use the synchronous path too.
+# Ready Persistence SaveNow must still terminate in the synchronous authority path. v2.18 may route an
+# owning client through ServerRequestSaveNow first, but authority executes TryExecuteManualSaveOnAuthority
+# and that helper must call SaveNowImmediate (never an async character write).
 save_now_start = PERSIST_CPP.index("bool UARPGPersistenceComponent::SaveNow()")
 save_now_end = PERSIST_CPP.index("bool UARPGPersistenceComponent::SaveNowImmediate()", save_now_start)
-assert "return SaveNowImmediate();" in PERSIST_CPP[save_now_start:save_now_end]
+save_now = PERSIST_CPP[save_now_start:save_now_end]
+assert "TryExecuteManualSaveOnAuthority" in save_now
+assert "ServerRequestSaveNow();" in save_now
+manual_start = PERSIST_CPP.index("bool UARPGPersistenceComponent::TryExecuteManualSaveOnAuthority")
+manual_end = PERSIST_CPP.index("void UARPGPersistenceComponent::ServerRequestSaveNow_Implementation", manual_start)
+assert "SaveNowImmediate();" in PERSIST_CPP[manual_start:manual_end]
 
 # EndPlay is a final guard for every player-character teardown reason; Destroyed must not be excluded.
 end_start = PERSIST_CPP.index("void UARPGPersistenceComponent::EndPlay")

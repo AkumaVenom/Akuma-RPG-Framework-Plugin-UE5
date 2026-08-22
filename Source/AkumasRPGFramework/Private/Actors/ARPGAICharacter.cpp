@@ -28,6 +28,9 @@ AARPGAICharacter::AARPGAICharacter()
         Persistence->bAutoLoadOnBeginPlay = false;
         Persistence->bAutoSave = false;
         Persistence->bSaveOnEndPlay = false;
+        // Persistence RPC replication exists for player-owned SaveNow requests. Native AI never needs
+        // that channel, so keep its inherited persistence component out of the replicated subobject set.
+        Persistence->SetIsReplicated(false);
     }
     if (Combat)
     {

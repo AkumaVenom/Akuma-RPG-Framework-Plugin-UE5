@@ -1,3 +1,14 @@
+> **v2.18.5:** Logged-in Single Player worlds now isolate by AccountId; listen-host worlds isolate by host AccountId and remain one shared authoritative world for connected clients. World save v10 validates its account scope.
+
+> **v2.18.4:** Frontend local travel now requires **Default Gameplay GameMode** and explicitly forces that `ARPGGameMode` child through Unreal `game=` URL options for Single Player/Host & Play. This supersedes runtime-only GameMode guessing; v2.18.3 recovery remains a secondary fail-safe.
+
+> **v2.18.3:** Added a destination-GameMode fail-safe for UE5.8 PIE: if a gameplay map loads but `ARPGFrontendGameMode` is still instantiated, the frontend reads that destination World Settings `DefaultGameMode` and performs one guarded absolute reopen with the authored gameplay class explicitly forced. v2.18.2 input/identity/bootstrap behavior remains unchanged.
+
+> **v2.18.1 frontend/network compile note:** corrected UE5.8 engine-failure delegate aliases and UHT const-reference event signatures. The v2.18.0 login/main-menu/direct-IP identity architecture is unchanged.
+
+> **v2.18.2:** Frontend-to-gameplay travel now explicitly restores gameplay input and guarantees a stable account CharacterId before pawn spawn/persistence; fresh Starting Items/Quick Access bootstrap remains deterministic.
+
+
 > **v2.17.0 Mining note:** the ready character now includes first-class RuneScape-style 1–99 Mining. Blueprintable `AARPGMineableRock` nodes support replicated random mesh/scale/yaw, repeated strike health, level/pickaxe-tier gates, per-strike and depletion resources, rare bonus Gem finds, Basic Attack + Interact harvesting, Actor Foliage authoring and build-aware renewable-resource suppression. See `Docs/MINING.md`.
 
 > **v2.16.12 Settlement Path turn-stability note:** real PIE testing exposed whole-segment tangent magnitude overshoot at bends. Endpoint overrides are now direction-only with adjacent-sampled-span magnitude, sharp-reversal foldover protection, live-preview parity and automatic normalization of v2.16.11 world-v9 tangent saves. Continuous authoring, authority/cost, independent replication/demolition and non-structural semantics remain unchanged.
@@ -27,7 +38,7 @@
 | Persistent settlement villagers | Implemented | Native villager derives from existing `AARPGAICharacter`, inherits Hub account/character/faction ownership, persists resident/Hub/Bed links and reuses AI wander/combat components. |
 | Autonomous settlement woodcutting | Implemented | Residents reserve nearby existing `ARPGTree` actors, path/chop through the normal authoritative tree durability/reward path, can deposit configured tree rewards into the Hub stockpile, and can automatically hold an Item-Definition-driven axe visual only while working. |
 | Settlement HUD / Hub / Bed UI | Implemented | Native proximity HUD auto-shows/hides by Hub range; full Hub/Bed/resident widgets work immediately and expose Widget Classes + Blueprint refresh hooks for reskinning. Hub panel can open native Stockpile UI. |
-| Settlement persistence v9 | Implemented | World save v9 retains v8 Bed/resident/Hub state and adds Settlement Path local endpoints/tangent joins, while preserving v6 Window and v7 Light migration. |
+| Account-scoped world persistence v10 | Implemented | Logged-in Single Player uses one world slot per account; listen-host worlds use the host account as the shared authoritative namespace; clients never own local world saves. v10 embeds `ScopeAccountId` while retaining v5-v9 migration behavior. |
 | Player build mode | Implemented | Inherited Building + local BuildingUI, ready catalog, local ghost, live validation, rotate/next/previous/confirm/cancel. `SettlementPath` switches to continuous first-anchor/next-point placement and remains active until Cancel. |
 | Player-built Settlement spline paths | Implemented | Native `AARPGBuildPathActor`, pooled live Spline Mesh preview, terrain sampling, min/max point distance, configurable mesh axis/scale/tangent/collision/shadows and one cost per completed segment. v2.16.12 bounds shared turn tangents to each endpoint's adjacent sampled span, prevents sharp-reversal foldover and self-heals oversized v2.16.11 v9 tangents. Paths remain non-structural and do not suppress Trees. |
 | Pivot-aware ground placement | Implemented | v2.15.2+ anchors the active Build visual bounds to the traced surface so bottom/center/corner pivots place flush; validation/support/vertical snaps use the same mesh-aware anchor. |
@@ -194,11 +205,13 @@ Legend:
 | Dungeons/raids | Foundation | Encounter state machine, wipes, checkpoints, completion/persistence and definitions. Online instancing/matchmaking services remain project-level. |
 | Battle pets | Foundation | Collection/team/XP, wild battle start, turns/abilities/swaps/capture and persistence. Extend for exact game-specific family/weather/rulesets. |
 | Unified chat/event log | Implemented | Player + NPC/boss/system/quest/loot/event message types and per-client routing. UMG presentation is project-facing. |
-| Local account/login | Implemented | Username/password local profiles, salted verifier, account/character association. |
+| Local account/login | **Implemented** | Native reskinnable Login UI, local username/password profiles, salted verifier, transactional account-profile metadata save, logout and account/character association; password material remains local-only. |
 | Production Internet auth | Foundation | Must be supplied by a trusted backend/platform provider; intentionally not faked by local SaveGame authentication. |
-| Direct IP hosting/join | Implemented | Listen-server open-level flow, configurable port, direct ClientTravel join. |
+| Main Menu frontend | **Implemented** | Blank-level `ARPGFrontendGameMode`, reskinnable native Main Menu, Single Player, Host & Play, typed Join by IP/hostname, LAN/port preferences, Logout/Quit and network/travel failure feedback. |
+| Direct IP hosting/join | **Implemented** | Listen-server travel, configurable port/LAN/max players, normalized typed address, network/travel failure return, and pre-pawn server profile-identity handshake. |
+| Multiplayer profile identity | **Implemented (trusted direct-IP)** | Server-approved immutable AccountId + CharacterId per connection before pawn spawn; duplicate active identities rejected; passwords never sent. Public Internet authentication still requires a trusted backend/platform. |
 | LAN discovery/NAT traversal | Foundation | Direct LAN IP works; service/session discovery and NAT traversal require an online subsystem/provider. |
-| Character saves | Implemented | Automatic stable identity/load with explicit fresh/loaded/load-failed bootstrap state, exact runtime CharacterId/slot diagnostics, fresh-character-only starter seeding + first snapshot, synchronous EndPlay commit, load-failure overwrite protection, plus identity/state, vitals, progression, JRPG allocation, inventory/equipment/durability, Quick Access, quests, skills, Slayer, reputation, currencies, pets, groups, mounts and active personal crafting state. |
+| Character saves | **Implemented** | Explicit fresh/loaded/load-failed bootstrap plus mutation-driven Inventory/Quick Access persistence; v2.18 resolves save namespace per accepted connection AccountId + CharacterId so remote listen-server players cannot alias the host account. |
 | World saves | Implemented | Runtime structures, ownership, health, construction state, doors, storage contents, production input/output/queues and dungeon progress. |
 | Building | Implemented | Ready catalogue/ghost placement, pivot-aware ground anchoring, structural snapping, authoritative validation/costs, timed construction, doors, demolition/refunds and faction/territory rules. |
 | Build preview UI/material | Implemented | Local ghost actor, valid/invalid material overrides, placement HUD, live placement status and exposed material parameters; project can replace/reskin presentation. |

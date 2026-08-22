@@ -4,6 +4,8 @@
 #include "Engine/DeveloperSettings.h"
 #include "ARPGDeveloperSettings.generated.h"
 
+class AARPGGameMode;
+
 UCLASS(Config=Game, DefaultConfig, meta=(DisplayName="Akuma's RPG Framework"))
 class AKUMASRPGFRAMEWORK_API UARPGDeveloperSettings : public UDeveloperSettings
 {
@@ -23,8 +25,20 @@ public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Quests", meta=(ClampMin="1")) int32 MaxActiveQuests = 35;
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Battle Pets", meta=(ClampMin="1")) int32 MaxBattlePetTeamSize = 3;
 
-    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Networking") int32 DefaultListenPort = 7777;
-    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Networking") int32 MaxPlayers = 8;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Networking", meta=(ClampMin="1", ClampMax="65535")) int32 DefaultListenPort = 7777;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Networking", meta=(ClampMin="1")) int32 MaxPlayers = 8;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Networking") bool bDefaultLANListenServer = true;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Networking", meta=(ClampMin="3.0")) float ProfileHandshakeTimeoutSeconds = 15.f;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Networking") bool bRequireLocalProfileForGameplay = true;
+
+    /** Blank frontend level configured with AARPGFrontendGameMode. */
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Frontend") FName DefaultMainMenuMap = TEXT("MainMenu");
+    /** Gameplay level opened by Single Player and Host & Play. */
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Frontend") FName DefaultGameplayMap = NAME_None;
+    /** Gameplay GameMode explicitly forced for frontend -> gameplay local travel. Must derive from AARPGGameMode. */
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Frontend") TSoftClassPtr<AARPGGameMode> DefaultGameplayGameMode;
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Frontend") bool bReturnToMainMenuOnNetworkFailure = true;
+
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Chat", meta=(ClampMin="10")) int32 ChatHistoryLimit = 200;
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Progression", meta=(ClampMin="1")) int32 DefaultMaxCharacterLevel = 100;

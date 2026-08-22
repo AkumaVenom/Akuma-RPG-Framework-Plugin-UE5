@@ -1,4 +1,32 @@
+> **v2.18.5:** World persistence now follows the authoritative session owner: logged-in standalone worlds are account-scoped, listen-host worlds are scoped to the host account, remote clients never own local world saves, and world save v10 validates `ScopeAccountId`.
+
+> **v2.18.4:** Frontend local travel now requires **Default Gameplay GameMode** and explicitly forces that `ARPGGameMode` child through Unreal `game=` URL options for Single Player/Host & Play. This supersedes runtime-only GameMode guessing; v2.18.3 recovery remains a secondary fail-safe.
+
+> **v2.18.3:** Added a destination-GameMode fail-safe for UE5.8 PIE: if a gameplay map loads but `ARPGFrontendGameMode` is still instantiated, the frontend reads that destination World Settings `DefaultGameMode` and performs one guarded absolute reopen with the authored gameplay class explicitly forced. v2.18.2 input/identity/bootstrap behavior remains unchanged.
+
 # Networking, Login and Authority
+
+> **v2.18.2:** Frontend-to-gameplay travel now explicitly restores gameplay input and guarantees a stable account CharacterId before pawn spawn/persistence; fresh Starting Items/Quick Access bootstrap remains deterministic.
+
+
+> **v2.18.1 compile note:** UE5.8 network/travel failure callbacks now use `ENetworkFailure::Type` / `ETravelFailure::Type`, and frontend Blueprint text/string events use UHT-compatible const-reference signatures. Runtime identity, authority and persistence behavior remains the v2.18.0 contract below.
+
+## Frontend profile identity + direct-IP authority — v2.18.0
+
+v2.18.0 makes frontend identity part of the multiplayer authority model instead of treating Login as presentation only. A blank Main Menu map can use `AARPGFrontendGameMode`/`AARPGFrontendPlayerController`, which present the native reskinnable Login and Main Menu widgets. A local profile must normally be authenticated before Single Player, Host & Play or Join by IP travel begins.
+
+Local account creation stores a salted verifier in the local account index and creates a separate non-secret `ARPG_Account_<AccountId>` profile metadata save. **Raw passwords, salts and verifiers are never sent to a listen host.** Remote travel carries no credential secret; after connection the owned gameplay PlayerController submits only the locally verified AccountId, username and CharacterId claim. This direct-IP claim is appropriate for trusted/LAN/private-host play, not public Internet authentication.
+
+`AARPGGameMode` can require profile identity before pawn spawn. A remote connection therefore remains at `AARPGPlayerController` while the server validates the claim, rejects duplicate active account/character identities, generates a CharacterId for a first character when necessary and binds accepted identity immutably to that connection. Only then does normal pawn creation begin. This ordering prevents Inventory/Persistence BeginPlay from resolving against the host's local account.
+
+Character save slots are now connection-aware. On authority, `UARPGSaveSubsystem` first resolves the owning accepted PlayerController AccountId + CharacterId and produces `ARPG_<AccountId>_Char_<CharacterId>`. Process-local Account Subsystem fallback is restricted to the locally controlled standalone/listen-host character. Thus two clients in one listen-server process cannot silently share the host character-save namespace.
+
+Joined-client character state is **host authoritative**. The host stores the remote character snapshot and existing gameplay RPC/replication rules remain authoritative for Inventory, Quick Access, equipment, progression/Mining, building, Storage/Production and world interactions. Rejoining the same host with the same approved identity restores that host-side character save. Cross-host portable characters require a trusted backend/cloud service; accepting a client-provided Inventory/save blob would violate the authority model.
+
+Explicit UI `SaveNow` is multiplayer-safe in v2.18: a joined owner sends a reliable request through its replicated Persistence component, the host performs the synchronous account-scoped character save, and the owning client receives `OnManualCharacterSaveResult`. Automatic Inventory/Quick Access mutation saves continue to originate on authority.
+
+`UARPGNetworkSubsystem` now owns Single Player/listen-host/direct-IP travel state, normalized host/IP input, configurable listen port/LAN mode, return-to-menu handling and Unreal network/travel failure callbacks. See `Docs/FRONTEND_LOGIN_NETWORKING.md` for complete Editor setup and security/QA guidance. Character save remains v5, world save is v10, and account-profile metadata uses its independent schema v1.
+
 
 ## Automatic character persistence — v2.17.3
 
@@ -8,7 +36,7 @@ The v2.17.2 write path is mutation-driven. On authority, Persistence subscribes 
 
 Automatic character saves are serialized synchronously. This is deliberate: allowing multiple `AsyncSaveGameToSlot` character snapshots to overlap can make an older snapshot complete after the latest Inventory/hotbar state. World saves remain asynchronous and independent. `Save On EndPlay` is still a final guard but no longer carries sole responsibility for normal Inventory persistence and now covers explicit player-pawn destruction as well.
 
-This changes no replication trust boundary and requires no save migration: character save remains v5, world save remains v9.
+The v2.17.3 character-persistence behavior still requires no character-save migration. In v2.18.5, character save remains v5 while world save advances to v10 for account-scope binding; old shared v9 world slots are deliberately not auto-imported into logged-in accounts.
 
 ## Mining authority — v2.17.0
 
@@ -23,9 +51,9 @@ Mining intent may originate from Basic Attack, `Start Mining From View`, `Mine R
 
 `ARPGItemUseComponent` is replicated and performs all usable-item mutation on the server. Client Inventory UI / Quick Access / Blueprint calls only submit an exact runtime InstanceId. Authority re-resolves that instance from the owned Inventory, checks usability, quantity and item-type cooldown, runs optional custom Blueprint validation/effect logic, applies built-in vital/GAS effects, consumes only after success, and then multicasts cosmetic presentation. Cooldown state is owner-only replicated for local UI.
 
-## Single-player-first account flow
+## Local account flow
 
-The Account Subsystem provides local profile creation/login using username/password input.
+The Account Subsystem provides local profile creation/login using username/password input. v2.18 adds a complete native Login/Main Menu frontend around the same subsystem; custom Widget Blueprint subclasses can reskin it without replacing account authority.
 
 It stores:
 
@@ -36,7 +64,7 @@ It stores:
 - registered character GUIDs
 - last character GUID
 
-Raw passwords are not stored in character/world save records.
+Raw passwords are not stored in character/world/account-profile save records and are never network RPC parameters.
 
 The local verifier exists to separate/protect local profiles. It is not a public-Internet authentication backend.
 

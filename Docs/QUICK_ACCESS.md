@@ -1,4 +1,16 @@
+> **v2.18.4:** Frontend local travel now requires **Default Gameplay GameMode** and explicitly forces that `ARPGGameMode` child through Unreal `game=` URL options for Single Player/Host & Play. This supersedes runtime-only GameMode guessing; v2.18.3 recovery remains a secondary fail-safe.
+
+> **v2.18.3:** Added a destination-GameMode fail-safe for UE5.8 PIE: if a gameplay map loads but `ARPGFrontendGameMode` is still instantiated, the frontend reads that destination World Settings `DefaultGameMode` and performs one guarded absolute reopen with the authored gameplay class explicitly forced. v2.18.2 input/identity/bootstrap behavior remains unchanged.
+
 # Quick Access / Active Item Slots — v2.2.3-alpha.2
+
+> **v2.18.2:** Frontend-to-gameplay travel now explicitly restores gameplay input and guarantees a stable account CharacterId before pawn spawn/persistence; fresh Starting Items/Quick Access bootstrap remains deterministic.
+
+
+## Multiplayer save namespace (v2.18.1 retaining v2.18.0 behavior)
+
+Quick Access remains owner-only replicated and server-authoritative. In v2.18.0 the host stores each joined player's Quick Access layout/active slot inside that connection's accepted AccountId + CharacterId character save rather than the host account namespace. The v2.17.3 fresh/load bootstrap and mutation-driven automatic saving remain unchanged. See `Docs/FRONTEND_LOGIN_NETWORKING.md`.
+
 
 
 ## v2.13 unified Item Use authority

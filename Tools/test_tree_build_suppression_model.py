@@ -90,6 +90,6 @@ assert 'RespawnEligibleServerTime' in respawn
 assert 'TreeState = EARPGTreeState::Standing;' in respawn
 
 # Suppression is derived from buildings and therefore needs no world-save schema bump.
-assert 'SaveVersion = 9' in SAVE_H
+assert 'SaveVersion = 10' in SAVE_H
 
 print('tree/build occupancy suppression regression model: PASS')

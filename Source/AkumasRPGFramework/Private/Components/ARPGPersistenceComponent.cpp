@@ -2,6 +2,7 @@
 #include "Subsystems/ARPGSaveSubsystem.h"
 #include "Subsystems/ARPGAccountSubsystem.h"
 #include "Actors/ARPGCharacter.h"
+#include "Actors/ARPGPlayerController.h"
 #include "Actors/ARPGAICharacter.h"
 #include "Components/ARPGInventoryComponent.h"
 #include "Components/ARPGQuickAccessComponent.h"
@@ -29,7 +30,13 @@ namespace
     }
 }
 
-UARPGPersistenceComponent::UARPGPersistenceComponent() { PrimaryComponentTick.bCanEverTick = false; }
+UARPGPersistenceComponent::UARPGPersistenceComponent()
+{
+    PrimaryComponentTick.bCanEverTick = false;
+    // Actor-component RPCs require the component to replicate. Runtime save state itself remains authority-owned;
+    // this replication exists so an owning direct-IP client can safely request SaveNow on the host.
+    SetIsReplicatedByDefault(true);
+}
 
 void UARPGPersistenceComponent::BeginPlay()
 {
@@ -80,28 +87,39 @@ void UARPGPersistenceComponent::AttemptAutoLoad()
         return;
     }
 
-    // Resolve one stable account/Guest CharacterId before touching the character slot.
-    if (UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+    // Resolve one stable connection-specific CharacterId before touching a save slot. On a listen server,
+    // the remote PlayerController profile identity always wins; the host GameInstance account is consulted
+    // only for the locally controlled host/standalone player.
+    if (AARPGPlayerController* PC = Cast<AARPGPlayerController>(Character->GetController()))
     {
-        if (UARPGAccountSubsystem* Accounts = GI->GetSubsystem<UARPGAccountSubsystem>())
+        if (PC->IsProfileIdentityAccepted() && PC->ProfileCharacterId.IsValid())
         {
-            const FGuid Last = Accounts->GetLastCharacterId();
-            if (Last.IsValid())
+            Character->CharacterId = PC->ProfileCharacterId;
+        }
+    }
+
+    if (Character->IsLocallyControlled() && (!Character->GetController() || !Cast<AARPGPlayerController>(Character->GetController()) || !Cast<AARPGPlayerController>(Character->GetController())->IsProfileIdentityAccepted()))
+    {
+        if (UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+        {
+            if (UARPGAccountSubsystem* Accounts = GI->GetSubsystem<UARPGAccountSubsystem>())
             {
-                Character->CharacterId = Last;
-            }
-            else if (!Accounts->IsLoggedIn())
-            {
-                // Legacy Guest saves (pre-v2.15.12) may need the GameMode/world loader to recover their
-                // previous owner id. Give that recovery exactly one frame before creating/registering a new id.
-                if (!bDeferredGuestIdentityRecoveryOnce && GetWorld())
+                const FGuid StableCharacterId = Accounts->GetOrCreateLastCharacterId();
+                if (StableCharacterId.IsValid())
                 {
-                    bDeferredGuestIdentityRecoveryOnce = true;
-                    GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad);
-                    return;
+                    Character->CharacterId = StableCharacterId;
                 }
-                Character->EnsureCharacterId();
-                Accounts->RegisterCharacterId(Character->CharacterId);
+                else
+                {
+                    if (!bDeferredGuestIdentityRecoveryOnce && GetWorld())
+                    {
+                        bDeferredGuestIdentityRecoveryOnce = true;
+                        GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UARPGPersistenceComponent::AttemptAutoLoad);
+                        return;
+                    }
+                    Character->EnsureCharacterId();
+                    Accounts->RegisterCharacterId(Character->CharacterId);
+                }
             }
         }
     }
@@ -120,8 +138,8 @@ void UARPGPersistenceComponent::AttemptAutoLoad()
         return;
     }
 
-    InitialResolvedCharacterSaveSlot = Saves->MakeCharacterSlotName(InitialResolvedCharacterId);
-    const bool bExistingSaveFound = Saves->DoesCharacterSaveExist(InitialResolvedCharacterId);
+    InitialResolvedCharacterSaveSlot = Saves->MakeCharacterSlotNameForActor(Character);
+    const bool bExistingSaveFound = Saves->DoesCharacterSaveExistForActor(Character);
 
     // Distinguish "no save exists" from "a save exists but failed to load" BEFORE calling LoadCharacter.
     // A fresh character must always receive its authored Starting Items; only a proven existing-but-unreadable
@@ -273,10 +291,61 @@ bool UARPGPersistenceComponent::FlushPendingCharacterStateSave()
 
 bool UARPGPersistenceComponent::SaveNow()
 {
+    // A joined client cannot write host-side SaveGame data directly. Because this component belongs to the
+    // player's owned pawn and is replicated, route the explicit UI request to authority. Returning true on the
+    // client means the reliable request was submitted; OnManualCharacterSaveResult carries the actual result.
+    if (GetOwner() && !GetOwner()->HasAuthority())
+    {
+        if (GetOwner()->GetNetMode() == NM_Client)
+        {
+            ServerRequestSaveNow();
+            return true;
+        }
+        return false;
+    }
+
+    FText Message;
+    const bool bSaved = TryExecuteManualSaveOnAuthority(Message);
+    OnManualCharacterSaveResult.Broadcast(bSaved, Message);
+    return bSaved;
+}
+
+bool UARPGPersistenceComponent::TryExecuteManualSaveOnAuthority(FText& OutMessage)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority())
+    {
+        OutMessage = FText::FromString(TEXT("Character saves must be committed by authority."));
+        return false;
+    }
+
+    const UWorld* World = GetWorld();
+    const double Now = World ? static_cast<double>(World->GetTimeSeconds()) : 0.0;
+    if (ManualSaveRequestCooldownSeconds > 0.f
+        && (Now - LastManualSaveAuthorityTimeSeconds) < static_cast<double>(ManualSaveRequestCooldownSeconds))
+    {
+        OutMessage = FText::FromString(TEXT("Please wait a moment before saving again."));
+        return false;
+    }
+    LastManualSaveAuthorityTimeSeconds = Now;
+
     // Character state is intentionally serialized synchronously. Mixing periodic/manual async writes
     // with mutation/end-play commits can allow an older snapshot to finish last and overwrite newer
     // Inventory/QuickAccess state. World saves remain independently asynchronous.
-    return SaveNowImmediate();
+    const bool bSaved = SaveNowImmediate();
+    OutMessage = FText::FromString(bSaved ? TEXT("Character saved.") : TEXT("Character save failed."));
+    return bSaved;
+}
+
+void UARPGPersistenceComponent::ServerRequestSaveNow_Implementation()
+{
+    FText Message;
+    const bool bSaved = TryExecuteManualSaveOnAuthority(Message);
+    ClientManualSaveResult(bSaved, Message);
+}
+
+void UARPGPersistenceComponent::ClientManualSaveResult_Implementation(bool bSuccess, const FText& Message)
+{
+    OnManualCharacterSaveResult.Broadcast(bSuccess, Message);
 }
 
 bool UARPGPersistenceComponent::SaveNowImmediate()

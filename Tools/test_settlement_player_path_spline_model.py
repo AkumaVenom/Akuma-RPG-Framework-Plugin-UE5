@@ -163,7 +163,7 @@ require(notify_body, "Definition->PieceKind == EARPGBuildPieceKind::SettlementPa
 
 # World-save v9 stores confirmed geometry/tangent overrides and retains character save v5.
 assert save_h.count("SaveVersion = 5") >= 1
-assert "SaveVersion = 9" in save_h
+assert "SaveVersion = 10" in save_h
 require(
     types_h,
     "SettlementPathStartLocal",
